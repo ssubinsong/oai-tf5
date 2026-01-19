@@ -535,6 +535,14 @@ add_boolean_option(NAS_BUILT_IN_UE         ON  "UE NAS layer present in this exe
 ##########################
 add_boolean_option(RRC_DEFAULT_RAB_IS_AM       ON   "set the LTE RLC mode to AM for the default bearer, otherwise it is UM." ON)
 
+##########################
+# TESLA-FOR-5G OPTIONS
+##########################
+add_boolean_option(TF5_ENABLE_TESLA            OFF  "Enable TESLA broadcast authentication for SIB1 (fake base station protection)" ON)
+if(TF5_ENABLE_TESLA)
+  add_definitions(-DTF5_ENABLE_TESLA)
+endif()
+
 # add the binary tree to the search path for include files
 # We will find common/oai_version.h after generation in target directory
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
@@ -638,6 +646,14 @@ set(SECURITY_SRC
   ${OPENAIR3_DIR}/SECU/nas_stream_eea2.c
   ${OPENAIR3_DIR}/SECU/nas_stream_eia2.c
   )
+
+# TESLA broadcast authentication sources
+if(TF5_ENABLE_TESLA)
+  list(APPEND SECURITY_SRC
+    ${OPENAIR3_DIR}/SECU/tf5_tesla.c
+    ${OPENAIR3_DIR}/SECU/tf5_tesla_sig.c
+  )
+endif()
 
 pkg_check_modules(OpenSSL openssl REQUIRED)
 add_library(SECURITY ${SECURITY_SRC} $<TARGET_OBJECTS:ds>)

@@ -37,6 +37,9 @@
 #include "common/utils/LOG/vcd_signal_dumper.h"
 #include "UTIL/OPT/opt.h"
 #include "common/utils/nr/nr_common.h"
+#ifdef TF5_ENABLE_TESLA
+#include "openair3/SECU/tf5_tesla.h"
+#endif
 
 #define ENABLE_MAC_PAYLOAD_DEBUG
 
@@ -594,6 +597,13 @@ void schedule_nr_sib1(module_id_t module_idP,
 
       const int ntx_req = TX_req->Number_of_PDUs;
       nfapi_nr_pdu_t *tx_req = &TX_req->pdu_list[ntx_req];
+
+#ifdef TF5_ENABLE_TESLA
+      // Update TESLA extension with current frame/slot before transmission
+      if (cc->tesla_state && cc->tesla_state->initialized) {
+        nr_mac_update_sib1_tesla(gNB_mac, cc, frameP, slotP);
+      }
+#endif
 
       // Data to be transmitted
       memcpy(tx_req->TLVs[0].value.direct, cc->sib1_bcch_pdu, sched_pdsch.tb_size);

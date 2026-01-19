@@ -59,6 +59,9 @@
 #include "nr_pdcp/nr_pdcp_oai_api.h"
 #include "openair3/SECU/secu_defs.h"
 #include "openair3/SECU/key_nas_deriver.h"
+#ifdef TF5_ENABLE_TESLA
+#include "openair3/SECU/tf5_tesla.h"
+#endif
 
 #include "common/utils/LOG/log.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
@@ -488,6 +491,101 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   if(g_log->log_component[NR_RRC].level >= OAILOG_DEBUG)
     xer_fprint(stdout, &asn_DEF_NR_SIB1, (const void *) sib1);
   LOG_A(NR_RRC, "SIB1 decoded\n");
+
+#ifdef TF5_ENABLE_TESLA
+  if (sib1->lateNonCriticalExtension && SI_info->tesla_state) {
+    tf5_tesla_extension_t ext;
+    int unpack_rc = tf5_tesla_unpack_extension(
+        sib1->lateNonCriticalExtension->buf,
+        sib1->lateNonCriticalExtension->size,
+        &ext);
+
+    if (unpack_rc == 0) {
+      LOG_D(NR_RRC, "TESLA: Unpacked extension, interval=%u, t_int=%u ms, d=%u\n",
+            ext.dynamic_params.interval_index, ext.static_params.t_int_ms, ext.static_params.disclosure_delay);
+
+      /* Initialize UE state with static params on first reception */
+      if (!SI_info->tesla_state->initialized) {
+        memcpy(&SI_info->tesla_state->static_params, &ext.static_params, sizeof(tf5_tesla_static_params_t));
+        /* For research: copy gNB public key from extension signature verification
+         * In production, this would be pre-provisioned via secure channel */
+        SI_info->tesla_state->initialized = true;
+        LOG_I(NR_RRC, "TESLA: Initialized UE state with gNB static params\n");
+      }
+
+      /* 1. Verify Ed25519 signature (immediate authentication) */
+      /* Note: We need to build auth_input from original SIB1 + static + dynamic */
+      uint8_t auth_input[TF5_TESLA_MAX_AUTH_INPUT];
+      size_t auth_len = 0;
+
+      /* Re-encode original SIB1 without lateNonCriticalExtension for auth */
+      OCTET_STRING_t *saved_ext = sib1->lateNonCriticalExtension;
+      sib1->lateNonCriticalExtension = NULL;
+      uint8_t sib1_buf[512];
+      asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_SIB1,
+                                                       NULL,
+                                                       sib1,
+                                                       sib1_buf,
+                                                       sizeof(sib1_buf));
+      sib1->lateNonCriticalExtension = saved_ext;
+
+      if (enc_rval.encoded > 0) {
+        size_t sib1_len = (enc_rval.encoded + 7) / 8;
+        tf5_tesla_build_auth_input(auth_input, &auth_len,
+                                    sib1_buf, sib1_len,
+                                    &ext.static_params,
+                                    &ext.dynamic_params);
+
+        /* Verify signature using gNB public key */
+        if (SI_info->tesla_state->has_gnb_public_key) {
+          int sig_rc = tf5_tesla_ed25519_verify(SI_info->tesla_state->gnb_public_key,
+                                                 auth_input, auth_len,
+                                                 ext.gnb_signature);
+          if (sig_rc != 0) {
+            LOG_E(NR_RRC, "TESLA: Signature verification FAILED - rejecting SIB1\n");
+            return; /* Reject this SIB1 */
+          }
+          LOG_I(NR_RRC, "TESLA: Signature verified for interval %u\n", ext.dynamic_params.interval_index);
+        } else {
+          LOG_W(NR_RRC, "TESLA: No gNB public key configured - skipping signature verification\n");
+        }
+
+        /* 2. Verify previously buffered SIB1 using disclosed key (delayed auth) */
+        if (SI_info->tesla_state->buffer.pending && ext.dynamic_params.interval_index > ext.static_params.disclosure_delay) {
+          uint32_t disclosed_interval = ext.dynamic_params.interval_index - ext.static_params.disclosure_delay;
+          if (disclosed_interval == SI_info->tesla_state->buffer.interval_index) {
+            int verify_rc = tf5_tesla_ue_verify_buffered(SI_info->tesla_state,
+                                                          ext.dynamic_params.disclosed_key,
+                                                          disclosed_interval);
+            if (verify_rc == 0) {
+              LOG_I(NR_RRC, "TESLA: Buffered SIB1 MAC verified (delayed auth) for interval %u\n", disclosed_interval);
+            } else {
+              LOG_W(NR_RRC, "TESLA: Buffered SIB1 MAC verification failed\n");
+            }
+            SI_info->tesla_state->buffer.pending = false;
+          }
+        }
+
+        /* 3. Buffer current SIB1 for TESLA delayed verification
+         * Note: rx_sfn/rx_slot would ideally come from PHY layer timing
+         * For now, we use the SIB1's ti_sfn/ti_slot as approximation */
+        tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
+                                  auth_input, auth_len,
+                                  ext.dynamic_params.interval_index,
+                                  ext.tesla_tag,
+                                  ext.dynamic_params.ti_sfn,
+                                  ext.dynamic_params.ti_slot);
+      } else {
+        LOG_E(NR_RRC, "TESLA: Failed to re-encode SIB1 for auth input\n");
+      }
+    } else {
+      LOG_W(NR_RRC, "TESLA: Failed to unpack extension (rc=%d)\n", unpack_rc);
+    }
+  } else if (SI_info->tesla_state) {
+    LOG_D(NR_RRC, "TESLA: SIB1 has no lateNonCriticalExtension\n");
+  }
+#endif
+
   nr_timer_start(&SI_info->sib1_timer);
   SI_info->sib1_validity = true;
   if (rrc->nrRrcState == RRC_STATE_IDLE_NR) {
@@ -1321,6 +1419,15 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
     ptr->l3_measurements.ssb_filter_coeff_rsrp = 1.0f;
     ptr->l3_measurements.csi_RS_filter_coeff_rsrp = 1.0f;
     init_SI_timers(&ptr->SInfo);
+#ifdef TF5_ENABLE_TESLA
+    ptr->SInfo.tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
+    if (ptr->SInfo.tesla_state) {
+      /* For research: gNB public key would come from config or pre-provisioning.
+       * In production, this would be distributed via secure channels.
+       * Here we use a placeholder - the actual key is generated at gNB init. */
+      LOG_I(NR_RRC, "TESLA: UE TESLA state allocated for NB connection %d\n", i);
+    }
+#endif
   }
 
   init_sidelink(rrc);

@@ -48,6 +48,10 @@
 #include "T.h"
 #include "asn_internal.h"
 #include "assertions.h"
+#ifdef TF5_ENABLE_TESLA
+#include "openair3/SECU/tf5_tesla.h"
+#include "openair3/SECU/tf5_tesla_sig.h"
+#endif
 #include "common/ran_context.h"
 #include "common/utils/T/T.h"
 #include "common/utils/nr/nr_common.h"
@@ -1113,8 +1117,59 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
   NR_BCCH_DL_SCH_Message_t *sib1 = get_SIB1_NR(scc, plmn, cellID, tac, &nrmac->radio_config);
   cc->sib1 = sib1;
+
+#ifdef TF5_ENABLE_TESLA
+  // Encode original SIB1 (without TESLA extension) for signature/MAC computation
+  cc->sib1_original_length = encode_SIB_NR(sib1, cc->sib1_original, sizeof(cc->sib1_original));
+  AssertFatal(cc->sib1_original_length > 0, "could not encode original SIB1\n");
+
+  // Initialize TESLA state
+  cc->tesla_state = calloc(1, sizeof(tf5_tesla_gnb_state_t));
+  AssertFatal(cc->tesla_state != NULL, "Failed to allocate TESLA state\n");
+
+  // Get slots per frame from numerology
+  int numerology = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing;
+  uint16_t slots_per_frame = 10 * (1 << numerology);
+
+  // TODO: Load private key from configuration
+  // For now, generate a key pair for testing
+  uint8_t private_key[32];
+  uint8_t public_key[32];
+  int rc = tf5_tesla_ed25519_keygen(private_key, public_key);
+  if (rc != 0) {
+    LOG_E(NR_MAC, "TESLA: Failed to generate Ed25519 key pair\n");
+  } else {
+    // Log public key for UE configuration
+    LOG_I(NR_MAC, "TESLA: Generated Ed25519 key pair. Public key (hex):\n");
+    char hex_buf[65];
+    for (int i = 0; i < 32; i++) {
+      sprintf(&hex_buf[i*2], "%02x", public_key[i]);
+    }
+    LOG_I(NR_MAC, "TESLA: %s\n", hex_buf);
+
+    // Initialize TESLA with T_int=20ms, d=1, chain length for ~21 minutes
+    rc = tf5_tesla_gnb_init(cc->tesla_state,
+                            20,     // T_int = 20ms
+                            1,      // d = 1 (disclosure delay)
+                            65536,  // chain length (~21 minutes)
+                            private_key,
+                            0,      // T_0 SFN = 0 (will be updated on first TX)
+                            0,      // T_0 slot = 0
+                            slots_per_frame);
+    if (rc != 0) {
+      LOG_E(NR_MAC, "TESLA: Failed to initialize (rc=%d)\n", rc);
+    } else {
+      LOG_I(NR_MAC, "TESLA: gNB initialization successful\n");
+    }
+  }
+
+  // Initial SIB1 encoding (TESLA extension will be added dynamically before each TX)
+  cc->sib1_bcch_length = cc->sib1_original_length;
+  memcpy(cc->sib1_bcch_pdu, cc->sib1_original, cc->sib1_original_length);
+#else
   cc->sib1_bcch_length = encode_SIB_NR(sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
   AssertFatal(cc->sib1_bcch_length > 0, "could not encode SIB1\n");
+#endif
 }
 
 static bool process_addmod_bearers_cellGroupConfig(NR_UE_sched_ctrl_t *sched_ctrl, const NR_RLC_BearerConfig_t *conf)

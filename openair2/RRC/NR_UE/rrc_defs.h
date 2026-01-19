@@ -65,6 +65,10 @@
 #include "common/utils/nr/nr_common.h"
 #include "notified_fifo.h"
 
+#ifdef TF5_ENABLE_TESLA
+#include "openair3/SECU/tf5_tesla.h"
+#endif
+
 #define NB_CNX_UE 2//MAX_MANAGED_RG_PER_MOBILE
 #define MAX_MEAS_OBJ 64
 #define MAX_MEAS_CONFIG 64
@@ -158,6 +162,9 @@ typedef struct UE_RRC_SI_INFO_NR_s {
   int sib19_periodicity;
   int sib19_windowposition;
   int si_windowlength;
+#ifdef TF5_ENABLE_TESLA
+  tf5_tesla_ue_state_t *tesla_state;
+#endif
 } NR_UE_RRC_SI_INFO;
 
 typedef struct NR_UE_Timers_Constants_s {

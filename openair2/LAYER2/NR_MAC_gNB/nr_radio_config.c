@@ -47,6 +47,9 @@
 #include "uper_encoder.h"
 #include "utils.h"
 #include "xer_encoder.h"
+#ifdef TF5_ENABLE_TESLA
+#include "openair3/SECU/tf5_tesla.h"
+#endif
 
 #define NR_MAX_SUPPORTED_DL_LAYERS 4
 
@@ -4359,3 +4362,79 @@ int encode_measgap_config(const measgap_config_t *c, uint8_t *buf)
   ASN_STRUCT_FREE(asn_DEF_NR_MeasGapConfig, measGapConfig);
   return (int)((enc_rval_mgc.encoded + 7) >> 3);
 }
+
+#ifdef TF5_ENABLE_TESLA
+/**
+ * Update SIB1 with TESLA authentication extension
+ *
+ * This function is called before each SIB1 transmission to:
+ * 1. Prepare TESLA extension with current interval/key
+ * 2. Pack extension into lateNonCriticalExtension
+ * 3. Re-encode SIB1
+ *
+ * @param mac       gNB MAC instance
+ * @param cc        Common channel structure
+ * @param frame     Current frame number
+ * @param slot      Current slot number
+ */
+void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
+                              NR_COMMON_channels_t *cc,
+                              frame_t frame,
+                              slot_t slot)
+{
+  if (!cc->tesla_state || !cc->tesla_state->initialized) {
+    return;
+  }
+
+  NR_SIB1_t *sib1 = cc->sib1->message.choice.c1->choice.systemInformationBlockType1;
+
+  // Prepare TESLA extension for current frame/slot
+  tf5_tesla_extension_t ext;
+  int rc = tf5_tesla_gnb_prepare_extension(cc->tesla_state,
+                                           frame, slot,
+                                           cc->sib1_original,
+                                           cc->sib1_original_length,
+                                           &ext);
+  if (rc != 0) {
+    LOG_E(NR_MAC, "TESLA: Failed to prepare extension (rc=%d)\n", rc);
+    return;
+  }
+
+  // Pack TESLA extension into binary
+  uint8_t ext_buf[256];
+  int ext_len = tf5_tesla_pack_extension(&ext, ext_buf, sizeof(ext_buf));
+  if (ext_len < 0) {
+    LOG_E(NR_MAC, "TESLA: Failed to pack extension\n");
+    return;
+  }
+
+  // Set lateNonCriticalExtension
+  if (sib1->lateNonCriticalExtension == NULL) {
+    sib1->lateNonCriticalExtension = calloc(1, sizeof(OCTET_STRING_t));
+    AssertFatal(sib1->lateNonCriticalExtension != NULL,
+                "TESLA: Failed to allocate lateNonCriticalExtension\n");
+  } else {
+    // Free existing buffer
+    if (sib1->lateNonCriticalExtension->buf) {
+      free(sib1->lateNonCriticalExtension->buf);
+    }
+  }
+
+  // Allocate and copy extension data
+  sib1->lateNonCriticalExtension->buf = malloc(ext_len);
+  AssertFatal(sib1->lateNonCriticalExtension->buf != NULL,
+              "TESLA: Failed to allocate extension buffer\n");
+  memcpy(sib1->lateNonCriticalExtension->buf, ext_buf, ext_len);
+  sib1->lateNonCriticalExtension->size = ext_len;
+
+  // Re-encode SIB1 with TESLA extension
+  cc->sib1_bcch_length = encode_SIB_NR(cc->sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
+  if (cc->sib1_bcch_length <= 0) {
+    LOG_E(NR_MAC, "TESLA: Failed to re-encode SIB1\n");
+    return;
+  }
+
+  LOG_D(NR_MAC, "TESLA: Updated SIB1 for frame %d slot %d (interval %u, len=%d)\n",
+        frame, slot, ext.dynamic_params.interval_index, cc->sib1_bcch_length);
+}
+#endif /* TF5_ENABLE_TESLA */
