@@ -516,6 +516,7 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     memset(state, 0, sizeof(*state));
 
     memcpy(state->gnb_public_key, gnb_public_key, 32);
+    state->has_gnb_public_key = true;
     state->slots_per_frame = slots_per_frame;
     state->params_received = false;
     state->buffer.pending = false;
@@ -525,9 +526,19 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     state->last_sfn = 0;
     state->hfn_initialized = false;
 
+    // Parallel authentication state (initialized by memset to 0/false)
+    // k0_trusted = false (first-time UE, needs Ed25519 verification)
+    // sib1_authenticated = false
+    // auth_in_progress = false
+    // auth_failed = false
+    // nas_pending = false
+    // auth_start_time = 0
+    // rrcsetup_deferred = false
+    // rrcsetup_transaction_id = 0
+
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA: UE initialized (HFN tracking pending first SIB1)\n");
+    LOG_I(NR_RRC, "TESLA: UE initialized (first-time UE, K_0 not yet trusted)\n");
 
     return 0;
 }

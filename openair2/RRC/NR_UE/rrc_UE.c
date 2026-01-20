@@ -486,7 +486,13 @@ static void get_sib19_schedinfo(NR_UE_RRC_SI_INFO *SI_info, NR_SI_SchedulingInfo
   }
 }
 
-static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, NR_SIB1_t *sib1)
+#ifdef TF5_ENABLE_TESLA
+/* Forward declarations for TESLA parallel authentication */
+static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const uint8_t Transaction_id);
+static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index);
+#endif
+
+static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, NR_SIB1_t *sib1, int gNB_index)
 {
   if(g_log->log_component[NR_RRC].level >= OAILOG_DEBUG)
     xer_fprint(stdout, &asn_DEF_NR_SIB1, (const void *) sib1);
@@ -504,9 +510,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
       LOG_D(NR_RRC, "TESLA: Unpacked extension, interval=%u, t_int=%u ms, d=%u\n",
             ext.dynamic_params.interval_index, ext.static_params.t_int_ms, ext.static_params.disclosure_delay);
 
-      /* 1. Verify Ed25519 signature FIRST (immediate authentication)
-       * RFC 4082: K_0 must be authenticated via digital signature before TESLA can be used.
-       * The signature covers: original SIB1 + static_params (including K_0) + dynamic_params */
+      /* Build auth_input for signature/MAC verification */
       uint8_t auth_input[TF5_TESLA_MAX_AUTH_INPUT];
       size_t auth_len = 0;
 
@@ -528,47 +532,84 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                     &ext.static_params,
                                     &ext.dynamic_params);
 
-        /* Verify signature using pre-provisioned gNB public key (REQUIRED) */
-        AssertFatal(SI_info->tesla_state->has_gnb_public_key,
-                    "TESLA: gNB public key not configured - required for K_0 authentication");
+        /* Parallel authentication: First-time vs Returning UE */
+        if (!SI_info->tesla_state->k0_trusted) {
+          /* === FIRST-TIME UE: Ed25519 signature verification === */
+          AssertFatal(SI_info->tesla_state->has_gnb_public_key,
+                      "TESLA: gNB public key not configured - required for K_0 authentication");
 
-        int sig_rc = tf5_tesla_ed25519_verify(SI_info->tesla_state->gnb_public_key,
-                                               auth_input, auth_len,
-                                               ext.gnb_signature);
-        if (sig_rc != 0) {
-          LOG_E(NR_RRC, "TESLA: Signature verification FAILED - rejecting SIB1\n");
-          return; /* Reject this SIB1 - K_0 not authenticated */
-        }
-        LOG_I(NR_RRC, "TESLA: Signature verified for interval %u\n", ext.dynamic_params.interval_index);
+          SI_info->tesla_state->auth_in_progress = true;
+          int sig_rc = tf5_tesla_ed25519_verify(SI_info->tesla_state->gnb_public_key,
+                                                 auth_input, auth_len,
+                                                 ext.gnb_signature);
+          SI_info->tesla_state->auth_in_progress = false;
 
-        /* 2. NOW accept K_0: Initialize UE state with static params after signature verification
-         * RFC 4082 Section 3.3: K_0 must be authenticated before use */
-        if (!SI_info->tesla_state->initialized) {
-          memcpy(&SI_info->tesla_state->static_params, &ext.static_params, sizeof(tf5_tesla_static_params_t));
-          SI_info->tesla_state->initialized = true;
-          LOG_I(NR_RRC, "TESLA: Initialized UE state with authenticated K_0 (root commitment)\n");
-        }
+          if (sig_rc == 0) {
+            /* Success: Accept K_0 and mark authenticated */
+            memcpy(&SI_info->tesla_state->static_params, &ext.static_params, sizeof(tf5_tesla_static_params_t));
+            SI_info->tesla_state->k0_trusted = true;
+            SI_info->tesla_state->sib1_authenticated = true;
+            SI_info->tesla_state->params_received = true;
+            LOG_I(NR_RRC, "TESLA: First-time UE - K_0 authenticated via Ed25519 (interval %u)\n",
+                  ext.dynamic_params.interval_index);
 
-        /* 3. Verify previously buffered SIB1 using disclosed key (delayed auth) */
-        if (SI_info->tesla_state->buffer.pending && ext.dynamic_params.interval_index > ext.static_params.disclosure_delay) {
-          uint32_t disclosed_interval = ext.dynamic_params.interval_index - ext.static_params.disclosure_delay;
-          if (disclosed_interval == SI_info->tesla_state->buffer.interval_index) {
-            int verify_rc = tf5_tesla_ue_verify_buffered(SI_info->tesla_state,
-                                                          ext.dynamic_params.disclosed_key,
-                                                          disclosed_interval);
-            if (verify_rc == 0) {
-              LOG_I(NR_RRC, "TESLA: Buffered SIB1 MAC verified (delayed auth) for interval %u\n", disclosed_interval);
-            } else {
-              LOG_W(NR_RRC, "TESLA: Buffered SIB1 MAC verification failed\n");
+            /* If RRCSetupComplete was deferred, send it now */
+            if (SI_info->tesla_state->rrcsetup_deferred) {
+              LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
+              rrc_ue_generate_RRCSetupComplete(rrc, SI_info->tesla_state->rrcsetup_transaction_id);
+              SI_info->tesla_state->rrcsetup_deferred = false;
             }
-            SI_info->tesla_state->buffer.pending = false;
+          } else {
+            /* FAILED: Mark for RRC abort */
+            SI_info->tesla_state->auth_failed = true;
+            LOG_E(NR_RRC, "TESLA: Signature verification FAILED - aborting RRC\n");
+            nr_rrc_abort_connection(rrc, gNB_index);
+            return;
+          }
+
+        } else {
+          /* === RETURNING UE: TESLA MAC verification (delayed) === */
+          LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
+
+          /* Mark auth in progress until TESLA MAC is verified */
+          if (!SI_info->tesla_state->sib1_authenticated) {
+            SI_info->tesla_state->auth_in_progress = true;
+          }
+
+          /* Check if we can verify buffered SIB1 with newly disclosed key */
+          if (SI_info->tesla_state->buffer.pending &&
+              ext.dynamic_params.interval_index > ext.static_params.disclosure_delay) {
+            uint32_t disclosed_interval = ext.dynamic_params.interval_index - ext.static_params.disclosure_delay;
+            if (disclosed_interval == SI_info->tesla_state->buffer.interval_index) {
+              int verify_rc = tf5_tesla_ue_verify_buffered(SI_info->tesla_state,
+                                                            ext.dynamic_params.disclosed_key,
+                                                            disclosed_interval);
+              SI_info->tesla_state->auth_in_progress = false;
+
+              if (verify_rc == 0) {
+                SI_info->tesla_state->sib1_authenticated = true;
+                SI_info->tesla_state->buffer.pending = false;
+                LOG_I(NR_RRC, "TESLA: Returning UE - SIB1 MAC verified (interval %u)\n", disclosed_interval);
+
+                /* If RRCSetupComplete was deferred, send it now */
+                if (SI_info->tesla_state->rrcsetup_deferred) {
+                  LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
+                  rrc_ue_generate_RRCSetupComplete(rrc, SI_info->tesla_state->rrcsetup_transaction_id);
+                  SI_info->tesla_state->rrcsetup_deferred = false;
+                }
+              } else {
+                /* TESLA MAC verification failed - abort */
+                SI_info->tesla_state->auth_failed = true;
+                SI_info->tesla_state->buffer.pending = false;
+                LOG_E(NR_RRC, "TESLA: MAC verification FAILED (rc=%d) - aborting RRC\n", verify_rc);
+                nr_rrc_abort_connection(rrc, gNB_index);
+                return;
+              }
+            }
           }
         }
 
-        /* 4. Buffer current SIB1 for TESLA delayed verification
-         * Note: rx_sfn/rx_slot would ideally come from PHY layer timing
-         * For now, we use the SIB1's ti_sfn/ti_slot as approximation
-         * ti_hfn comes from the signed extension (trusted) */
+        /* Buffer current SIB1 for TESLA delayed verification (both UE types) */
         tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
                                   auth_input, auth_len,
                                   ext.dynamic_params.interval_index,
@@ -576,6 +617,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                   ext.dynamic_params.ti_hfn,
                                   ext.dynamic_params.ti_sfn,
                                   ext.dynamic_params.ti_slot);
+        /* Reset sib1_authenticated for next SIB1 (will be set again upon verification) */
+        SI_info->tesla_state->sib1_authenticated = false;
       } else {
         LOG_E(NR_RRC, "TESLA: Failed to re-encode SIB1 for auth input\n");
       }
@@ -906,7 +949,7 @@ static void nr_rrc_process_reconfiguration_v1530(NR_UE_RRC_INST_t *rrc, NR_RRCRe
       SEQUENCE_free(&asn_DEF_NR_SIB1, sib1, 1);
     } else {
       // mac layer will free sib1
-      nr_rrc_process_sib1(rrc, SI_info, sib1);
+      nr_rrc_process_sib1(rrc, SI_info, sib1, gNB_index);
     }
   }
   if (rec_1530->dedicatedSystemInformationDelivery) {
@@ -1751,7 +1794,7 @@ static void nr_rrc_ue_decode_NR_BCCH_DL_SCH_Message(NR_UE_RRC_INST_t *rrc,
   if (bcch_message->message.present == NR_BCCH_DL_SCH_MessageType_PR_c1) {
     switch (bcch_message->message.choice.c1->present) {
       case NR_BCCH_DL_SCH_MessageType__c1_PR_systemInformationBlockType1:
-        nr_rrc_process_sib1(rrc, SI_info, bcch_message->message.choice.c1->choice.systemInformationBlockType1);
+        nr_rrc_process_sib1(rrc, SI_info, bcch_message->message.choice.c1->choice.systemInformationBlockType1, gNB_index);
         // mac layer will free after usage the sib1
         bcch_message->message.choice.c1->choice.systemInformationBlockType1 = NULL;
         break;
@@ -1956,6 +1999,55 @@ static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const 
   nr_pdcp_data_req_srb(rrc->ue_id, srb_id, 0, size, buffer, deliver_pdu_srb_rlc, NULL);
 }
 
+#ifdef TF5_ENABLE_TESLA
+/**
+ * Abort RRC connection due to TESLA authentication failure
+ *
+ * This function is called when SIB1 authentication fails (either Ed25519 signature
+ * verification for first-time UE or TESLA MAC verification for returning UE).
+ * It resets the RRC state to IDLE and stops any ongoing RACH procedure.
+ */
+static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
+{
+  LOG_E(NR_RRC, "[UE %ld] TESLA: Aborting RRC connection due to authentication failure\n", rrc->ue_id);
+
+  NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
+
+  /* Stop SIB1 timer */
+  nr_timer_stop(&SI_info->sib1_timer);
+
+  /* Stop any running timers (T300, T301, etc.) */
+  NR_UE_Timers_Constants_t *timers = &rrc->timers_and_constants;
+  nr_timer_stop(&timers->T300);
+  nr_timer_stop(&timers->T301);
+  nr_timer_stop(&timers->T319);
+
+  /* Reset RRC state to IDLE */
+  rrc->nrRrcState = RRC_STATE_IDLE_NR;
+  rrc->ra_trigger = RA_NOT_RUNNING;
+
+  /* Clear RNTI */
+  rrc->rnti = 0;
+
+  /* Reset MAC and release the default MAC Cell Group configuration */
+  NR_UE_MAC_reset_cause_t cause = GO_TO_IDLE;
+  nr_mac_rrc_message_t rrc_msg = {0};
+  rrc_msg.payload_type = NR_MAC_RRC_CONFIG_RESET;
+  rrc_msg.payload.config_reset.cause = cause;
+  nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
+
+  /* Clear TESLA pending state */
+  if (SI_info->tesla_state) {
+    SI_info->tesla_state->rrcsetup_deferred = false;
+    SI_info->tesla_state->auth_in_progress = false;
+    SI_info->tesla_state->sib1_authenticated = false;
+    /* Note: k0_trusted and auth_failed are preserved for diagnosis */
+  }
+
+  LOG_W(NR_RRC, "[UE %ld] TESLA: Connection aborted - UE returns to IDLE\n", rrc->ue_id);
+}
+#endif
+
 static void nr_rrc_rrcsetup_fallback(NR_UE_RRC_INST_t *rrc)
 {
   LOG_W(NR_RRC,
@@ -2045,7 +2137,38 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
   // resetting the RA trigger state after receiving MSG4 with RRCSetup
   rrc->ra_trigger = RA_NOT_RUNNING;
 
-  // set the content of RRCSetupComplete message
+#ifdef TF5_ENABLE_TESLA
+  /* NAS Gating: Check TESLA authentication status before sending NAS (SUCI protection)
+   * Security: NAS Registration Request must NOT be sent until SIB1 is authenticated */
+  {
+    const int gNB_index = 0;  /* Initial access is always to gNB 0 */
+    NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
+
+    if (SI_info->tesla_state) {
+      if (SI_info->tesla_state->auth_failed) {
+        /* Authentication already failed - abort RRC (should not reach here normally) */
+        LOG_E(NR_RRC, "TESLA: Auth failed but RRCSetup received - aborting\n");
+        nr_rrc_abort_connection(rrc, gNB_index);
+        return;
+      }
+
+      if (SI_info->tesla_state->sib1_authenticated || SI_info->tesla_state->k0_trusted) {
+        /* Authentication succeeded - proceed with NAS in RRCSetupComplete */
+        LOG_I(NR_RRC, "TESLA: SIB1 authenticated - including NAS in RRCSetupComplete\n");
+        rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
+        return;
+      }
+
+      /* Authentication still in progress - defer RRCSetupComplete */
+      LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete until verified\n");
+      SI_info->tesla_state->rrcsetup_deferred = true;
+      SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
+      return;
+    }
+  }
+#endif
+
+  // set the content of RRCSetupComplete message (TESLA disabled or no tesla_state)
   // TODO procedues described in 5.3.3.4 seems more complex than what we actualy do
   rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
 }

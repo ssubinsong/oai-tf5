@@ -171,6 +171,18 @@ typedef struct {
 
     // Initialization flag
     bool     initialized;
+
+    // Parallel authentication state (for NAS gating)
+    bool     k0_trusted;              // K_0 authenticated via Ed25519 (persistent across SIB1s)
+    bool     sib1_authenticated;      // Current SIB1 verified (sig OR tesla)
+    bool     auth_in_progress;        // Authentication running in parallel with RACH
+    bool     auth_failed;             // Authentication failed - must abort RRC
+    bool     nas_pending;             // NAS waiting for authentication to complete
+    uint64_t auth_start_time;         // When authentication started (ms, for timeout)
+
+    // Deferred RRCSetupComplete (when auth is pending at RRCSetup time)
+    bool     rrcsetup_deferred;       // RRCSetupComplete deferred waiting for auth
+    uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete
 } tf5_tesla_ue_state_t;
 
 /*
