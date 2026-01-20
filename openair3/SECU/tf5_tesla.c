@@ -591,20 +591,10 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
     } else {
         // Update HFN based on SFN wraparound detection
         tf5_tesla_update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
-
-        // Sanity check: received ti_hfn should match our tracking
-        // Allow ±1 HFN for minor clock drift
-        int16_t hfn_diff = (int16_t)ref_hfn - (int16_t)state->current_hfn;
-        if (hfn_diff < -1 || hfn_diff > 1) {
-            LOG_W(NR_RRC, "TESLA: HFN mismatch - tracked %u, received %u (possible replay)\n",
-                  state->current_hfn, ref_hfn);
-            // Potential replay from old HFN cycle - treat as unsafe
-            return false;
-        }
     }
 
-    // Compute interval using the signed ti_hfn as reference
-    uint32_t x = tf5_tesla_get_interval_index(ref_hfn, rx_sfn, rx_slot,
+    // Compute interval using UE's internally-tracked HFN
+    uint32_t x = tf5_tesla_get_interval_index(state->current_hfn, rx_sfn, rx_slot,
                                               ext->static_params.t0_hfn,
                                               ext->static_params.t0_sfn,
                                               ext->static_params.t0_slot,

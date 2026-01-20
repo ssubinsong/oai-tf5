@@ -618,16 +618,23 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           }
         }
 
-        /* Buffer current SIB1 for TESLA delayed verification (both UE types) */
-        tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
-                                  auth_input, auth_len,
-                                  ext.dynamic_params.interval_index,
-                                  ext.tesla_tag,
-                                  ext.dynamic_params.ti_hfn,
-                                  ext.dynamic_params.ti_sfn,
-                                  ext.dynamic_params.ti_slot);
-        /* Reset sib1_authenticated for next SIB1 (will be set again upon verification) */
-        SI_info->tesla_state->sib1_authenticated = false;
+        /* Safe packet test: reject if message could have been forged with disclosed key */
+        if (!tf5_tesla_ue_safe_packet_test(SI_info->tesla_state, &ext,
+                                            ext.dynamic_params.ti_sfn,
+                                            ext.dynamic_params.ti_slot)) {
+          LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
+        } else {
+          /* Buffer current SIB1 for TESLA delayed verification (both UE types) */
+          tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
+                                    auth_input, auth_len,
+                                    ext.dynamic_params.interval_index,
+                                    ext.tesla_tag,
+                                    ext.dynamic_params.ti_hfn,
+                                    ext.dynamic_params.ti_sfn,
+                                    ext.dynamic_params.ti_slot);
+          /* Reset sib1_authenticated for next SIB1 (will be set again upon verification) */
+          SI_info->tesla_state->sib1_authenticated = false;
+        }
       } else {
         LOG_E(NR_RRC, "TESLA: Failed to re-encode SIB1 for auth input\n");
       }

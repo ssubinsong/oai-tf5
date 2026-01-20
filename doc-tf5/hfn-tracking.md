@@ -50,17 +50,13 @@ static inline void tf5_tesla_update_hfn(uint16_t *hfn,
 
 1. The Ed25519 signature covers ti_hfn, making it trustworthy
 2. **First SIB1**: UE bootstraps HFN from signed extension
-3. **Subsequent SIB1s**: UE tracks HFN locally and compares (±1 tolerance)
+3. **Subsequent SIB1s**: UE tracks HFN locally via SFN wraparound detection
 
 ```c
 // First reception
 state->current_hfn = ext->dynamic_params.ti_hfn;
 state->hfn_initialized = true;
 
-// Subsequent receptions
-int16_t hfn_diff = (int16_t)received_hfn - (int16_t)state->current_hfn;
-if (hfn_diff < -1 || hfn_diff > 1) {
-    // HFN mismatch - possible replay from old SFN cycle
-    return false;
-}
+// Subsequent receptions - update HFN based on SFN wraparound
+tf5_tesla_update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
 ```

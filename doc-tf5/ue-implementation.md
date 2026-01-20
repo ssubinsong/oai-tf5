@@ -130,7 +130,9 @@ typedef struct {
        └── auth_failed = true
        └── nr_rrc_abort_connection() → return
 
-4. Buffer current SIB1 for future TESLA verification
+4. Safe packet test: tf5_tesla_ue_safe_packet_test()
+   └── FAILED: Skip buffering (possible replay attack)
+   └── PASSED: Buffer current SIB1 for future TESLA verification
 ```
 
 ### Returning UE (k0_trusted == true)
@@ -150,7 +152,9 @@ typedef struct {
            └── nr_rrc_abort_connection() → return
    └── If no key yet: auth_in_progress = true (keep waiting)
 
-4. Buffer current SIB1 for future TESLA verification
+4. Safe packet test: tf5_tesla_ue_safe_packet_test()
+   └── FAILED: Skip buffering (possible replay attack)
+   └── PASSED: Buffer current SIB1 for future TESLA verification
 ```
 
 ---
@@ -214,19 +218,17 @@ bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
     // Get ti_hfn from signed extension (trusted)
     uint16_t ref_hfn = ext->dynamic_params.ti_hfn;
 
-    // Initialize or verify HFN tracking
+    // Initialize or update HFN tracking
     if (!state->hfn_initialized) {
         state->current_hfn = ref_hfn;  // Bootstrap
         state->hfn_initialized = true;
     } else {
-        // Check for HFN mismatch (potential replay)
-        if (abs(ref_hfn - state->current_hfn) > 1) {
-            return false;  // Possible replay attack
-        }
+        // Update HFN based on SFN wraparound detection
+        update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
     }
 
-    // Compute current interval
-    uint32_t x = compute_interval(ref_hfn, rx_sfn, rx_slot, ...);
+    // Compute current interval using UE's internally-tracked HFN
+    uint32_t x = compute_interval(state->current_hfn, rx_sfn, rx_slot, ...);
     uint32_t i = ext->dynamic_params.interval_index;
     uint8_t d = ext->static_params.disclosure_delay;
 
