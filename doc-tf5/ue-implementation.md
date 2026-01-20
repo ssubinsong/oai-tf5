@@ -129,10 +129,6 @@ typedef struct {
    └── FAILED:
        └── auth_failed = true
        └── nr_rrc_abort_connection() → return
-
-4. Safe packet test: tf5_tesla_ue_safe_packet_test()
-   └── FAILED: Skip buffering (possible replay attack)
-   └── PASSED: Buffer current SIB1 for future TESLA verification
 ```
 
 ### Returning UE (k0_trusted == true)
