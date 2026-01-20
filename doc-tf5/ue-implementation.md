@@ -219,17 +219,11 @@ The safe packet test determines if a message could have been forged by an attack
 
 ```c
 bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
-    // Get ti_hfn from signed extension (trusted)
-    uint16_t ref_hfn = ext->dynamic_params.ti_hfn;
+    // Precondition: HFN must already be initialized (by first authenticated SIB1)
+    DevAssert(state->hfn_initialized);
 
-    // Initialize or update HFN tracking
-    if (!state->hfn_initialized) {
-        state->current_hfn = ref_hfn;  // Bootstrap
-        state->hfn_initialized = true;
-    } else {
-        // Update HFN based on SFN wraparound detection
-        update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
-    }
+    // Update HFN based on SFN wraparound detection
+    update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
 
     // Compute current interval using UE's internally-tracked HFN
     uint32_t x = compute_interval(state->current_hfn, rx_sfn, rx_slot, ...);

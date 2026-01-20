@@ -577,21 +577,11 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
         return false;
     }
 
-    // Use ti_hfn from the signed extension as the HFN reference
-    // The Ed25519 signature guarantees ti_hfn hasn't been tampered
-    uint16_t ref_hfn = ext->dynamic_params.ti_hfn;
+    // Safe packet test requires HFN to already be initialized (by first authenticated SIB1)
+    DevAssert(state->hfn_initialized);
 
-    // Initialize or update UE's HFN tracking
-    if (!state->hfn_initialized) {
-        // First SIB1 - bootstrap HFN from signed extension
-        state->current_hfn = ref_hfn;
-        state->last_sfn = rx_sfn;
-        state->hfn_initialized = true;
-        LOG_I(NR_RRC, "TESLA: Initialized HFN tracking from signed extension (HFN=%u)\n", ref_hfn);
-    } else {
-        // Update HFN based on SFN wraparound detection
-        tf5_tesla_update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
-    }
+    // Update HFN based on SFN wraparound detection
+    tf5_tesla_update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
 
     // Compute interval using UE's internally-tracked HFN
     uint32_t x = tf5_tesla_get_interval_index(state->current_hfn, rx_sfn, rx_slot,
