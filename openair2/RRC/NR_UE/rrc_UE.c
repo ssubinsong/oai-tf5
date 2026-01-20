@@ -578,6 +578,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
         } else {
           /* === RETURNING UE: TESLA MAC verification (delayed) === */
+          /* Per RFC 4082 Section 3.5: Safe packet test MUST be Step 1, before buffering or MAC verification */
           LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
 
           /* Mark auth in progress until TESLA MAC is verified */
@@ -585,45 +586,14 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             SI_info->tesla_state->auth_in_progress = true;
           }
 
-          /* Check if we can verify buffered SIB1 with newly disclosed key */
-          if (SI_info->tesla_state->buffer.pending &&
-              ext.dynamic_params.interval_index > ext.static_params.disclosure_delay) {
-            uint32_t disclosed_interval = ext.dynamic_params.interval_index - ext.static_params.disclosure_delay;
-            if (disclosed_interval == SI_info->tesla_state->buffer.interval_index) {
-              int verify_rc = tf5_tesla_ue_verify_buffered(SI_info->tesla_state,
-                                                            ext.dynamic_params.disclosed_key,
-                                                            disclosed_interval);
-              SI_info->tesla_state->auth_in_progress = false;
-
-              if (verify_rc == 0) {
-                SI_info->tesla_state->sib1_authenticated = true;
-                SI_info->tesla_state->buffer.pending = false;
-                LOG_I(NR_RRC, "TESLA: Returning UE - SIB1 MAC verified (interval %u)\n", disclosed_interval);
-
-                /* If RRCSetupComplete was deferred, send it now */
-                if (SI_info->tesla_state->rrcsetup_deferred) {
-                  LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
-                  rrc_ue_generate_RRCSetupComplete(rrc, SI_info->tesla_state->rrcsetup_transaction_id);
-                  SI_info->tesla_state->rrcsetup_deferred = false;
-                }
-              } else {
-                /* TESLA MAC verification failed - abort */
-                SI_info->tesla_state->auth_failed = true;
-                SI_info->tesla_state->buffer.pending = false;
-                LOG_E(NR_RRC, "TESLA: MAC verification FAILED (rc=%d) - aborting RRC\n", verify_rc);
-                nr_rrc_abort_connection(rrc, gNB_index);
-                return;
-              }
-            }
-          }
-
-          /* Safe packet test: reject if message could have been forged with disclosed key */
+          /* Step 1 (RFC 4082): Safe packet test FIRST - reject if message could have been forged */
           if (!tf5_tesla_ue_safe_packet_test(SI_info->tesla_state, &ext,
                                               ext.dynamic_params.ti_sfn,
                                               ext.dynamic_params.ti_slot)) {
             LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
+            /* Skip this SIB1 entirely - do not buffer, do not process further */
           } else {
-            /* Buffer current SIB1 for TESLA delayed verification */
+            /* Step 2: Buffer current SIB1 for future TESLA verification */
             tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
                                       auth_input, auth_len,
                                       ext.dynamic_params.interval_index,
@@ -633,6 +603,38 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                       ext.dynamic_params.ti_slot);
             /* Reset sib1_authenticated for next SIB1 (will be set again upon verification) */
             SI_info->tesla_state->sib1_authenticated = false;
+
+            /* Step 3 (RFC 4082): Check if disclosed key available for PREVIOUSLY buffered SIB1 */
+            if (SI_info->tesla_state->buffer.pending &&
+                ext.dynamic_params.interval_index > ext.static_params.disclosure_delay) {
+              uint32_t disclosed_interval = ext.dynamic_params.interval_index - ext.static_params.disclosure_delay;
+              if (disclosed_interval == SI_info->tesla_state->buffer.interval_index) {
+                int verify_rc = tf5_tesla_ue_verify_buffered(SI_info->tesla_state,
+                                                              ext.dynamic_params.disclosed_key,
+                                                              disclosed_interval);
+                SI_info->tesla_state->auth_in_progress = false;
+
+                if (verify_rc == 0) {
+                  SI_info->tesla_state->sib1_authenticated = true;
+                  SI_info->tesla_state->buffer.pending = false;
+                  LOG_I(NR_RRC, "TESLA: Returning UE - SIB1 MAC verified (interval %u)\n", disclosed_interval);
+
+                  /* If RRCSetupComplete was deferred, send it now */
+                  if (SI_info->tesla_state->rrcsetup_deferred) {
+                    LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
+                    rrc_ue_generate_RRCSetupComplete(rrc, SI_info->tesla_state->rrcsetup_transaction_id);
+                    SI_info->tesla_state->rrcsetup_deferred = false;
+                  }
+                } else {
+                  /* TESLA MAC verification failed - abort */
+                  SI_info->tesla_state->auth_failed = true;
+                  SI_info->tesla_state->buffer.pending = false;
+                  LOG_E(NR_RRC, "TESLA: MAC verification FAILED (rc=%d) - aborting RRC\n", verify_rc);
+                  nr_rrc_abort_connection(rrc, gNB_index);
+                  return;
+                }
+              }
+            }
           }
         }
       } else {

@@ -132,15 +132,25 @@ flowchart TB
 
 ### Returning UE (k0_trusted == true)
 
+Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before buffering or MAC verification.
+
 ```
 1. Unpack TESLA extension from lateNonCriticalExtension
 
-2. Build auth_input for MAC verification
+2. Safe packet test: tf5_tesla_ue_safe_packet_test()
+   └── FAILED: Skip this SIB1 (possible replay attack) → return
+   └── PASSED: Continue to step 3
+
+3. Build auth_input for MAC verification
    └── Re-encode SIB1 (without lateNonCriticalExtension)
    └── tf5_tesla_build_auth_input(sib1, static_params, dynamic_params)
        (includes SIB1 + TESLA params, excludes signature/MAC)
 
-3. Check if disclosed key available for buffered SIB1
+4. Buffer current SIB1 for future TESLA verification
+   └── tf5_tesla_ue_buffer_sib1()
+   └── sib1_authenticated = false (until verified)
+
+5. Check if disclosed key available for PREVIOUSLY buffered SIB1
    └── If interval matches: tf5_tesla_ue_verify_buffered()
        ├── SUCCESS:
        │   └── sib1_authenticated = true
@@ -149,10 +159,6 @@ flowchart TB
            └── auth_failed = true
            └── nr_rrc_abort_connection() → return
    └── If no key yet: auth_in_progress = true (keep waiting)
-
-4. Safe packet test: tf5_tesla_ue_safe_packet_test()
-   └── FAILED: Skip buffering (possible replay attack)
-   └── PASSED: Buffer current SIB1 for future TESLA verification
 ```
 
 ---
