@@ -29,38 +29,42 @@ typedef struct {
 
 ---
 
-## Dynamic Parameters (26 bytes)
+## Time Synchronization Info (6 bytes)
 
 **Source**: [tf5_tesla.h:83-89](../openair3/SECU/tf5_tesla.h#L83-L89)
 
-Parameters that change with each SIB1 transmission:
+Timing information for UE-gNB time synchronization:
 
 ```c
 typedef struct {
-    uint32_t interval_index;       // 4B - Current interval i
     uint16_t ti_hfn;               // 2B - HFN when SIB1 sent
     uint16_t ti_sfn;               // 2B - SFN when SIB1 sent
     uint16_t ti_slot;              // 2B - Slot when SIB1 sent
-    uint8_t  disclosed_key[16];    // 16B - K_{i-d}
-} tf5_tesla_dynamic_params_t;
+} tf5_tesla_timesync_info_t;
 ```
 
 ---
 
 ## TESLA Extension (136 bytes)
 
-**Source**: [tf5_tesla.h:98-103](../openair3/SECU/tf5_tesla.h#L98-L103)
+**Source**: [tf5_tesla.h:91-103](../openair3/SECU/tf5_tesla.h#L91-L103)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
 ```c
 typedef struct {
-    tf5_tesla_static_params_t  static_params;  // 30B
-    tf5_tesla_dynamic_params_t dynamic_params; // 26B
-    uint8_t  gnb_signature[64];                // 64B - Ed25519 signature
-    uint8_t  tesla_tag[16];                    // 16B - HMAC tag
+    tf5_tesla_static_params_t   static_params;   // 30B
+    tf5_tesla_timesync_info_t   timesync_info;   // 6B
+    uint32_t                    interval_index;  // 4B - Current interval i
+    uint8_t                     disclosed_key[16]; // 16B - K_{i-d}
+    uint8_t  gnb_signature[64];                  // 64B - Ed25519 signature
+    uint8_t  tesla_tag[16];                      // 16B - HMAC tag
 } tf5_tesla_extension_t;
 ```
+
+**Authentication Coverage**:
+- **Signature**: SIB1 || static_params || timesync_info || interval_index || disclosed_key
+- **MAC**: SIB1 || static_params || timesync_info (per RFC 4082)
 
 **Binary Wire Format** (136 bytes, big-endian):
 ```
@@ -76,13 +80,13 @@ Offset  Size  Field
 24      2     t0_sfn
 26      2     t0_slot
 28      4     chain_len
-32      4     interval_index
-36      2     ti_hfn
-38      2     ti_sfn
-40      2     ti_slot
-42      16    disclosed_key
-58      64    gnb_signature
-122     16    tesla_tag
+30      2     ti_hfn
+32      2     ti_sfn
+34      2     ti_slot
+36      4     interval_index
+40      16    disclosed_key
+56      64    gnb_signature
+120     16    tesla_tag
 ------
 136 bytes total
 ```

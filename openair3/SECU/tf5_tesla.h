@@ -75,31 +75,35 @@ typedef struct {
 } tf5_tesla_static_params_t;
 
 /*
- * TESLA Dynamic Parameters
+ * TESLA Time Synchronization Info
  *
- * These parameters change with each SIB1 transmission.
- * Total size: 26 bytes
+ * Contains timing information for UE-gNB time synchronization.
+ * Total size: 6 bytes
  */
 typedef struct {
-    uint32_t interval_index;       // 4B - Current interval i
     uint16_t ti_hfn;               // 2B - HFN when this SIB1 sent (for SFN wraparound)
     uint16_t ti_sfn;               // 2B - SFN when this SIB1 sent
     uint16_t ti_slot;              // 2B - slot when this SIB1 sent
-    uint8_t  disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
-} tf5_tesla_dynamic_params_t;
+} tf5_tesla_timesync_info_t;
 
 /*
  * Complete TESLA Extension Payload
  *
  * This structure represents the complete TESLA data appended to SIB1
  * via lateNonCriticalExtension.
- * Total size: ~136 bytes
+ *
+ * Signature authenticates: SIB1 || static_params || timesync_info || interval_index || disclosed_key
+ * MAC authenticates:       SIB1 || static_params || timesync_info (per RFC 4082)
+ *
+ * Total size: 136 bytes
  */
 typedef struct {
-    tf5_tesla_static_params_t  static_params;      // 30B
-    tf5_tesla_dynamic_params_t dynamic_params;     // 26B
-    uint8_t  gnb_signature[TF5_TESLA_SIG_LEN];     // 64B - Ed25519 signature
-    uint8_t  tesla_tag[TF5_TESLA_TAG_LEN];         // 16B - HMAC tag
+    tf5_tesla_static_params_t  static_params;                 // 30B
+    tf5_tesla_timesync_info_t  timesync_info;                 // 6B
+    uint32_t                   interval_index;                // 4B - Current interval i
+    uint8_t                    disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
+    uint8_t                    gnb_signature[TF5_TESLA_SIG_LEN]; // 64B - Ed25519 signature
+    uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_tesla_extension_t;
 
 /*
@@ -241,25 +245,52 @@ uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
                                     uint16_t slot);
 
 /**
- * Build authentication input buffer
+ * Build MAC authentication input buffer
  *
- * Constructs the data to be signed/MAC'd:
- * original_SIB1 || static_params || dynamic_params
+ * Constructs the data to be MAC'd (per RFC 4082):
+ * original_SIB1 || static_params || timesync_info
+ *
+ * Note: interval_index and disclosed_key are NOT included in MAC input.
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
  * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
  * @param sib1_len      Length of original SIB1 data
  * @param static_params Static TESLA parameters
- * @param dynamic_params Dynamic TESLA parameters
+ * @param timesync_info Time synchronization info
  * @return 0 on success, negative on error
  */
-int tf5_tesla_build_auth_input(uint8_t *out,
-                               size_t *out_len,
-                               const uint8_t *original_sib1,
-                               size_t sib1_len,
-                               const tf5_tesla_static_params_t *static_params,
-                               const tf5_tesla_dynamic_params_t *dynamic_params);
+int tf5_tesla_build_mac_auth_input(uint8_t *out,
+                                   size_t *out_len,
+                                   const uint8_t *original_sib1,
+                                   size_t sib1_len,
+                                   const tf5_tesla_static_params_t *static_params,
+                                   const tf5_tesla_timesync_info_t *timesync_info);
+
+/**
+ * Build signature authentication input buffer
+ *
+ * Constructs the data to be signed:
+ * original_SIB1 || static_params || timesync_info || interval_index || disclosed_key
+ *
+ * @param out           Output buffer
+ * @param out_len       Output: length of data written
+ * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
+ * @param sib1_len      Length of original SIB1 data
+ * @param static_params Static TESLA parameters
+ * @param timesync_info Time synchronization info
+ * @param interval_index Current interval index
+ * @param disclosed_key Disclosed key K_{i-d}
+ * @return 0 on success, negative on error
+ */
+int tf5_tesla_build_sig_auth_input(uint8_t *out,
+                                   size_t *out_len,
+                                   const uint8_t *original_sib1,
+                                   size_t sib1_len,
+                                   const tf5_tesla_static_params_t *static_params,
+                                   const tf5_tesla_timesync_info_t *timesync_info,
+                                   uint32_t interval_index,
+                                   const uint8_t disclosed_key[TF5_TESLA_KEY_LEN]);
 
 /**
  * Update dynamic parameters and compute signature/tag

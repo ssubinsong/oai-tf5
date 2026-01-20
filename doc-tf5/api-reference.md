@@ -149,13 +149,23 @@ int tf5_tesla_load_cert_pubkey(const char *filepath, uint8_t pubkey_out[32]);
 **Source**: [tf5_tesla.h](../openair3/SECU/tf5_tesla.h), [tf5_tesla.c](../openair3/SECU/tf5_tesla.c)
 
 ```c
-// Build authentication input
-int tf5_tesla_build_auth_input(uint8_t *out,
-                               size_t *out_len,
-                               const uint8_t *original_sib1,
-                               size_t sib1_len,
-                               const tf5_tesla_static_params_t *static_params,
-                               const tf5_tesla_dynamic_params_t *dynamic_params);
+// Build MAC authentication input (excludes interval_index/disclosed_key per RFC 4082)
+int tf5_tesla_build_mac_auth_input(uint8_t *out,
+                                   size_t *out_len,
+                                   const uint8_t *original_sib1,
+                                   size_t sib1_len,
+                                   const tf5_tesla_static_params_t *static_params,
+                                   const tf5_tesla_timesync_info_t *timesync_info);
+
+// Build signature authentication input (full content)
+int tf5_tesla_build_sig_auth_input(uint8_t *out,
+                                   size_t *out_len,
+                                   const uint8_t *original_sib1,
+                                   size_t sib1_len,
+                                   const tf5_tesla_static_params_t *static_params,
+                                   const tf5_tesla_timesync_info_t *timesync_info,
+                                   uint32_t interval_index,
+                                   const uint8_t disclosed_key[16]);
 
 // Derive MAC key from TESLA key
 void tf5_tesla_derive_mac_key(const uint8_t key_in[16],

@@ -54,7 +54,7 @@ static inline void tf5_tesla_update_hfn(uint16_t *hfn,
 
 ```c
 // First reception
-state->current_hfn = ext->dynamic_params.ti_hfn;
+state->current_hfn = ext->timesync_info.ti_hfn;
 state->hfn_initialized = true;
 
 // Subsequent receptions - update HFN based on SFN wraparound

@@ -115,10 +115,10 @@ flowchart TB
 ```
 1. Unpack TESLA extension from lateNonCriticalExtension
 
-2. Build auth_input for signature verification
+2. Build signature auth_input
    └── Re-encode SIB1 (without lateNonCriticalExtension)
-   └── tf5_tesla_build_auth_input(sib1, static_params, dynamic_params)
-       (includes SIB1 + TESLA params, excludes signature/MAC)
+   └── tf5_tesla_build_sig_auth_input(sib1, static_params, timesync_info, interval_index, disclosed_key)
+       (includes full content for signature verification)
 
 3. Verify Ed25519 signature (synchronous - fast)
    └── tf5_tesla_ed25519_verify()
@@ -138,13 +138,13 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
 1. Unpack TESLA extension from lateNonCriticalExtension
 
 2. Safe packet test: tf5_tesla_ue_safe_packet_test()
-   └── FAILED: Skip this SIB1 (possible replay attack) → return
+   └── FAILED: Skip this SIB1 → return
    └── PASSED: Continue to step 3
 
-3. Build auth_input for MAC verification
+3. Build MAC auth_input (per RFC 4082, excludes interval_index and disclosed_key)
    └── Re-encode SIB1 (without lateNonCriticalExtension)
-   └── tf5_tesla_build_auth_input(sib1, static_params, dynamic_params)
-       (includes SIB1 + TESLA params, excludes signature/MAC)
+   └── tf5_tesla_build_mac_auth_input(sib1, static_params, timesync_info)
+       (excludes interval_index and disclosed_key for MAC verification)
 
 4. Buffer current SIB1 for future TESLA verification
    └── tf5_tesla_ue_buffer_sib1()
@@ -227,7 +227,7 @@ bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
 
     // Compute current interval using UE's internally-tracked HFN
     uint32_t x = compute_interval(state->current_hfn, rx_sfn, rx_slot, ...);
-    uint32_t i = ext->dynamic_params.interval_index;
+    uint32_t i = ext->interval_index;
     uint8_t d = ext->static_params.disclosure_delay;
 
     // Safe if: x < i + d

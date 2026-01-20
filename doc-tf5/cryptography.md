@@ -65,13 +65,31 @@ The tag is truncated to 128 bits (16 bytes) for efficiency.
 
 ## Authentication Input
 
-**Source**: [tf5_tesla.c:149](../openair3/SECU/tf5_tesla.c#L149) `tf5_tesla_build_auth_input()`
+The signature and MAC use different authentication inputs per RFC 4082:
 
-The data authenticated by both signature and MAC:
+### Signature Auth Input
+
+**Source**: [tf5_tesla.c:193](../openair3/SECU/tf5_tesla.c#L193) `tf5_tesla_build_sig_auth_input()`
+
 ```
-auth_input = original_SIB1 || static_params || dynamic_params
+sig_auth_input = original_SIB1 || static_params || timesync_info || interval_index || disclosed_key
 ```
 
 - **original_SIB1**: SIB1 content without TESLA extension
 - **static_params**: 30 bytes of static TESLA parameters
-- **dynamic_params**: 26 bytes of per-transmission parameters
+- **timesync_info**: 6 bytes of timing information
+- **interval_index**: 4 bytes current interval
+- **disclosed_key**: 16 bytes K_{i-d}
+
+### MAC Auth Input
+
+**Source**: [tf5_tesla.c:149](../openair3/SECU/tf5_tesla.c#L149) `tf5_tesla_build_mac_auth_input()`
+
+Per RFC 4082, the MAC does NOT include the interval index or disclosed key:
+```
+mac_auth_input = original_SIB1 || static_params || timesync_info
+```
+
+- **original_SIB1**: SIB1 content without TESLA extension
+- **static_params**: 30 bytes of static TESLA parameters
+- **timesync_info**: 6 bytes of timing information

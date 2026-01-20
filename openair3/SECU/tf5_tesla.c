@@ -146,14 +146,14 @@ uint32_t tf5_tesla_get_interval_index(uint16_t hfn,
  * =============================================================================
  */
 
-int tf5_tesla_build_auth_input(uint8_t *out,
-                               size_t *out_len,
-                               const uint8_t *original_sib1,
-                               size_t sib1_len,
-                               const tf5_tesla_static_params_t *static_params,
-                               const tf5_tesla_dynamic_params_t *dynamic_params)
+int tf5_tesla_build_mac_auth_input(uint8_t *out,
+                                   size_t *out_len,
+                                   const uint8_t *original_sib1,
+                                   size_t sib1_len,
+                                   const tf5_tesla_static_params_t *static_params,
+                                   const tf5_tesla_timesync_info_t *timesync_info)
 {
-    if (!out || !out_len || !original_sib1 || !static_params || !dynamic_params) {
+    if (!out || !out_len || !original_sib1 || !static_params || !timesync_info) {
         return -1;
     }
 
@@ -181,16 +181,47 @@ int tf5_tesla_build_auth_input(uint8_t *out,
     tf5_encode_u32_be(out + offset, static_params->chain_len);
     offset += 4;
 
-    // 3. Dynamic params (26 bytes)
-    tf5_encode_u32_be(out + offset, dynamic_params->interval_index);
+    // 3. Timesync info (6 bytes) - per RFC 4082, MAC does NOT include interval_index/disclosed_key
+    tf5_encode_u16_be(out + offset, timesync_info->ti_hfn);
+    offset += 2;
+    tf5_encode_u16_be(out + offset, timesync_info->ti_sfn);
+    offset += 2;
+    tf5_encode_u16_be(out + offset, timesync_info->ti_slot);
+    offset += 2;
+
+    *out_len = offset;
+    return 0;
+}
+
+int tf5_tesla_build_sig_auth_input(uint8_t *out,
+                                   size_t *out_len,
+                                   const uint8_t *original_sib1,
+                                   size_t sib1_len,
+                                   const tf5_tesla_static_params_t *static_params,
+                                   const tf5_tesla_timesync_info_t *timesync_info,
+                                   uint32_t interval_index,
+                                   const uint8_t disclosed_key[TF5_TESLA_KEY_LEN])
+{
+    if (!out || !out_len || !original_sib1 || !static_params || !timesync_info || !disclosed_key) {
+        return -1;
+    }
+
+    // Build MAC auth input first (SIB1 + static_params + timesync_info)
+    size_t mac_len = 0;
+    int rc = tf5_tesla_build_mac_auth_input(out, &mac_len, original_sib1, sib1_len,
+                                            static_params, timesync_info);
+    if (rc < 0) {
+        return rc;
+    }
+
+    size_t offset = mac_len;
+
+    // Append interval_index (4 bytes)
+    tf5_encode_u32_be(out + offset, interval_index);
     offset += 4;
-    tf5_encode_u16_be(out + offset, dynamic_params->ti_hfn);
-    offset += 2;
-    tf5_encode_u16_be(out + offset, dynamic_params->ti_sfn);
-    offset += 2;
-    tf5_encode_u16_be(out + offset, dynamic_params->ti_slot);
-    offset += 2;
-    memcpy(out + offset, dynamic_params->disclosed_key, TF5_TESLA_KEY_LEN);
+
+    // Append disclosed_key (16 bytes)
+    memcpy(out + offset, disclosed_key, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
     *out_len = offset;
@@ -205,7 +236,7 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
         return -1;
     }
 
-    // Total size: 30 + 26 + 64 + 16 = 136 bytes
+    // Total size: 30 + 6 + 4 + 16 + 64 + 16 = 136 bytes
     const size_t required_len = 136;
     if (buf_len < required_len) {
         return -2;
@@ -231,16 +262,20 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     tf5_encode_u32_be(buf + offset, ext->static_params.chain_len);
     offset += 4;
 
-    // Dynamic params (26 bytes)
-    tf5_encode_u32_be(buf + offset, ext->dynamic_params.interval_index);
+    // Timesync info (6 bytes)
+    tf5_encode_u16_be(buf + offset, ext->timesync_info.ti_hfn);
+    offset += 2;
+    tf5_encode_u16_be(buf + offset, ext->timesync_info.ti_sfn);
+    offset += 2;
+    tf5_encode_u16_be(buf + offset, ext->timesync_info.ti_slot);
+    offset += 2;
+
+    // Interval index (4 bytes)
+    tf5_encode_u32_be(buf + offset, ext->interval_index);
     offset += 4;
-    tf5_encode_u16_be(buf + offset, ext->dynamic_params.ti_hfn);
-    offset += 2;
-    tf5_encode_u16_be(buf + offset, ext->dynamic_params.ti_sfn);
-    offset += 2;
-    tf5_encode_u16_be(buf + offset, ext->dynamic_params.ti_slot);
-    offset += 2;
-    memcpy(buf + offset, ext->dynamic_params.disclosed_key, TF5_TESLA_KEY_LEN);
+
+    // Disclosed key (16 bytes)
+    memcpy(buf + offset, ext->disclosed_key, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
     // Signature (64 bytes)
@@ -287,16 +322,20 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     ext->static_params.chain_len = tf5_decode_u32_be(buf + offset);
     offset += 4;
 
-    // Dynamic params (26 bytes)
-    ext->dynamic_params.interval_index = tf5_decode_u32_be(buf + offset);
+    // Timesync info (6 bytes)
+    ext->timesync_info.ti_hfn = tf5_decode_u16_be(buf + offset);
+    offset += 2;
+    ext->timesync_info.ti_sfn = tf5_decode_u16_be(buf + offset);
+    offset += 2;
+    ext->timesync_info.ti_slot = tf5_decode_u16_be(buf + offset);
+    offset += 2;
+
+    // Interval index (4 bytes)
+    ext->interval_index = tf5_decode_u32_be(buf + offset);
     offset += 4;
-    ext->dynamic_params.ti_hfn = tf5_decode_u16_be(buf + offset);
-    offset += 2;
-    ext->dynamic_params.ti_sfn = tf5_decode_u16_be(buf + offset);
-    offset += 2;
-    ext->dynamic_params.ti_slot = tf5_decode_u16_be(buf + offset);
-    offset += 2;
-    memcpy(ext->dynamic_params.disclosed_key, buf + offset, TF5_TESLA_KEY_LEN);
+
+    // Disclosed key (16 bytes)
+    memcpy(ext->disclosed_key, buf + offset, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
     // Signature (64 bytes)
@@ -446,53 +485,69 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
     // Copy static params
     memcpy(&ext->static_params, &state->params, sizeof(state->params));
 
-    // Set dynamic params
-    ext->dynamic_params.interval_index = interval;
-    ext->dynamic_params.ti_hfn = state->current_hfn;
-    ext->dynamic_params.ti_sfn = sfn;
-    ext->dynamic_params.ti_slot = slot;
+    // Set timesync info
+    ext->timesync_info.ti_hfn = state->current_hfn;
+    ext->timesync_info.ti_sfn = sfn;
+    ext->timesync_info.ti_slot = slot;
+
+    // Set interval index
+    ext->interval_index = interval;
 
     // Set disclosed key K_{i-d}
     uint8_t disclosure_delay = state->params.disclosure_delay;
     if (interval >= disclosure_delay) {
         uint32_t disclosed_idx = interval - disclosure_delay;
-        memcpy(ext->dynamic_params.disclosed_key,
+        memcpy(ext->disclosed_key,
                state->key_chain[disclosed_idx],
                TF5_TESLA_KEY_LEN);
     } else {
         // Not enough intervals have passed to disclose a key
         // Use zeros as placeholder
-        memset(ext->dynamic_params.disclosed_key, 0, TF5_TESLA_KEY_LEN);
+        memset(ext->disclosed_key, 0, TF5_TESLA_KEY_LEN);
     }
 
-    // Build auth input (SIB1 + static + dynamic)
-    uint8_t auth_input[TF5_TESLA_MAX_AUTH_INPUT];
-    size_t auth_input_len;
-    int rc = tf5_tesla_build_auth_input(auth_input, &auth_input_len,
-                                        original_sib1, sib1_len,
-                                        &ext->static_params,
-                                        &ext->dynamic_params);
+    // Build signature auth input (SIB1 + static + timesync + interval + key)
+    uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
+    size_t sig_auth_input_len;
+    int rc = tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_input_len,
+                                            original_sib1, sib1_len,
+                                            &ext->static_params,
+                                            &ext->timesync_info,
+                                            ext->interval_index,
+                                            ext->disclosed_key);
     if (rc != 0) {
-        LOG_E(NR_RRC, "TESLA: Failed to build auth input\n");
+        LOG_E(NR_RRC, "TESLA: Failed to build signature auth input\n");
         return -3;
     }
 
-    // Compute Ed25519 signature
+    // Compute Ed25519 signature over full content
     rc = tf5_tesla_ed25519_sign(state->gnb_private_key,
-                                auth_input, auth_input_len,
+                                sig_auth_input, sig_auth_input_len,
                                 ext->gnb_signature);
     if (rc != 0) {
         LOG_E(NR_RRC, "TESLA: Failed to compute signature\n");
         return -4;
     }
 
+    // Build MAC auth input (SIB1 + static + timesync, excludes interval/key per RFC 4082)
+    uint8_t mac_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
+    size_t mac_auth_input_len;
+    rc = tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
+                                        original_sib1, sib1_len,
+                                        &ext->static_params,
+                                        &ext->timesync_info);
+    if (rc != 0) {
+        LOG_E(NR_RRC, "TESLA: Failed to build MAC auth input\n");
+        return -5;
+    }
+
     // Compute TESLA tag using K_i
     rc = tf5_tesla_compute_tag(state->key_chain[interval],
-                               auth_input, auth_input_len,
+                               mac_auth_input, mac_auth_input_len,
                                ext->tesla_tag);
     if (rc != 0) {
         LOG_E(NR_RRC, "TESLA: Failed to compute tag\n");
-        return -5;
+        return -6;
     }
 
     state->current_interval = interval;
@@ -593,7 +648,7 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
 
     // Safe if: x < i + d
     // This means the sender hasn't yet disclosed K_i
-    uint32_t i = ext->dynamic_params.interval_index;
+    uint32_t i = ext->interval_index;
     uint8_t d = ext->static_params.disclosure_delay;
 
     bool safe = (x < i + d);

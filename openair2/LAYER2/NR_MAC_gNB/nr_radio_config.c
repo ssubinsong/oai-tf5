@@ -4435,6 +4435,6 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
   }
 
   LOG_D(NR_MAC, "TESLA: Updated SIB1 for frame %d slot %d (interval %u, len=%d)\n",
-        frame, slot, ext.dynamic_params.interval_index, cc->sib1_bcch_length);
+        frame, slot, ext.interval_index, cc->sib1_bcch_length);
 }
 #endif /* TF5_ENABLE_TESLA */
