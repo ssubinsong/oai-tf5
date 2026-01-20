@@ -1153,6 +1153,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
                             1,      // d = 1 (disclosure delay)
                             65536,  // chain length (~21 minutes)
                             private_key,
+                            0,      // T_0 HFN = 0 (initial Hyper-Frame Number)
                             0,      // T_0 SFN = 0 (will be updated on first TX)
                             0,      // T_0 slot = 0
                             slots_per_frame);

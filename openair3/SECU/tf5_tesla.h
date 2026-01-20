@@ -59,7 +59,7 @@
  * TESLA Static Parameters
  *
  * These parameters are constant for the lifetime of a key chain.
- * Total size: 28 bytes
+ * Total size: 30 bytes
  */
 typedef struct {
     uint8_t  te_version;           // 1B - Protocol version
@@ -68,6 +68,7 @@ typedef struct {
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay d (e.g., 1)
     uint8_t  key_len;              // 1B - TESLA key length (16)
     uint8_t  root_key[TF5_TESLA_KEY_LEN]; // 16B - K_0 chain commitment
+    uint16_t t0_hfn;               // 2B - HFN at interval 0 start (for SFN wraparound)
     uint16_t t0_sfn;               // 2B - SFN of interval 0 start (PHY timing)
     uint16_t t0_slot;              // 2B - slot of interval 0 start (PHY timing)
     uint32_t chain_len;            // 4B - Number of intervals N
@@ -77,10 +78,11 @@ typedef struct {
  * TESLA Dynamic Parameters
  *
  * These parameters change with each SIB1 transmission.
- * Total size: 24 bytes
+ * Total size: 26 bytes
  */
 typedef struct {
     uint32_t interval_index;       // 4B - Current interval i
+    uint16_t ti_hfn;               // 2B - HFN when this SIB1 sent (for SFN wraparound)
     uint16_t ti_sfn;               // 2B - SFN when this SIB1 sent
     uint16_t ti_slot;              // 2B - slot when this SIB1 sent
     uint8_t  disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
@@ -91,11 +93,11 @@ typedef struct {
  *
  * This structure represents the complete TESLA data appended to SIB1
  * via lateNonCriticalExtension.
- * Total size: ~132 bytes
+ * Total size: ~136 bytes
  */
 typedef struct {
-    tf5_tesla_static_params_t  static_params;      // 28B
-    tf5_tesla_dynamic_params_t dynamic_params;     // 24B
+    tf5_tesla_static_params_t  static_params;      // 30B
+    tf5_tesla_dynamic_params_t dynamic_params;     // 26B
     uint8_t  gnb_signature[TF5_TESLA_SIG_LEN];     // 64B - Ed25519 signature
     uint8_t  tesla_tag[TF5_TESLA_TAG_LEN];         // 16B - HMAC tag
 } tf5_tesla_extension_t;
@@ -114,6 +116,10 @@ typedef struct {
 
     // Current state
     uint32_t current_interval;
+
+    // HFN tracking (for SFN wraparound handling)
+    uint16_t current_hfn;         // Current Hyper-Frame Number
+    uint16_t last_sfn;            // Last seen SFN (to detect wraparound)
 
     // Ed25519 keys
     uint8_t  gnb_private_key[32];
@@ -143,12 +149,17 @@ typedef struct {
     uint32_t last_verified_key_idx;  // Index of last verified key
     uint8_t  last_verified_key[TF5_TESLA_KEY_LEN];
 
+    // HFN tracking (for SFN wraparound handling)
+    uint16_t current_hfn;         // Current Hyper-Frame Number
+    uint16_t last_sfn;            // Last seen SFN (to detect wraparound)
+
     // Buffered SIB1 pending TESLA verification
     struct {
         uint8_t  auth_input[TF5_TESLA_MAX_AUTH_INPUT];
         size_t   auth_input_len;
         uint32_t interval_index;
         uint8_t  tag[TF5_TESLA_TAG_LEN];
+        uint16_t rx_hfn;             // HFN when SIB1 was received
         uint16_t rx_sfn;
         uint16_t rx_slot;
         bool     pending;
@@ -171,12 +182,14 @@ typedef struct {
  * Initialize TESLA state on gNB
  *
  * Generates the key chain and sets up static parameters.
+ * HFN starts at 0 by default.
  *
  * @param state         Pointer to gNB TESLA state structure
  * @param t_int_ms      Interval duration in milliseconds (e.g., 20)
  * @param d             Key disclosure delay (e.g., 1)
  * @param chain_len     Number of intervals in key chain
  * @param private_key   Ed25519 private key (32 bytes)
+ * @param hfn           Initial HFN (usually 0)
  * @param sfn           Current SFN (for T_0)
  * @param slot          Current slot (for T_0)
  * @param slots_per_frame Number of slots per frame
@@ -187,6 +200,7 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
                        uint8_t d,
                        uint32_t chain_len,
                        const uint8_t private_key[32],
+                       uint16_t hfn,
                        uint16_t sfn,
                        uint16_t slot,
                        uint16_t slots_per_frame);
@@ -201,12 +215,14 @@ void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state);
 /**
  * Get current interval index from SFN/slot
  *
- * @param state         Pointer to gNB TESLA state structure
+ * Updates internal HFN tracking based on SFN wraparound detection.
+ *
+ * @param state         Pointer to gNB TESLA state structure (updated for HFN)
  * @param sfn           Current SFN
  * @param slot          Current slot
  * @return Current interval index
  */
-uint32_t tf5_tesla_gnb_get_interval(const tf5_tesla_gnb_state_t *state,
+uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
                                     uint16_t sfn,
                                     uint16_t slot);
 
@@ -324,12 +340,14 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
  *
  * @param state         Pointer to UE TESLA state structure
  * @param ext           TESLA extension from received SIB1
+ * @param rx_hfn        HFN when packet was received
  * @param rx_sfn        SFN when packet was received
  * @param rx_slot       Slot when packet was received
  * @return true if packet is safe, false otherwise
  */
 bool tf5_tesla_ue_safe_packet_test(const tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
+                                   uint16_t rx_hfn,
                                    uint16_t rx_sfn,
                                    uint16_t rx_slot);
 
@@ -341,6 +359,7 @@ bool tf5_tesla_ue_safe_packet_test(const tf5_tesla_ue_state_t *state,
  * @param auth_input_len Length of auth input
  * @param interval_index Interval index of this SIB1
  * @param tag           TESLA tag from SIB1
+ * @param rx_hfn        HFN when received
  * @param rx_sfn        SFN when received
  * @param rx_slot       Slot when received
  * @return 0 on success, negative on error
@@ -350,6 +369,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
                              size_t auth_input_len,
                              uint32_t interval_index,
                              const uint8_t tag[TF5_TESLA_TAG_LEN],
+                             uint16_t rx_hfn,
                              uint16_t rx_sfn,
                              uint16_t rx_slot);
 
@@ -426,38 +446,98 @@ int tf5_tesla_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
 /**
  * Get number of slots elapsed since T_0
  *
- * Handles SFN wrap-around (SFN is 10 bits, 0-1023).
+ * Uses HFN (Hyper-Frame Number) to handle SFN wraparound correctly.
+ * SFN wraps every 10.24 seconds (1024 frames × 10ms).
  *
+ * @param current_hfn   Current HFN
  * @param current_sfn   Current SFN
  * @param current_slot  Current slot
+ * @param t0_hfn        HFN at T_0
  * @param t0_sfn        SFN at T_0
  * @param t0_slot       Slot at T_0
  * @param slots_per_frame Number of slots per frame
- * @return Number of slots elapsed (0 if negative)
+ * @return Number of slots elapsed (0 if current time is before T_0)
  */
-uint32_t tf5_tesla_slots_since_t0(uint16_t current_sfn,
+uint64_t tf5_tesla_slots_since_t0(uint16_t current_hfn,
+                                  uint16_t current_sfn,
                                   uint16_t current_slot,
+                                  uint16_t t0_hfn,
                                   uint16_t t0_sfn,
                                   uint16_t t0_slot,
                                   uint16_t slots_per_frame);
 
 /**
- * Get interval index from SFN/slot
+ * Get interval index from HFN/SFN/slot
  *
+ * @param hfn           Current HFN
  * @param sfn           Current SFN
  * @param slot          Current slot
+ * @param t0_hfn        HFN at T_0
  * @param t0_sfn        SFN at T_0
  * @param t0_slot       Slot at T_0
  * @param t_int_ms      Interval duration in ms
  * @param slots_per_frame Number of slots per frame
  * @return Interval index
  */
-uint32_t tf5_tesla_get_interval_index(uint16_t sfn,
+uint32_t tf5_tesla_get_interval_index(uint16_t hfn,
+                                      uint16_t sfn,
                                       uint16_t slot,
+                                      uint16_t t0_hfn,
                                       uint16_t t0_sfn,
                                       uint16_t t0_slot,
                                       uint16_t t_int_ms,
                                       uint16_t slots_per_frame);
+
+/*
+ * =============================================================================
+ * HFN (Hyper-Frame Number) Helpers
+ * =============================================================================
+ */
+
+/**
+ * Compute absolute slot count from (HFN, SFN, slot)
+ *
+ * This handles the full time range without wraparound issues.
+ * HFN increments each time SFN wraps from 1023 to 0.
+ *
+ * @param hfn            Hyper-Frame Number
+ * @param sfn            System Frame Number (0-1023)
+ * @param slot           Slot within frame
+ * @param slots_per_frame Number of slots per frame
+ * @return Absolute slot count since HFN=0, SFN=0, slot=0
+ */
+static inline uint64_t tf5_tesla_absolute_slots(uint16_t hfn,
+                                                 uint16_t sfn,
+                                                 uint16_t slot,
+                                                 uint16_t slots_per_frame)
+{
+    // Total frames = HFN * 1024 + SFN
+    // Total slots = total_frames * slots_per_frame + slot
+    uint64_t total_frames = (uint64_t)hfn * 1024 + sfn;
+    return total_frames * slots_per_frame + slot;
+}
+
+/**
+ * Update HFN based on SFN transition
+ *
+ * Detects SFN wraparound (1023 -> 0) and increments HFN.
+ * Call this whenever processing a new SFN value.
+ *
+ * @param hfn            Pointer to current HFN (will be incremented on wrap)
+ * @param last_sfn       Pointer to last seen SFN (will be updated)
+ * @param current_sfn    Current SFN value
+ */
+static inline void tf5_tesla_update_hfn(uint16_t *hfn,
+                                         uint16_t *last_sfn,
+                                         uint16_t current_sfn)
+{
+    // Detect wraparound: last_sfn near 1023, current_sfn near 0
+    // Use threshold to handle slight variations in timing
+    if (*last_sfn > 900 && current_sfn < 100) {
+        (*hfn)++;
+    }
+    *last_sfn = current_sfn;
+}
 
 /*
  * =============================================================================

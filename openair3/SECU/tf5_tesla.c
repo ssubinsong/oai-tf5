@@ -96,42 +96,42 @@ int tf5_tesla_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
     return 0;
 }
 
-uint32_t tf5_tesla_slots_since_t0(uint16_t current_sfn,
+uint64_t tf5_tesla_slots_since_t0(uint16_t current_hfn,
+                                  uint16_t current_sfn,
                                   uint16_t current_slot,
+                                  uint16_t t0_hfn,
                                   uint16_t t0_sfn,
                                   uint16_t t0_slot,
                                   uint16_t slots_per_frame)
 {
-    // Handle SFN wrap-around (SFN is 10 bits, 0-1023)
-    int32_t sfn_diff = (int32_t)current_sfn - (int32_t)t0_sfn;
+    // Use absolute slot counts to handle SFN wraparound correctly
+    // HFN (Hyper-Frame Number) increments each time SFN wraps from 1023 to 0
+    uint64_t current_abs = tf5_tesla_absolute_slots(current_hfn, current_sfn,
+                                                     current_slot, slots_per_frame);
+    uint64_t t0_abs = tf5_tesla_absolute_slots(t0_hfn, t0_sfn,
+                                                t0_slot, slots_per_frame);
 
-    // Assume we're within half of SFN cycle for wrap-around detection
-    if (sfn_diff < -512) {
-        sfn_diff += 1024;  // Wrapped forward
-    } else if (sfn_diff > 512) {
-        sfn_diff -= 1024;  // Wrapped backward
-    }
-
-    int32_t total_slots = sfn_diff * (int32_t)slots_per_frame
-                        + (int32_t)current_slot - (int32_t)t0_slot;
-
-    return (total_slots >= 0) ? (uint32_t)total_slots : 0;
+    return (current_abs >= t0_abs) ? (current_abs - t0_abs) : 0;
 }
 
-uint32_t tf5_tesla_get_interval_index(uint16_t sfn,
+uint32_t tf5_tesla_get_interval_index(uint16_t hfn,
+                                      uint16_t sfn,
                                       uint16_t slot,
+                                      uint16_t t0_hfn,
                                       uint16_t t0_sfn,
                                       uint16_t t0_slot,
                                       uint16_t t_int_ms,
                                       uint16_t slots_per_frame)
 {
-    uint32_t slots = tf5_tesla_slots_since_t0(sfn, slot, t0_sfn, t0_slot, slots_per_frame);
+    uint64_t slots = tf5_tesla_slots_since_t0(hfn, sfn, slot,
+                                               t0_hfn, t0_sfn, t0_slot,
+                                               slots_per_frame);
 
     // Calculate time in milliseconds
     // Each frame = 10ms, slots_per_frame slots per frame
     // So each slot = 10 / slots_per_frame ms
     // time_ms = slots * 10 / slots_per_frame
-    uint64_t time_ms = ((uint64_t)slots * 10) / slots_per_frame;
+    uint64_t time_ms = (slots * 10) / slots_per_frame;
 
     return (uint32_t)(time_ms / t_int_ms);
 }
@@ -159,7 +159,7 @@ int tf5_tesla_build_auth_input(uint8_t *out,
     memcpy(out + offset, original_sib1, sib1_len);
     offset += sib1_len;
 
-    // 2. Static params (28 bytes)
+    // 2. Static params (30 bytes)
     out[offset++] = static_params->te_version;
     out[offset++] = static_params->crypto_suite_id;
     tf5_encode_u16_be(out + offset, static_params->t_int_ms);
@@ -168,6 +168,8 @@ int tf5_tesla_build_auth_input(uint8_t *out,
     out[offset++] = static_params->key_len;
     memcpy(out + offset, static_params->root_key, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
+    tf5_encode_u16_be(out + offset, static_params->t0_hfn);
+    offset += 2;
     tf5_encode_u16_be(out + offset, static_params->t0_sfn);
     offset += 2;
     tf5_encode_u16_be(out + offset, static_params->t0_slot);
@@ -175,9 +177,11 @@ int tf5_tesla_build_auth_input(uint8_t *out,
     tf5_encode_u32_be(out + offset, static_params->chain_len);
     offset += 4;
 
-    // 3. Dynamic params (24 bytes)
+    // 3. Dynamic params (26 bytes)
     tf5_encode_u32_be(out + offset, dynamic_params->interval_index);
     offset += 4;
+    tf5_encode_u16_be(out + offset, dynamic_params->ti_hfn);
+    offset += 2;
     tf5_encode_u16_be(out + offset, dynamic_params->ti_sfn);
     offset += 2;
     tf5_encode_u16_be(out + offset, dynamic_params->ti_slot);
@@ -197,15 +201,15 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
         return -1;
     }
 
-    // Total size: 28 + 24 + 64 + 16 = 132 bytes
-    const size_t required_len = 132;
+    // Total size: 30 + 26 + 64 + 16 = 136 bytes
+    const size_t required_len = 136;
     if (buf_len < required_len) {
         return -2;
     }
 
     size_t offset = 0;
 
-    // Static params (28 bytes)
+    // Static params (30 bytes)
     buf[offset++] = ext->static_params.te_version;
     buf[offset++] = ext->static_params.crypto_suite_id;
     tf5_encode_u16_be(buf + offset, ext->static_params.t_int_ms);
@@ -214,6 +218,8 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     buf[offset++] = ext->static_params.key_len;
     memcpy(buf + offset, ext->static_params.root_key, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
+    tf5_encode_u16_be(buf + offset, ext->static_params.t0_hfn);
+    offset += 2;
     tf5_encode_u16_be(buf + offset, ext->static_params.t0_sfn);
     offset += 2;
     tf5_encode_u16_be(buf + offset, ext->static_params.t0_slot);
@@ -221,9 +227,11 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     tf5_encode_u32_be(buf + offset, ext->static_params.chain_len);
     offset += 4;
 
-    // Dynamic params (24 bytes)
+    // Dynamic params (26 bytes)
     tf5_encode_u32_be(buf + offset, ext->dynamic_params.interval_index);
     offset += 4;
+    tf5_encode_u16_be(buf + offset, ext->dynamic_params.ti_hfn);
+    offset += 2;
     tf5_encode_u16_be(buf + offset, ext->dynamic_params.ti_sfn);
     offset += 2;
     tf5_encode_u16_be(buf + offset, ext->dynamic_params.ti_slot);
@@ -250,14 +258,14 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
         return -1;
     }
 
-    const size_t required_len = 132;
+    const size_t required_len = 136;
     if (buf_len < required_len) {
         return -2;
     }
 
     size_t offset = 0;
 
-    // Static params (28 bytes)
+    // Static params (30 bytes)
     ext->static_params.te_version = buf[offset++];
     ext->static_params.crypto_suite_id = buf[offset++];
     ext->static_params.t_int_ms = tf5_decode_u16_be(buf + offset);
@@ -266,6 +274,8 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     ext->static_params.key_len = buf[offset++];
     memcpy(ext->static_params.root_key, buf + offset, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
+    ext->static_params.t0_hfn = tf5_decode_u16_be(buf + offset);
+    offset += 2;
     ext->static_params.t0_sfn = tf5_decode_u16_be(buf + offset);
     offset += 2;
     ext->static_params.t0_slot = tf5_decode_u16_be(buf + offset);
@@ -273,9 +283,11 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     ext->static_params.chain_len = tf5_decode_u32_be(buf + offset);
     offset += 4;
 
-    // Dynamic params (24 bytes)
+    // Dynamic params (26 bytes)
     ext->dynamic_params.interval_index = tf5_decode_u32_be(buf + offset);
     offset += 4;
+    ext->dynamic_params.ti_hfn = tf5_decode_u16_be(buf + offset);
+    offset += 2;
     ext->dynamic_params.ti_sfn = tf5_decode_u16_be(buf + offset);
     offset += 2;
     ext->dynamic_params.ti_slot = tf5_decode_u16_be(buf + offset);
@@ -305,6 +317,7 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
                        uint8_t d,
                        uint32_t chain_len,
                        const uint8_t private_key[32],
+                       uint16_t hfn,
                        uint16_t sfn,
                        uint16_t slot,
                        uint16_t slots_per_frame)
@@ -354,16 +367,21 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
     state->params.disclosure_delay = d;
     state->params.key_len = TF5_TESLA_KEY_LEN;
     memcpy(state->params.root_key, state->key_chain[0], TF5_TESLA_KEY_LEN);
+    state->params.t0_hfn = hfn;
     state->params.t0_sfn = sfn;
     state->params.t0_slot = slot;
     state->params.chain_len = chain_len;
+
+    // Initialize HFN tracking
+    state->current_hfn = hfn;
+    state->last_sfn = sfn;
 
     state->slots_per_frame = slots_per_frame;
     state->current_interval = 0;
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA: gNB initialized - T_int=%ums, d=%u, T_0=SFN%u.%u\n",
-          t_int_ms, d, sfn, slot);
+    LOG_I(NR_RRC, "TESLA: gNB initialized - T_int=%ums, d=%u, T_0=HFN%u.SFN%u.%u\n",
+          t_int_ms, d, hfn, sfn, slot);
 
     return 0;
 }
@@ -381,7 +399,7 @@ void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state)
     }
 }
 
-uint32_t tf5_tesla_gnb_get_interval(const tf5_tesla_gnb_state_t *state,
+uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
                                     uint16_t sfn,
                                     uint16_t slot)
 {
@@ -389,7 +407,11 @@ uint32_t tf5_tesla_gnb_get_interval(const tf5_tesla_gnb_state_t *state,
         return 0;
     }
 
-    return tf5_tesla_get_interval_index(sfn, slot,
+    // Update HFN tracking based on SFN wraparound detection
+    tf5_tesla_update_hfn(&state->current_hfn, &state->last_sfn, sfn);
+
+    return tf5_tesla_get_interval_index(state->current_hfn, sfn, slot,
+                                        state->params.t0_hfn,
                                         state->params.t0_sfn,
                                         state->params.t0_slot,
                                         state->params.t_int_ms,
@@ -422,6 +444,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
 
     // Set dynamic params
     ext->dynamic_params.interval_index = interval;
+    ext->dynamic_params.ti_hfn = state->current_hfn;
     ext->dynamic_params.ti_sfn = sfn;
     ext->dynamic_params.ti_slot = slot;
 
@@ -526,6 +549,7 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
 
 bool tf5_tesla_ue_safe_packet_test(const tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
+                                   uint16_t rx_hfn,
                                    uint16_t rx_sfn,
                                    uint16_t rx_slot)
 {
@@ -534,7 +558,8 @@ bool tf5_tesla_ue_safe_packet_test(const tf5_tesla_ue_state_t *state,
     }
 
     // Compute what interval the sender should be in based on UE's clock
-    uint32_t x = tf5_tesla_get_interval_index(rx_sfn, rx_slot,
+    uint32_t x = tf5_tesla_get_interval_index(rx_hfn, rx_sfn, rx_slot,
+                                              ext->static_params.t0_hfn,
                                               ext->static_params.t0_sfn,
                                               ext->static_params.t0_slot,
                                               ext->static_params.t_int_ms,
@@ -560,6 +585,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
                              size_t auth_input_len,
                              uint32_t interval_index,
                              const uint8_t tag[TF5_TESLA_TAG_LEN],
+                             uint16_t rx_hfn,
                              uint16_t rx_sfn,
                              uint16_t rx_slot)
 {
@@ -577,6 +603,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
     state->buffer.auth_input_len = auth_input_len;
     state->buffer.interval_index = interval_index;
     memcpy(state->buffer.tag, tag, TF5_TESLA_TAG_LEN);
+    state->buffer.rx_hfn = rx_hfn;
     state->buffer.rx_sfn = rx_sfn;
     state->buffer.rx_slot = rx_slot;
     state->buffer.pending = true;
