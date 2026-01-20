@@ -1,0 +1,189 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug gNB (rfsimulator)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake_targets/ran_build/build/nr-softmodem",
+            "args": [
+                "-O", "${workspaceFolder}/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.pci0.rfsim.conf",
+                "--sa",
+                "--rfsim",
+                "--log_config.global_log_options", "level,nocolor,time"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/cmake_targets/ran_build/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set follow-fork-mode to child",
+                    "text": "set follow-fork-mode child",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set detach-on-fork off",
+                    "text": "set detach-on-fork off",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build gNB (Debug, TESLA enabled)",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "Debug nrUE (rfsimulator)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake_targets/ran_build/build/nr-uesoftmodem",
+            "args": [
+                "-r", "106",
+                "--numerology", "1",
+                "--band", "78",
+                "-C", "3619200000",
+                "--rfsim",
+                "--sa",
+                "--uicc0.imsi", "001010000000001",
+                "--log_config.global_log_options", "level,nocolor,time"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/cmake_targets/ran_build/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set follow-fork-mode to child",
+                    "text": "set follow-fork-mode child",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set detach-on-fork off",
+                    "text": "set detach-on-fork off",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build nrUE (Debug, TESLA enabled)",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "Attach to gNB (sudo)",
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "${workspaceFolder}/cmake_targets/ran_build/build/nr-softmodem",
+            "processId": "${command:pickProcess}",
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "Attach to nrUE (sudo)",
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "${workspaceFolder}/cmake_targets/ran_build/build/nr-uesoftmodem",
+            "processId": "${command:pickProcess}",
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "Debug gNB (rfsimulator) - Verbose TESLA",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake_targets/ran_build/build/nr-softmodem",
+            "args": [
+                "-O", "${workspaceFolder}/targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.pci0.rfsim.conf",
+                "--sa",
+                "--rfsim",
+                "--log_config.global_log_options", "level,nocolor,time",
+                "--log_config.NR_RRC_log_level", "debug",
+                "--log_config.NR_MAC_log_level", "debug"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/cmake_targets/ran_build/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set follow-fork-mode to child",
+                    "text": "set follow-fork-mode child",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build gNB (Debug, TESLA enabled)",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "Debug nrUE (rfsimulator) - Verbose TESLA",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake_targets/ran_build/build/nr-uesoftmodem",
+            "args": [
+                "-r", "106",
+                "--numerology", "1",
+                "--band", "78",
+                "-C", "3619200000",
+                "--rfsim",
+                "--sa",
+                "--uicc0.imsi", "001010000000001",
+                "--log_config.global_log_options", "level,nocolor,time",
+                "--log_config.NR_RRC_log_level", "debug"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/cmake_targets/ran_build/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set follow-fork-mode to child",
+                    "text": "set follow-fork-mode child",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build nrUE (Debug, TESLA enabled)",
+            "miDebuggerPath": "/usr/bin/gdb"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Debug gNB + nrUE (rfsimulator)",
+            "configurations": ["Debug gNB (rfsimulator)", "Debug nrUE (rfsimulator)"],
+            "stopAll": true
+        }
+    ]
+}

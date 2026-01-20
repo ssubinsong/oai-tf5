@@ -1,0 +1,342 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        // ===== BUILD TASKS =====
+        {
+            "label": "Build gNB (TESLA enabled)",
+            "type": "shell",
+            "command": "./build_oai",
+            "args": [
+                "--ninja",
+                "--gNB",
+                "-w", "SIMU",
+                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            }
+        },
+        {
+            "label": "Build nrUE (TESLA enabled)",
+            "type": "shell",
+            "command": "./build_oai",
+            "args": [
+                "--ninja",
+                "--nrUE",
+                "-w", "SIMU",
+                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets"
+            },
+            "group": "build",
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Build gNB + nrUE (TESLA enabled)",
+            "type": "shell",
+            "command": "./build_oai",
+            "args": [
+                "--ninja",
+                "--gNB",
+                "--nrUE",
+                "-w", "SIMU",
+                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets"
+            },
+            "group": "build",
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        },
+        {
+            "label": "Build gNB (Debug, TESLA enabled)",
+            "type": "shell",
+            "command": "./build_oai",
+            "args": [
+                "--ninja",
+                "--gNB",
+                "-w", "SIMU",
+                "-g", "Debug",
+                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets"
+            },
+            "group": "build",
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        },
+        {
+            "label": "Build nrUE (Debug, TESLA enabled)",
+            "type": "shell",
+            "command": "./build_oai",
+            "args": [
+                "--ninja",
+                "--nrUE",
+                "-w", "SIMU",
+                "-g", "Debug",
+                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets"
+            },
+            "group": "build",
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        },
+        {
+            "label": "Build gNB (without TESLA)",
+            "type": "shell",
+            "command": "./build_oai",
+            "args": [
+                "--ninja",
+                "--gNB",
+                "-w", "SIMU"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets"
+            },
+            "group": "build",
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        },
+        {
+            "label": "Clean Build",
+            "type": "shell",
+            "command": "./build_oai",
+            "args": [
+                "-c"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean All",
+            "type": "shell",
+            "command": "./build_oai",
+            "args": [
+                "-C"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+
+        // ===== RUN TASKS =====
+        {
+            "label": "Run gNB (rfsimulator)",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                "./nr-softmodem",
+                "-O", "../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.pci0.rfsim.conf",
+                "--sa",
+                "--rfsim",
+                "--log_config.global_log_options", "level,nocolor,time"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets/ran_build/build"
+            },
+            "group": "test",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true
+            }
+        },
+        {
+            "label": "Run nrUE (rfsimulator)",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                "./nr-uesoftmodem",
+                "-r", "106",
+                "--numerology", "1",
+                "--band", "78",
+                "-C", "3619200000",
+                "--rfsim",
+                "--sa",
+                "--uicc0.imsi", "001010000000001",
+                "--log_config.global_log_options", "level,nocolor,time"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets/ran_build/build"
+            },
+            "group": "test",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true
+            }
+        },
+        {
+            "label": "Run gNB (rfsimulator, verbose TESLA)",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                "./nr-softmodem",
+                "-O", "../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.pci0.rfsim.conf",
+                "--sa",
+                "--rfsim",
+                "--log_config.global_log_options", "level,nocolor,time",
+                "--log_config.NR_RRC_log_level", "debug",
+                "--log_config.NR_MAC_log_level", "debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets/ran_build/build"
+            },
+            "group": "test",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true
+            }
+        },
+        {
+            "label": "Run nrUE (rfsimulator, verbose TESLA)",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                "./nr-uesoftmodem",
+                "-r", "106",
+                "--numerology", "1",
+                "--band", "78",
+                "-C", "3619200000",
+                "--rfsim",
+                "--sa",
+                "--uicc0.imsi", "001010000000001",
+                "--log_config.global_log_options", "level,nocolor,time",
+                "--log_config.NR_RRC_log_level", "debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/cmake_targets/ran_build/build"
+            },
+            "group": "test",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true
+            }
+        },
+
+        // ===== UTILITY TASKS =====
+        {
+            "label": "Kill all OAI processes",
+            "type": "shell",
+            "command": "sudo pkill -9 -f 'nr-softmodem|nr-uesoftmodem' || true",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "none",
+            "problemMatcher": []
+        }
+    ]
+}

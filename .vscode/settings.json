@@ -1,0 +1,48 @@
+{
+    // File associations
+    "files.associations": {
+        "*.h": "c",
+        "*.c": "c",
+        "*.conf": "properties"
+    },
+
+    // Editor settings for C code
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "[c]": {
+        "editor.tabSize": 2,
+        "editor.formatOnSave": false
+    },
+
+    // Search exclusions
+    "search.exclude": {
+        "**/cmake_targets/ran_build/**": true,
+        "**/cmake_targets/log/**": true,
+        "**/cmake_targets/autotests/**": true,
+        "**/*.o": true,
+        "**/*.a": true,
+        "**/*.so": true
+    },
+
+    // Files to exclude from explorer
+    "files.exclude": {
+        "**/.git": true,
+        "**/cmake_targets/ran_build/build/*.o": true
+    },
+
+    // C/C++ extension settings
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.intelliSenseEngine": "default",
+
+    // CMake settings
+    "cmake.configureOnOpen": false,
+    "cmake.buildDirectory": "${workspaceFolder}/cmake_targets/ran_build/build",
+    "cmake.sourceDirectory": "${workspaceFolder}",
+
+    // Terminal settings
+    "terminal.integrated.defaultProfile.linux": "bash",
+
+    // Task settings
+    "task.autoDetect": "off"
+}
