@@ -6,7 +6,7 @@
 
 ## Initialization
 
-**Location**: `openair2/RRC/NR_UE/rrc_UE.c`
+**Location**: [rrc_UE.c:1475-1499](../openair2/RRC/NR_UE/rrc_UE.c#L1475-L1499)
 
 ```c
 // Allocate TESLA state
@@ -48,7 +48,7 @@ If authentication fails, the RRC connection is aborted before any NAS message is
 
 ### State Fields for Parallel Authentication
 
-**Location**: `openair3/SECU/tf5_tesla.h`
+**Location**: [tf5_tesla.h:140-187](../openair3/SECU/tf5_tesla.h#L140-L187)
 
 ```c
 typedef struct {
@@ -110,7 +110,7 @@ typedef struct {
 
 ## SIB1 Processing Flow
 
-**Location**: `nr_rrc_process_sib1()` in `openair2/RRC/NR_UE/rrc_UE.c`
+**Location**: [rrc_UE.c:502-630](../openair2/RRC/NR_UE/rrc_UE.c#L502-L630) `nr_rrc_process_sib1()`
 
 ### First-Time UE (k0_trusted == false)
 
@@ -157,7 +157,7 @@ typedef struct {
 
 ## NAS Gating in RRCSetup Processing
 
-**Location**: `nr_rrc_process_rrcsetup()` in `openair2/RRC/NR_UE/rrc_UE.c`
+**Location**: [rrc_UE.c:2128](../openair2/RRC/NR_UE/rrc_UE.c#L2128) `nr_rrc_process_rrcsetup()`
 
 The RRC connection setup (bearers, cell group config) proceeds normally, but NAS message transmission is gated on authentication:
 
@@ -184,7 +184,7 @@ tesla_state->rrcsetup_transaction_id = Transaction_id;
 
 ## RRC Connection Abort
 
-**Location**: `nr_rrc_abort_connection()` in `openair2/RRC/NR_UE/rrc_UE.c`
+**Location**: [rrc_UE.c:2037](../openair2/RRC/NR_UE/rrc_UE.c#L2037) `nr_rrc_abort_connection()`
 
 Called when TESLA authentication fails (signature or MAC verification):
 
@@ -204,6 +204,8 @@ static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
 ---
 
 ## Safe Packet Test
+
+**Source**: [tf5_tesla.c:571](../openair3/SECU/tf5_tesla.c#L571) `tf5_tesla_ue_safe_packet_test()`
 
 The safe packet test determines if a message could have been forged by an attacker who saw a key disclosure:
 
@@ -236,6 +238,8 @@ bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
 ---
 
 ## Key Chain Verification (O(1) Optimization)
+
+**Source**: [tf5_tesla.c:722](../openair3/SECU/tf5_tesla.c#L722) `tf5_tesla_ue_verify_key_chain()`
 
 Key chain verification is called automatically by `tf5_tesla_ue_verify_buffered()` before MAC verification.
 This ensures disclosed keys are cryptographically validated against a trusted anchor key.

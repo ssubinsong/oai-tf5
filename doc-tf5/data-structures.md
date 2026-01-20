@@ -2,9 +2,13 @@
 
 [Back to Index](index.md)
 
+**Source**: [tf5_tesla.h](../openair3/SECU/tf5_tesla.h)
+
 ---
 
 ## Static Parameters (30 bytes)
+
+**Source**: [tf5_tesla.h:64-75](../openair3/SECU/tf5_tesla.h#L64-L75)
 
 Parameters constant for the lifetime of a key chain:
 
@@ -27,6 +31,8 @@ typedef struct {
 
 ## Dynamic Parameters (26 bytes)
 
+**Source**: [tf5_tesla.h:83-89](../openair3/SECU/tf5_tesla.h#L83-L89)
+
 Parameters that change with each SIB1 transmission:
 
 ```c
@@ -42,6 +48,8 @@ typedef struct {
 ---
 
 ## TESLA Extension (136 bytes)
+
+**Source**: [tf5_tesla.h:98-103](../openair3/SECU/tf5_tesla.h#L98-L103)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
@@ -83,6 +91,8 @@ Offset  Size  Field
 
 ## gNB State Structure
 
+**Source**: [tf5_tesla.h:110-133](../openair3/SECU/tf5_tesla.h#L110-L133)
+
 ```c
 typedef struct {
     tf5_tesla_static_params_t params;
@@ -112,6 +122,8 @@ typedef struct {
 ---
 
 ## UE State Structure
+
+**Source**: [tf5_tesla.h:140-187](../openair3/SECU/tf5_tesla.h#L140-L187)
 
 ```c
 typedef struct {
@@ -146,4 +158,30 @@ typedef struct {
     uint16_t slots_per_frame;
     bool     initialized;
 } tf5_tesla_ue_state_t;
+```
+
+---
+
+## OAI Integration Points
+
+TESLA state is integrated into existing OAI structures:
+
+### gNB: NR_COMMON_channels_t
+
+**Source**: [nr_mac_gNB.h:336-339](../openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h#L336-L339)
+
+```c
+// In NR_COMMON_channels_t:
+tf5_tesla_gnb_state_t *tesla_state;      // TESLA state pointer
+uint8_t sib1_original[NR_MAX_SIB_LENGTH / 8];  // Original SIB1 for signing
+int sib1_original_length;
+```
+
+### UE: NR_UE_RRC_SI_INFO
+
+**Source**: [rrc_defs.h:166](../openair2/RRC/NR_UE/rrc_defs.h#L166)
+
+```c
+// In NR_UE_RRC_SI_INFO:
+tf5_tesla_ue_state_t *tesla_state;       // TESLA state pointer
 ```

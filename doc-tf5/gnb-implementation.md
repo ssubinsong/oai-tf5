@@ -6,7 +6,7 @@
 
 ## Initialization Flow
 
-**Location**: `openair2/LAYER2/NR_MAC_gNB/config.c`
+**Location**: [config.c:1121-1192](../openair2/LAYER2/NR_MAC_gNB/config.c#L1121-L1192)
 
 ```
 1. Load Ed25519 key pair from files
@@ -37,7 +37,7 @@
 
 ## Per-Transmission Flow
 
-**Location**: `openair2/LAYER2/NR_MAC_gNB/nr_radio_config.c` → `nr_mac_update_sib1_tesla()`
+**Location**: [nr_radio_config.c:4380](../openair2/LAYER2/NR_MAC_gNB/nr_radio_config.c#L4380) → `nr_mac_update_sib1_tesla()`
 
 Called from scheduler before each SIB1 transmission:
 
@@ -68,7 +68,7 @@ Called from scheduler before each SIB1 transmission:
 
 ## Scheduler Integration
 
-**Location**: `openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_bch.c`
+**Location**: [gNB_scheduler_bch.c:601-604](../openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_bch.c#L601-L604)
 
 ```c
 #ifdef TF5_ENABLE_TESLA
