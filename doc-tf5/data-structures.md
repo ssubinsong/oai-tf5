@@ -1,0 +1,149 @@
+# Data Structures
+
+[Back to Index](index.md)
+
+---
+
+## Static Parameters (30 bytes)
+
+Parameters constant for the lifetime of a key chain:
+
+```c
+typedef struct {
+    uint8_t  te_version;           // 1B - Protocol version (0x01)
+    uint8_t  crypto_suite_id;      // 1B - Algorithm suite (0x01)
+    uint16_t t_int_ms;             // 2B - Interval duration (20ms)
+    uint8_t  disclosure_delay;     // 1B - Key disclosure delay (1)
+    uint8_t  key_len;              // 1B - TESLA key length (16)
+    uint8_t  root_key[16];         // 16B - K_0 chain commitment
+    uint16_t t0_hfn;               // 2B - HFN at T_0
+    uint16_t t0_sfn;               // 2B - SFN at T_0
+    uint16_t t0_slot;              // 2B - Slot at T_0
+    uint32_t chain_len;            // 4B - Number of intervals N
+} tf5_tesla_static_params_t;
+```
+
+---
+
+## Dynamic Parameters (26 bytes)
+
+Parameters that change with each SIB1 transmission:
+
+```c
+typedef struct {
+    uint32_t interval_index;       // 4B - Current interval i
+    uint16_t ti_hfn;               // 2B - HFN when SIB1 sent
+    uint16_t ti_sfn;               // 2B - SFN when SIB1 sent
+    uint16_t ti_slot;              // 2B - Slot when SIB1 sent
+    uint8_t  disclosed_key[16];    // 16B - K_{i-d}
+} tf5_tesla_dynamic_params_t;
+```
+
+---
+
+## TESLA Extension (136 bytes)
+
+Complete extension appended to SIB1 via `lateNonCriticalExtension`:
+
+```c
+typedef struct {
+    tf5_tesla_static_params_t  static_params;  // 30B
+    tf5_tesla_dynamic_params_t dynamic_params; // 26B
+    uint8_t  gnb_signature[64];                // 64B - Ed25519 signature
+    uint8_t  tesla_tag[16];                    // 16B - HMAC tag
+} tf5_tesla_extension_t;
+```
+
+**Binary Wire Format** (136 bytes, big-endian):
+```
+Offset  Size  Field
+------  ----  -----
+0       1     te_version
+1       1     crypto_suite_id
+2       2     t_int_ms
+4       1     disclosure_delay
+5       1     key_len
+6       16    root_key
+22      2     t0_hfn
+24      2     t0_sfn
+26      2     t0_slot
+28      4     chain_len
+32      4     interval_index
+36      2     ti_hfn
+38      2     ti_sfn
+40      2     ti_slot
+42      16    disclosed_key
+58      64    gnb_signature
+122     16    tesla_tag
+------
+136 bytes total
+```
+
+---
+
+## gNB State Structure
+
+```c
+typedef struct {
+    tf5_tesla_static_params_t params;
+
+    // Key chain storage (dynamically allocated)
+    uint8_t  (*key_chain)[16];    // K_0 ... K_N
+    uint32_t key_chain_len;
+
+    // Current state
+    uint32_t current_interval;
+
+    // HFN tracking
+    uint16_t current_hfn;
+    uint16_t last_sfn;
+
+    // Ed25519 keys
+    uint8_t  gnb_private_key[32];
+    uint8_t  gnb_public_key[32];
+
+    // Timing
+    uint16_t slots_per_frame;
+
+    bool     initialized;
+} tf5_tesla_gnb_state_t;
+```
+
+---
+
+## UE State Structure
+
+```c
+typedef struct {
+    tf5_tesla_static_params_t static_params;
+
+    // Pre-provisioned gNB public key
+    uint8_t  gnb_public_key[32];
+    bool     has_gnb_public_key;
+
+    // Verification state
+    bool     params_received;
+    uint32_t last_verified_key_idx;
+    uint8_t  last_verified_key[16];
+
+    // HFN tracking
+    uint16_t current_hfn;
+    uint16_t last_sfn;
+    bool     hfn_initialized;
+
+    // Buffered SIB1 pending verification
+    struct {
+        uint8_t  auth_input[512];
+        size_t   auth_input_len;
+        uint32_t interval_index;
+        uint8_t  tag[16];
+        uint16_t rx_hfn;
+        uint16_t rx_sfn;
+        uint16_t rx_slot;
+        bool     pending;
+    } buffer;
+
+    uint16_t slots_per_frame;
+    bool     initialized;
+} tf5_tesla_ue_state_t;
+```
