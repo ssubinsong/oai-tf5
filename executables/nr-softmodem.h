@@ -8,6 +8,16 @@
 #define DEFAULT_DLF 2680000000
 
 /***************************************************************************************************************************************/
+/* TESLA key management defaults                                                                                                        */
+/***************************************************************************************************************************************/
+#ifdef TF5_ENABLE_TESLA
+#define CONFIG_HLP_TESLA_PRIVKEY  "TESLA Ed25519 private key file (PEM format)\n"
+#define CONFIG_HLP_TESLA_CERT     "TESLA gNB certificate file (PEM format, contains public key)\n"
+#define TF5_DEFAULT_PRIVKEY_PATH  "./tesla_keys/gnb_tesla_privkey.pem"
+#define TF5_DEFAULT_CERT_PATH     "./tesla_keys/gnb_tesla_cert.pem"
+#endif
+
+/***************************************************************************************************************************************/
 /* command line options definitions, CMDLINE_XXXX_DESC macros are used to initialize paramdef_t arrays which are then used as argument
    when calling config_get or config_getlist functions                                                                                 */
 
@@ -16,6 +26,14 @@
 /*   optname                helpstr                 paramflags        XXXptr                              defXXXval                   type         numelt               */
 /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 // clang-format off
+#ifdef TF5_ENABLE_TESLA
+#define CMDLINE_TESLA_PARAMS_GNB \
+  {"tesla-privkey",         CONFIG_HLP_TESLA_PRIVKEY,  0,                .strptr=&tesla_privkey_file,         .defstrval=TF5_DEFAULT_PRIVKEY_PATH, TYPE_STRING, 0},     \
+  {"tesla-cert",            CONFIG_HLP_TESLA_CERT,     0,                .strptr=&tesla_cert_file,            .defstrval=TF5_DEFAULT_CERT_PATH,    TYPE_STRING, 0},
+#else
+#define CMDLINE_TESLA_PARAMS_GNB
+#endif
+
 #define CMDLINE_PARAMS_DESC_GNB { \
   {"m" ,                    CONFIG_HLP_DLMCS_PHYTEST,  0,                .uptr=&target_dl_mcs,                .defintval=0,                     TYPE_UINT,   0},        \
   {"l" ,                    CONFIG_HLP_DLNL_PHYTEST,   0,                .uptr=&target_dl_Nl,                 .defintval=0,                     TYPE_UINT,   0},        \
@@ -27,6 +45,7 @@
   {"U" ,                    CONFIG_HLP_ULBM_PHYTEST,   0,                .u64ptr=&ulsch_slot_bitmap,          .defintval=0,                     TYPE_UINT64, 0},        \
   {"usrp-tx-thread-config", CONFIG_HLP_USRP_THREAD,    0,                .iptr=&usrp_tx_thread,               .defstrval=0,                     TYPE_INT,    0},        \
   {"uecap_file",            CONFIG_HLP_UECAP_FILE,     0,                .strptr=&uecap_file,                 .defstrval="./uecap_ports1.xml",  TYPE_STRING, 0},        \
+  CMDLINE_TESLA_PARAMS_GNB \
 }
 // clang-format on
 
@@ -39,6 +58,10 @@ extern uint32_t target_ul_bw;
 extern uint64_t dlsch_slot_bitmap;
 extern uint64_t ulsch_slot_bitmap;
 extern char *uecap_file;
+#ifdef TF5_ENABLE_TESLA
+extern char *tesla_privkey_file;
+extern char *tesla_cert_file;
+#endif
 
 // In nr-gnb.c
 extern void init_gNB();

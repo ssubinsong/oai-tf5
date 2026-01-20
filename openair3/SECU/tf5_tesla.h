@@ -420,6 +420,37 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
 
 /*
  * =============================================================================
+ * File I/O Functions
+ * =============================================================================
+ */
+
+/**
+ * Load Ed25519 private key from PEM file
+ *
+ * @param filepath      Path to PEM file containing Ed25519 private key
+ * @param privkey_out   Output: 32-byte raw private key
+ * @return 0 on success, negative on error:
+ *         -1: Cannot open file
+ *         -2: Cannot parse PEM
+ *         -3: Cannot extract raw key
+ */
+int tf5_tesla_load_privkey(const char *filepath, uint8_t privkey_out[32]);
+
+/**
+ * Load Ed25519 public key from PEM certificate file
+ *
+ * @param filepath      Path to PEM certificate file
+ * @param pubkey_out    Output: 32-byte raw public key
+ * @return 0 on success, negative on error:
+ *         -1: Cannot open file
+ *         -2: Cannot parse certificate
+ *         -3: Cannot extract public key from certificate
+ *         -4: Cannot extract raw key
+ */
+int tf5_tesla_load_cert_pubkey(const char *filepath, uint8_t pubkey_out[32]);
+
+/*
+ * =============================================================================
  * Utility Functions
  * =============================================================================
  */

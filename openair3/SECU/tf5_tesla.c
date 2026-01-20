@@ -33,7 +33,11 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <openssl/rand.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+#include <openssl/evp.h>
 
 /*
  * =============================================================================
@@ -758,6 +762,98 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
     LOG_D(NR_RRC, "TESLA: Key K_%u already verified (anchor at K_%u)\n",
           key_index, state->last_verified_key_idx);
     return true;
+}
+
+/*
+ * =============================================================================
+ * File I/O Functions
+ * =============================================================================
+ */
+
+int tf5_tesla_load_privkey(const char *filepath, uint8_t privkey_out[32])
+{
+    if (!filepath || !privkey_out) {
+        return -1;
+    }
+
+    FILE *fp = fopen(filepath, "r");
+    if (!fp) {
+        LOG_E(NR_RRC, "TESLA: Cannot open private key file: %s\n", filepath);
+        return -1;
+    }
+
+    EVP_PKEY *pkey = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
+    fclose(fp);
+
+    if (!pkey) {
+        LOG_E(NR_RRC, "TESLA: Cannot parse PEM private key from: %s\n", filepath);
+        return -2;
+    }
+
+    // Verify it's an Ed25519 key
+    if (EVP_PKEY_id(pkey) != EVP_PKEY_ED25519) {
+        LOG_E(NR_RRC, "TESLA: Key is not Ed25519 type\n");
+        EVP_PKEY_free(pkey);
+        return -3;
+    }
+
+    size_t len = 32;
+    int rc = EVP_PKEY_get_raw_private_key(pkey, privkey_out, &len);
+    EVP_PKEY_free(pkey);
+
+    if (rc != 1 || len != 32) {
+        LOG_E(NR_RRC, "TESLA: Cannot extract raw private key (rc=%d, len=%zu)\n", rc, len);
+        return -3;
+    }
+
+    return 0;
+}
+
+int tf5_tesla_load_cert_pubkey(const char *filepath, uint8_t pubkey_out[32])
+{
+    if (!filepath || !pubkey_out) {
+        return -1;
+    }
+
+    FILE *fp = fopen(filepath, "r");
+    if (!fp) {
+        LOG_E(NR_RRC, "TESLA: Cannot open certificate file: %s\n", filepath);
+        return -1;
+    }
+
+    X509 *cert = PEM_read_X509(fp, NULL, NULL, NULL);
+    fclose(fp);
+
+    if (!cert) {
+        LOG_E(NR_RRC, "TESLA: Cannot parse PEM certificate from: %s\n", filepath);
+        return -2;
+    }
+
+    EVP_PKEY *pkey = X509_get_pubkey(cert);
+    X509_free(cert);
+
+    if (!pkey) {
+        LOG_E(NR_RRC, "TESLA: Cannot extract public key from certificate\n");
+        return -3;
+    }
+
+    // Verify it's an Ed25519 key
+    if (EVP_PKEY_id(pkey) != EVP_PKEY_ED25519) {
+        LOG_E(NR_RRC, "TESLA: Certificate public key is not Ed25519 type\n");
+        EVP_PKEY_free(pkey);
+        return -4;
+    }
+
+    size_t len = 32;
+    int rc = EVP_PKEY_get_raw_public_key(pkey, pubkey_out, &len);
+    EVP_PKEY_free(pkey);
+
+    if (rc != 1 || len != 32) {
+        LOG_E(NR_RRC, "TESLA: Cannot extract raw public key (rc=%d, len=%zu)\n", rc, len);
+        return -4;
+    }
+
+    return 0;
 }
 
 #endif /* TF5_ENABLE_TESLA */

@@ -1475,10 +1475,28 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
 #ifdef TF5_ENABLE_TESLA
     ptr->SInfo.tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
     if (ptr->SInfo.tesla_state) {
-      /* For research: gNB public key would come from config or pre-provisioning.
-       * In production, this would be distributed via secure channels.
-       * Here we use a placeholder - the actual key is generated at gNB init. */
-      LOG_I(NR_RRC, "TESLA: UE TESLA state allocated for NB connection %d\n", i);
+      nrUE_params_t *params = get_nrUE_params();
+      uint8_t gnb_pubkey[32];
+      int rc = tf5_tesla_load_cert_pubkey(params->tesla_gnb_cert_file, gnb_pubkey);
+      if (rc == 0) {
+        // Default slots_per_frame, will be updated when SIB1 is received with numerology info
+        uint16_t slots_per_frame = 20;
+        tf5_tesla_ue_init(ptr->SInfo.tesla_state, gnb_pubkey, slots_per_frame);
+        LOG_I(NR_RRC, "TESLA: Loaded gNB certificate from %s\n", params->tesla_gnb_cert_file);
+        // Log public key for verification
+        char hex_buf[65];
+        for (int j = 0; j < 32; j++) {
+          sprintf(&hex_buf[j*2], "%02x", gnb_pubkey[j]);
+        }
+        LOG_I(NR_RRC, "TESLA: gNB public key (hex): %s\n", hex_buf);
+      } else {
+        LOG_E(NR_RRC, "TESLA: Failed to load gNB certificate from %s (rc=%d)\n",
+              params->tesla_gnb_cert_file, rc);
+        LOG_E(NR_RRC, "TESLA: Run ./scripts/tf5_generate_cert.sh to generate keys\n");
+        // Free state and set to NULL to disable TESLA
+        free(ptr->SInfo.tesla_state);
+        ptr->SInfo.tesla_state = NULL;
+      }
     }
 #endif
   }

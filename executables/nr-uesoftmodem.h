@@ -27,6 +27,11 @@ extern uint16_t ue_id_g;
 #define  CONFIG_HLP_NUM_DL_ACTORS          "Number of DL actors to use. Set to 0 to disable DL actor framework and do processing inline\n"
 #define  CONFIG_HLP_EXTRA_PDU_ID           "ID of an additional PDU session to configure alongside default PDU session\n"
 
+#ifdef TF5_ENABLE_TESLA
+#define  CONFIG_HLP_TESLA_GNB_CERT         "TESLA gNB certificate file to trust (PEM format)\n"
+#define  TF5_DEFAULT_GNB_CERT_PATH         "./tesla_keys/gnb_tesla_cert.pem"
+#endif
+
 /***************************************************************************************************************************************/
 /* command line options definitions, CMDLINE_XXXX_DESC macros are used to initialize paramdef_t arrays which are then used as argument
    when calling config_get or config_getlist functions                                                                                 */
@@ -84,7 +89,15 @@ extern uint16_t ue_id_g;
   {"num-ul-actors",                CONFIG_HLP_NUM_UL_ACTORS,   0,               .iptr=&nrUE_params.num_ul_actors,            .defintval=2,      TYPE_INT,      0}, \
   {"num-dl-actors",                CONFIG_HLP_NUM_DL_ACTORS,  0,                .iptr=&nrUE_params.num_dl_actors,            .defintval=4,      TYPE_INT,      0}, \
   {"extra-pdu-id",                 CONFIG_HLP_EXTRA_PDU_ID,   0,                .iptr=&nrUE_params.extra_pdu_id,             .defintval=-1,     TYPE_INT,      0}, \
+  CMDLINE_TESLA_PARAMS_UE \
 }
+
+#ifdef TF5_ENABLE_TESLA
+#define CMDLINE_TESLA_PARAMS_UE \
+  {"tesla-gnb-cert",               CONFIG_HLP_TESLA_GNB_CERT, 0,                .strptr=&nrUE_params.tesla_gnb_cert_file,    .defstrval=TF5_DEFAULT_GNB_CERT_PATH, TYPE_STRING, 0},
+#else
+#define CMDLINE_TESLA_PARAMS_UE
+#endif
 // clang-format on
 
 typedef struct {
@@ -126,6 +139,9 @@ typedef struct {
   int num_ul_actors;
   int num_dl_actors;
   int extra_pdu_id;
+#ifdef TF5_ENABLE_TESLA
+  char *tesla_gnb_cert_file;
+#endif
 } nrUE_params_t;
 extern uint64_t get_nrUE_optmask(void);
 extern uint64_t set_nrUE_optmask(uint64_t bitmask);

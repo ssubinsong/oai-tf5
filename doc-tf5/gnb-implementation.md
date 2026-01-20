@@ -9,8 +9,9 @@
 **Location**: `openair2/LAYER2/NR_MAC_gNB/config.c`
 
 ```
-1. Generate Ed25519 key pair
-   └── tf5_tesla_ed25519_keygen()
+1. Load Ed25519 key pair from files
+   ├── tf5_tesla_load_privkey(tesla_privkey_file, private_key)
+   └── tf5_tesla_load_cert_pubkey(tesla_cert_file, public_key)
 
 2. Allocate and initialize TESLA state
    └── tf5_tesla_gnb_init()
@@ -22,9 +23,15 @@
 3. Store original SIB1 (without extension)
    └── cc->sib1_original[], cc->sib1_original_length
 
-4. Log public key for UE provisioning
-   └── LOG_I() with hex-encoded public key
+4. Log loaded key paths and public key
+   └── LOG_I() with file paths and hex-encoded public key
 ```
+
+**Command-line parameters**:
+- `--tesla-privkey <path>` - Private key file (default: `./tesla_keys/gnb_tesla_privkey.pem`)
+- `--tesla-cert <path>` - Certificate file (default: `./tesla_keys/gnb_tesla_cert.pem`)
+
+**Key generation**: Run `./scripts/tf5_generate_cert.sh` before starting gNB.
 
 ---
 

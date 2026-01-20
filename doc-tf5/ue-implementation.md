@@ -12,11 +12,20 @@
 // Allocate TESLA state
 SI_info->tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
 
-// Initialize with pre-provisioned gNB public key
-tf5_tesla_ue_init(SI_info->tesla_state, gnb_public_key, slots_per_frame);
+// Load gNB public key from certificate file
+nrUE_params_t *params = get_nrUE_params();
+uint8_t gnb_pubkey[32];
+int rc = tf5_tesla_load_cert_pubkey(params->tesla_gnb_cert_file, gnb_pubkey);
+if (rc == 0) {
+    tf5_tesla_ue_init(SI_info->tesla_state, gnb_pubkey, slots_per_frame);
+}
 ```
 
-**Note**: The gNB public key must be pre-provisioned on the UE. In the current implementation, it's hardcoded for testing.
+**Command-line parameter**: `--tesla-gnb-cert <path>`
+- Default: `./tesla_keys/gnb_tesla_cert.pem`
+- Generate with: `./scripts/tf5_generate_cert.sh`
+
+**Note**: The gNB certificate must be generated using `tf5_generate_cert.sh` and made available to the UE before starting. The same certificate file should be used by both gNB and UE to ensure matching public keys.
 
 ---
 
