@@ -22,6 +22,9 @@ tf5_tesla_ue_init(SI_info->tesla_state, gnb_public_key, slots_per_frame);
 
 ## SIB1 Reception Flow
 
+**CRITICAL SECURITY REQUIREMENT**: K_0 must be authenticated via Ed25519 signature BEFORE being accepted.
+RFC 4082 Section 3.3 requires the root commitment to be signed by the sender.
+
 ```
 1. Check for TESLA extension
    └── sib1->message.lateNonCriticalExtension
@@ -29,23 +32,30 @@ tf5_tesla_ue_init(SI_info->tesla_state, gnb_public_key, slots_per_frame);
 2. Unpack extension
    └── tf5_tesla_unpack_extension()
 
-3. Store static params (first reception)
-   └── Copy to UE state
-
-4. Build auth_input for verification
+3. Build auth_input for signature verification
+   └── Re-encode original SIB1 (without extension)
    └── tf5_tesla_build_auth_input()
 
-5. Verify Ed25519 signature (IMMEDIATE)
-   └── tf5_tesla_ue_verify_signature()
-       └── If valid: SIB1 is authenticated
+4. Verify Ed25519 signature (REQUIRED - AssertFatal if no public key)
+   └── tf5_tesla_ed25519_verify()
+   └── If FAILED: Reject SIB1 immediately (return)
+   └── K_0 is NOT trusted until this succeeds
 
-6. Check buffered SIB1 verification (DELAYED)
-   └── If disclosed_key available for buffered message:
-       └── tf5_tesla_ue_verify_buffered()
+5. Accept K_0: Store static params ONLY after signature verification
+   └── Copy authenticated static_params (including K_0) to UE state
+   └── Set initialized = true
+
+6. Verify buffered SIB1 (DELAYED authentication)
+   └── tf5_tesla_ue_verify_buffered() which includes:
+       a. tf5_tesla_ue_verify_key_chain() - verify disclosed key chains to K_0
+       b. tf5_tesla_compute_tag() - compute expected MAC
+       c. Compare with buffered tag
 
 7. Buffer current SIB1
    └── tf5_tesla_ue_buffer_sib1()
 ```
+
+**Design Assumption**: The UE always has a pre-provisioned gNB public key. If not available, the code will AssertFatal.
 
 ---
 
@@ -83,7 +93,8 @@ bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
 
 ## Key Chain Verification
 
-When verifying a disclosed key:
+Key chain verification is called automatically by `tf5_tesla_ue_verify_buffered()` before MAC verification.
+This ensures disclosed keys are cryptographically validated against the authenticated K_0.
 
 ```c
 bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
@@ -98,7 +109,10 @@ bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
         tf5_tesla_chain_key(computed_key, computed_key);
     }
 
-    // Compare with known key
+    // Compare with known key (K_0 or last verified key)
     return memcmp(computed_key, known_key, 16) == 0;
 }
 ```
+
+**Security Note**: If a disclosed key does not chain to K_0, `tf5_tesla_ue_verify_buffered()` returns error -6
+and the buffered SIB1 MAC verification is rejected. This prevents use of forged keys.

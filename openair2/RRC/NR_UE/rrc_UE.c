@@ -504,17 +504,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
       LOG_D(NR_RRC, "TESLA: Unpacked extension, interval=%u, t_int=%u ms, d=%u\n",
             ext.dynamic_params.interval_index, ext.static_params.t_int_ms, ext.static_params.disclosure_delay);
 
-      /* Initialize UE state with static params on first reception */
-      if (!SI_info->tesla_state->initialized) {
-        memcpy(&SI_info->tesla_state->static_params, &ext.static_params, sizeof(tf5_tesla_static_params_t));
-        /* For research: copy gNB public key from extension signature verification
-         * In production, this would be pre-provisioned via secure channel */
-        SI_info->tesla_state->initialized = true;
-        LOG_I(NR_RRC, "TESLA: Initialized UE state with gNB static params\n");
-      }
-
-      /* 1. Verify Ed25519 signature (immediate authentication) */
-      /* Note: We need to build auth_input from original SIB1 + static + dynamic */
+      /* 1. Verify Ed25519 signature FIRST (immediate authentication)
+       * RFC 4082: K_0 must be authenticated via digital signature before TESLA can be used.
+       * The signature covers: original SIB1 + static_params (including K_0) + dynamic_params */
       uint8_t auth_input[TF5_TESLA_MAX_AUTH_INPUT];
       size_t auth_len = 0;
 
@@ -536,21 +528,28 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                     &ext.static_params,
                                     &ext.dynamic_params);
 
-        /* Verify signature using gNB public key */
-        if (SI_info->tesla_state->has_gnb_public_key) {
-          int sig_rc = tf5_tesla_ed25519_verify(SI_info->tesla_state->gnb_public_key,
-                                                 auth_input, auth_len,
-                                                 ext.gnb_signature);
-          if (sig_rc != 0) {
-            LOG_E(NR_RRC, "TESLA: Signature verification FAILED - rejecting SIB1\n");
-            return; /* Reject this SIB1 */
-          }
-          LOG_I(NR_RRC, "TESLA: Signature verified for interval %u\n", ext.dynamic_params.interval_index);
-        } else {
-          LOG_W(NR_RRC, "TESLA: No gNB public key configured - skipping signature verification\n");
+        /* Verify signature using pre-provisioned gNB public key (REQUIRED) */
+        AssertFatal(SI_info->tesla_state->has_gnb_public_key,
+                    "TESLA: gNB public key not configured - required for K_0 authentication");
+
+        int sig_rc = tf5_tesla_ed25519_verify(SI_info->tesla_state->gnb_public_key,
+                                               auth_input, auth_len,
+                                               ext.gnb_signature);
+        if (sig_rc != 0) {
+          LOG_E(NR_RRC, "TESLA: Signature verification FAILED - rejecting SIB1\n");
+          return; /* Reject this SIB1 - K_0 not authenticated */
+        }
+        LOG_I(NR_RRC, "TESLA: Signature verified for interval %u\n", ext.dynamic_params.interval_index);
+
+        /* 2. NOW accept K_0: Initialize UE state with static params after signature verification
+         * RFC 4082 Section 3.3: K_0 must be authenticated before use */
+        if (!SI_info->tesla_state->initialized) {
+          memcpy(&SI_info->tesla_state->static_params, &ext.static_params, sizeof(tf5_tesla_static_params_t));
+          SI_info->tesla_state->initialized = true;
+          LOG_I(NR_RRC, "TESLA: Initialized UE state with authenticated K_0 (root commitment)\n");
         }
 
-        /* 2. Verify previously buffered SIB1 using disclosed key (delayed auth) */
+        /* 3. Verify previously buffered SIB1 using disclosed key (delayed auth) */
         if (SI_info->tesla_state->buffer.pending && ext.dynamic_params.interval_index > ext.static_params.disclosure_delay) {
           uint32_t disclosed_interval = ext.dynamic_params.interval_index - ext.static_params.disclosure_delay;
           if (disclosed_interval == SI_info->tesla_state->buffer.interval_index) {
@@ -566,7 +565,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           }
         }
 
-        /* 3. Buffer current SIB1 for TESLA delayed verification
+        /* 4. Buffer current SIB1 for TESLA delayed verification
          * Note: rx_sfn/rx_slot would ideally come from PHY layer timing
          * For now, we use the SIB1's ti_sfn/ti_slot as approximation
          * ti_hfn comes from the signed extension (trusted) */

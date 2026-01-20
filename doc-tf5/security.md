@@ -21,7 +21,25 @@
 1. **Source Authentication**: Ed25519 signature proves message originated from legitimate gNB
 2. **Message Integrity**: Both signature and MAC protect against tampering
 3. **Timeliness**: Interval tracking detects stale/replayed messages
-4. **Key Chain Integrity**: Each disclosed key can be verified against K_0
+4. **Key Chain Integrity**: Each disclosed key is verified to chain to K_0
+
+---
+
+## RFC 4082 Compliance
+
+**Critical Requirement** (Section 3.3 - Bootstrapping Receivers):
+
+> "One authenticated key of the one-way key chain. (Typically, this will be the last key in the chain;
+> i.e., K_0. This key will be signed by the sender, and all receivers will verify the signature
+> with the public key of the signer.)"
+
+**Implementation**:
+- K_0 is included in the Ed25519-signed `auth_input` along with SIB1 content
+- UE verifies signature BEFORE accepting K_0 into state
+- Without signature verification, K_0 is NOT trusted and TESLA is not used
+- Disclosed keys must chain to authenticated K_0 via one-way function F
+
+**Design Assumption**: The UE has a pre-provisioned gNB public key (AssertFatal if missing)
 
 ---
 

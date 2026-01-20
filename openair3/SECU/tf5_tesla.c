@@ -664,6 +664,14 @@ int tf5_tesla_ue_verify_buffered(tf5_tesla_ue_state_t *state,
         return -3;  // Key is for different interval
     }
 
+    // Verify key chain integrity BEFORE using the key for MAC verification
+    // RFC 4082: Disclosed key must chain to authenticated K_0
+    if (!tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_interval)) {
+        LOG_E(NR_RRC, "TESLA: Disclosed key K_%u does not chain to K_0 - rejecting\n",
+              key_interval);
+        return -6;  // Key chain verification failed
+    }
+
     // Compute expected tag
     uint8_t expected_tag[TF5_TESLA_TAG_LEN];
     int rc = tf5_tesla_compute_tag(disclosed_key,
