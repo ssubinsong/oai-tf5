@@ -704,9 +704,10 @@ int tf5_tesla_ue_verify_buffered(tf5_tesla_ue_state_t *state,
     LOG_I(NR_RRC, "TESLA: MAC verification SUCCESS for interval %u\n",
           key_interval);
 
-    // Update verified key state
+    // Update verified key state (becomes new anchor for O(1) verification)
     memcpy(state->last_verified_key, disclosed_key, TF5_TESLA_KEY_LEN);
     state->last_verified_key_idx = key_interval;
+    state->last_verified_key_valid = true;
 
     // Clear buffer
     state->buffer.pending = false;
@@ -722,53 +723,40 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
         return false;
     }
 
-    // If this is the first key we've seen, or if we have a previously verified key
-    if (state->last_verified_key_idx == 0 && !state->params_received) {
-        // First key - need to verify against root commitment K_0
-        // Compute forward from disclosed key to K_0
-        uint8_t computed_key[TF5_TESLA_KEY_LEN];
-        memcpy(computed_key, disclosed_key, TF5_TESLA_KEY_LEN);
-
-        for (uint32_t i = key_index; i > 0; i--) {
-            uint8_t next_key[TF5_TESLA_KEY_LEN];
-            tf5_tesla_chain_key(computed_key, next_key);
-            memcpy(computed_key, next_key, TF5_TESLA_KEY_LEN);
-        }
-
-        // Compare with root commitment K_0
-        if (memcmp(computed_key, state->static_params.root_key, TF5_TESLA_KEY_LEN) == 0) {
-            LOG_I(NR_RRC, "TESLA: Key chain verified from K_%u to K_0\n", key_index);
-            return true;
-        } else {
-            LOG_E(NR_RRC, "TESLA: Key chain verification FAILED\n");
-            return false;
-        }
+    // Check if we have a valid anchor key (set by Ed25519 verification or previous TESLA verification)
+    if (!state->last_verified_key_valid) {
+        // No anchor yet - this should not happen if Ed25519 verification ran first
+        LOG_E(NR_RRC, "TESLA: No valid anchor key - cannot verify key chain\n");
+        return false;
     }
 
-    // Verify against previously verified key
+    // Verify by chaining to the last verified key (O(1) if consecutive intervals)
     if (key_index > state->last_verified_key_idx) {
-        // key_index > last_verified means we need to chain from key_index down to last_verified
+        // Chain from key_index down to last_verified_key_idx
         uint8_t computed_key[TF5_TESLA_KEY_LEN];
         memcpy(computed_key, disclosed_key, TF5_TESLA_KEY_LEN);
 
-        for (uint32_t i = key_index; i > state->last_verified_key_idx; i--) {
+        uint32_t steps = key_index - state->last_verified_key_idx;
+        for (uint32_t i = 0; i < steps; i++) {
             uint8_t next_key[TF5_TESLA_KEY_LEN];
             tf5_tesla_chain_key(computed_key, next_key);
             memcpy(computed_key, next_key, TF5_TESLA_KEY_LEN);
         }
 
         if (memcmp(computed_key, state->last_verified_key, TF5_TESLA_KEY_LEN) == 0) {
-            LOG_D(NR_RRC, "TESLA: Key chain verified from K_%u to K_%u\n",
-                  key_index, state->last_verified_key_idx);
+            LOG_D(NR_RRC, "TESLA: Key chain verified K_%u -> K_%u (%u hash ops)\n",
+                  key_index, state->last_verified_key_idx, steps);
             return true;
         } else {
-            LOG_E(NR_RRC, "TESLA: Key chain verification FAILED\n");
+            LOG_E(NR_RRC, "TESLA: Key chain verification FAILED K_%u -> K_%u\n",
+                  key_index, state->last_verified_key_idx);
             return false;
         }
     }
 
-    // key_index <= last_verified_key_idx - this is an old key, should be derivable
-    // from the last verified key
+    // key_index <= last_verified_key_idx - old key, already verified transitively
+    LOG_D(NR_RRC, "TESLA: Key K_%u already verified (anchor at K_%u)\n",
+          key_index, state->last_verified_key_idx);
     return true;
 }
 

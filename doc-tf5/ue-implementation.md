@@ -226,30 +226,48 @@ bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
 
 ---
 
-## Key Chain Verification
+## Key Chain Verification (O(1) Optimization)
 
 Key chain verification is called automatically by `tf5_tesla_ue_verify_buffered()` before MAC verification.
-This ensures disclosed keys are cryptographically validated against the authenticated K_0.
+This ensures disclosed keys are cryptographically validated against a trusted anchor key.
+
+### Anchor Key Strategy
+
+Instead of chaining every disclosed key back to K_0 (which requires O(i) hash operations), the UE uses the **last verified key** as anchor:
+
+1. **First SIB1 (interval i)**: Ed25519 signature authenticates both K_0 and K_{i-d}
+   - K_{i-d} becomes the anchor (0 hash ops - signature authenticated)
+2. **Subsequent SIB1s**: New disclosed key verified against last anchor
+   - Verify: F(K_{new}) == K_{anchor}? (typically 1 hash op)
+   - Anchor updates to K_{new} after successful verification
+
+### Example (d=1)
+
+```
+Interval i (UE joins): anchor = K_{i-1}  (signature authenticated)
+Interval i+1: verify K_i → K_{i-1} (1 hash), anchor = K_i
+Interval i+2: verify K_{i+1} → K_i (1 hash), anchor = K_{i+1}
+...
+```
+
+### Implementation
 
 ```c
 bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
-    // Case 1: First key verification - chain to root K_0
-    // Case 2: Subsequent - chain to last verified key
+    // Require valid anchor (set by Ed25519 or previous TESLA verification)
+    if (!state->last_verified_key_valid) return false;
 
-    // Apply F repeatedly until reaching known key
-    uint8_t computed_key[16];
-    memcpy(computed_key, disclosed_key, 16);
-
-    for (uint32_t i = key_index; i > target_index; i--) {
-        tf5_tesla_chain_key(computed_key, computed_key);
+    if (key_index > state->last_verified_key_idx) {
+        // Chain from disclosed key down to anchor
+        uint32_t steps = key_index - state->last_verified_key_idx;
+        // Apply F 'steps' times and compare with anchor
+        // O(1) for consecutive intervals
     }
-
-    // Compare with known key (K_0 or last verified key)
-    return memcmp(computed_key, known_key, 16) == 0;
+    return true;
 }
 ```
 
-**Security Note**: If a disclosed key does not chain to K_0, `tf5_tesla_ue_verify_buffered()` returns error -6
+**Security Note**: If a disclosed key does not chain to the anchor, `tf5_tesla_ue_verify_buffered()` returns error -6
 and the buffered SIB1 MAC verification is rejected. This prevents use of forged keys.
 
 ---

@@ -550,8 +550,17 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             SI_info->tesla_state->k0_trusted = true;
             SI_info->tesla_state->sib1_authenticated = true;
             SI_info->tesla_state->params_received = true;
-            LOG_I(NR_RRC, "TESLA: First-time UE - K_0 authenticated via Ed25519 (interval %u)\n",
-                  ext.dynamic_params.interval_index);
+
+            /* Accept disclosed key K_{i-d} as anchor for future key chain verification.
+             * Since the signature covers the entire auth_input (including disclosed_key),
+             * K_{i-d} is authenticated and serves as O(1) anchor instead of K_0. */
+            uint32_t disclosed_interval = ext.dynamic_params.interval_index - ext.static_params.disclosure_delay;
+            memcpy(SI_info->tesla_state->last_verified_key, ext.dynamic_params.disclosed_key, TF5_TESLA_KEY_LEN);
+            SI_info->tesla_state->last_verified_key_idx = disclosed_interval;
+            SI_info->tesla_state->last_verified_key_valid = true;
+
+            LOG_I(NR_RRC, "TESLA: First-time UE - K_0 authenticated via Ed25519, K_%u accepted as anchor (interval %u)\n",
+                  disclosed_interval, ext.dynamic_params.interval_index);
 
             /* If RRCSetupComplete was deferred, send it now */
             if (SI_info->tesla_state->rrcsetup_deferred) {

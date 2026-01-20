@@ -145,8 +145,9 @@ typedef struct {
     bool     has_gnb_public_key;     // Is gNB public key configured?
 
     // Verification state
-    bool     params_received;        // Have we received static params?
-    uint32_t last_verified_key_idx;  // Index of last verified key
+    bool     params_received;         // Have we received static params?
+    bool     last_verified_key_valid; // Is last_verified_key initialized with authenticated key?
+    uint32_t last_verified_key_idx;   // Index of last verified key
     uint8_t  last_verified_key[TF5_TESLA_KEY_LEN];
 
     // HFN tracking (for SFN wraparound handling)
