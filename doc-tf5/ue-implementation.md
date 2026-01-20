@@ -68,42 +68,40 @@ typedef struct {
 
 ## Parallel Authentication Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SIB1 RECEIVED                                   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                     │
-      ┌──────────────────────────────┴──────────────────────────────┐
-      ▼                                                              ▼
-┌─────────────────────┐                                    ┌─────────────────────┐
-│   AUTHENTICATION    │                                    │   RACH/RRC SETUP    │
-│     (PARALLEL)      │                                    │     (PARALLEL)      │
-└─────────────────────┘                                    └─────────────────────┘
-      │                                                              │
-      ▼                                                              ▼
-┌─────────────────────┐                                    ┌─────────────────────┐
-│ k0_trusted == false │                                    │ Proceed immediately │
-│   (First-time UE)   │                                    │  to Random Access   │
-│   → Ed25519 verify  │                                    │                     │
-│         OR          │                                    │  MSG1 → MSG2 → MSG3 │
-│ k0_trusted == true  │                                    │       → MSG4        │
-│   (Returning UE)    │                                    └─────────────────────┘
-│   → Wait for TESLA  │                                              │
-│     key disclosure  │                                              ▼
-└─────────────────────┘                                    ┌─────────────────────┐
-      │                                                    │ RRCSetup received   │
-      ▼                                                    │ SRB1 established    │
-┌─────────────────────┐                                    │                     │
-│ Authentication      │                                    │ Check: auth done?   │
-│ Result:             │──────────────────────────────────▶│ ├── YES + SUCCESS:  │
-│ ├── SUCCESS:        │                                    │ │   Send NAS in      │
-│ │   sib1_auth=true  │                                    │ │   RRCSetupComplete │
-│ │   k0_trusted=true │                                    │ ├── YES + FAILED:   │
-│ │   → trigger NAS   │                                    │ │   ABORT RRC        │
-│ └── FAILED:         │                                    │ └── NO (pending):   │
-│     auth_failed=true│                                    │     Defer RRCSetup- │
-│     → ABORT RRC     │                                    │     Complete, wait  │
-└─────────────────────┘                                    └─────────────────────┘
+```mermaid
+flowchart TB
+    subgraph start[" "]
+        SIB1["SIB1 RECEIVED"]
+    end
+
+    SIB1 --> AUTH
+    SIB1 --> RACH
+
+    subgraph left["Authentication (Parallel)"]
+        AUTH["Start Authentication"]
+        AUTH --> CHECK{"k0_trusted?"}
+        CHECK -->|"false<br/>(First-time UE)"| ED25519["Ed25519 verify"]
+        CHECK -->|"true<br/>(Returning UE)"| TESLA["Wait for TESLA<br/>key disclosure"]
+        ED25519 --> RESULT
+        TESLA --> RESULT
+        RESULT{"Result"}
+        RESULT -->|SUCCESS| SUCCESS["sib1_auth=true<br/>k0_trusted=true"]
+        RESULT -->|FAILED| FAILED["auth_failed=true"]
+    end
+
+    subgraph right["RACH/RRC Setup (Parallel)"]
+        RACH["Proceed to Random Access"]
+        RACH --> MSGS["MSG1 → MSG2 → MSG3 → MSG4"]
+        MSGS --> RRCSETUP["RRCSetup received<br/>SRB1 established"]
+        RRCSETUP --> GATE{"Auth done?"}
+        GATE -->|"YES + SUCCESS"| NAS["Send NAS in<br/>RRCSetupComplete"]
+        GATE -->|"YES + FAILED"| ABORT["ABORT RRC"]
+        GATE -->|"NO (pending)"| DEFER["Defer RRCSetupComplete<br/>wait for auth"]
+    end
+
+    SUCCESS -.->|"trigger"| GATE
+    FAILED -.->|"trigger"| GATE
+    DEFER -.->|"wait"| RESULT
 ```
 
 ---
