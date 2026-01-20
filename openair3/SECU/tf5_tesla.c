@@ -519,9 +519,15 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     state->slots_per_frame = slots_per_frame;
     state->params_received = false;
     state->buffer.pending = false;
+
+    // HFN tracking will be initialized from first valid signed SIB1
+    state->current_hfn = 0;
+    state->last_sfn = 0;
+    state->hfn_initialized = false;
+
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA: UE initialized\n");
+    LOG_I(NR_RRC, "TESLA: UE initialized (HFN tracking pending first SIB1)\n");
 
     return 0;
 }
@@ -547,9 +553,8 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
                                     signature);
 }
 
-bool tf5_tesla_ue_safe_packet_test(const tf5_tesla_ue_state_t *state,
+bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
-                                   uint16_t rx_hfn,
                                    uint16_t rx_sfn,
                                    uint16_t rx_slot)
 {
@@ -557,8 +562,34 @@ bool tf5_tesla_ue_safe_packet_test(const tf5_tesla_ue_state_t *state,
         return false;
     }
 
-    // Compute what interval the sender should be in based on UE's clock
-    uint32_t x = tf5_tesla_get_interval_index(rx_hfn, rx_sfn, rx_slot,
+    // Use ti_hfn from the signed extension as the HFN reference
+    // The Ed25519 signature guarantees ti_hfn hasn't been tampered
+    uint16_t ref_hfn = ext->dynamic_params.ti_hfn;
+
+    // Initialize or update UE's HFN tracking
+    if (!state->hfn_initialized) {
+        // First SIB1 - bootstrap HFN from signed extension
+        state->current_hfn = ref_hfn;
+        state->last_sfn = rx_sfn;
+        state->hfn_initialized = true;
+        LOG_I(NR_RRC, "TESLA: Initialized HFN tracking from signed extension (HFN=%u)\n", ref_hfn);
+    } else {
+        // Update HFN based on SFN wraparound detection
+        tf5_tesla_update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
+
+        // Sanity check: received ti_hfn should match our tracking
+        // Allow ±1 HFN for minor clock drift
+        int16_t hfn_diff = (int16_t)ref_hfn - (int16_t)state->current_hfn;
+        if (hfn_diff < -1 || hfn_diff > 1) {
+            LOG_W(NR_RRC, "TESLA: HFN mismatch - tracked %u, received %u (possible replay)\n",
+                  state->current_hfn, ref_hfn);
+            // Potential replay from old HFN cycle - treat as unsafe
+            return false;
+        }
+    }
+
+    // Compute interval using the signed ti_hfn as reference
+    uint32_t x = tf5_tesla_get_interval_index(ref_hfn, rx_sfn, rx_slot,
                                               ext->static_params.t0_hfn,
                                               ext->static_params.t0_sfn,
                                               ext->static_params.t0_slot,
@@ -585,7 +616,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
                              size_t auth_input_len,
                              uint32_t interval_index,
                              const uint8_t tag[TF5_TESLA_TAG_LEN],
-                             uint16_t rx_hfn,
+                             uint16_t ti_hfn,
                              uint16_t rx_sfn,
                              uint16_t rx_slot)
 {
@@ -603,7 +634,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
     state->buffer.auth_input_len = auth_input_len;
     state->buffer.interval_index = interval_index;
     memcpy(state->buffer.tag, tag, TF5_TESLA_TAG_LEN);
-    state->buffer.rx_hfn = rx_hfn;
+    state->buffer.rx_hfn = ti_hfn;  // Store ti_hfn from signed extension
     state->buffer.rx_sfn = rx_sfn;
     state->buffer.rx_slot = rx_slot;
     state->buffer.pending = true;

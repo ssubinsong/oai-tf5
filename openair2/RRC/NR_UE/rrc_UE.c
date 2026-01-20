@@ -568,11 +568,13 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
         /* 3. Buffer current SIB1 for TESLA delayed verification
          * Note: rx_sfn/rx_slot would ideally come from PHY layer timing
-         * For now, we use the SIB1's ti_sfn/ti_slot as approximation */
+         * For now, we use the SIB1's ti_sfn/ti_slot as approximation
+         * ti_hfn comes from the signed extension (trusted) */
         tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
                                   auth_input, auth_len,
                                   ext.dynamic_params.interval_index,
                                   ext.tesla_tag,
+                                  ext.dynamic_params.ti_hfn,
                                   ext.dynamic_params.ti_sfn,
                                   ext.dynamic_params.ti_slot);
       } else {

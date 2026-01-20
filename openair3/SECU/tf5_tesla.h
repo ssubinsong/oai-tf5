@@ -152,6 +152,7 @@ typedef struct {
     // HFN tracking (for SFN wraparound handling)
     uint16_t current_hfn;         // Current Hyper-Frame Number
     uint16_t last_sfn;            // Last seen SFN (to detect wraparound)
+    bool     hfn_initialized;     // Has HFN been initialized from first signed SIB1?
 
     // Buffered SIB1 pending TESLA verification
     struct {
@@ -338,16 +339,21 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
  * - i = claimed interval index
  * - d = disclosure delay
  *
- * @param state         Pointer to UE TESLA state structure
+ * Uses ti_hfn from the signed extension as the HFN reference since UE cannot
+ * know gNB's HFN during initial SSB synchronization. The Ed25519 signature
+ * guarantees ti_hfn hasn't been tampered.
+ *
+ * On first call, initializes UE's HFN tracking from the extension. On subsequent
+ * calls, compares received ti_hfn against UE's tracked HFN to detect replays.
+ *
+ * @param state         Pointer to UE TESLA state structure (updated for HFN tracking)
  * @param ext           TESLA extension from received SIB1
- * @param rx_hfn        HFN when packet was received
  * @param rx_sfn        SFN when packet was received
  * @param rx_slot       Slot when packet was received
  * @return true if packet is safe, false otherwise
  */
-bool tf5_tesla_ue_safe_packet_test(const tf5_tesla_ue_state_t *state,
+bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
-                                   uint16_t rx_hfn,
                                    uint16_t rx_sfn,
                                    uint16_t rx_slot);
 
@@ -359,7 +365,7 @@ bool tf5_tesla_ue_safe_packet_test(const tf5_tesla_ue_state_t *state,
  * @param auth_input_len Length of auth input
  * @param interval_index Interval index of this SIB1
  * @param tag           TESLA tag from SIB1
- * @param rx_hfn        HFN when received
+ * @param ti_hfn        HFN from signed extension (trusted since Ed25519 signed)
  * @param rx_sfn        SFN when received
  * @param rx_slot       Slot when received
  * @return 0 on success, negative on error
@@ -369,7 +375,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
                              size_t auth_input_len,
                              uint32_t interval_index,
                              const uint8_t tag[TF5_TESLA_TAG_LEN],
-                             uint16_t rx_hfn,
+                             uint16_t ti_hfn,
                              uint16_t rx_sfn,
                              uint16_t rx_slot);
 
