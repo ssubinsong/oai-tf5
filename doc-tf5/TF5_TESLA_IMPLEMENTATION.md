@@ -38,7 +38,7 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 ### 1.2 Reference
 
 - **RFC 4082**: Timed Efficient Stream Loss-Tolerant Authentication (TESLA)
-- Location in repo: `docs/rfc/rfc4082.txt`
+- Location in repo: `claude-ref/rfc/rfc4082.txt`
 
 ### 1.3 Key Features
 
