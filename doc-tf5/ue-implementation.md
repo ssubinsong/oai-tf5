@@ -118,8 +118,9 @@ typedef struct {
 1. Unpack TESLA extension from lateNonCriticalExtension
 
 2. Build auth_input for signature verification
-   └── Re-encode original SIB1 (without extension)
-   └── tf5_tesla_build_auth_input()
+   └── Re-encode SIB1 (without lateNonCriticalExtension)
+   └── tf5_tesla_build_auth_input(sib1, static_params, dynamic_params)
+       (includes SIB1 + TESLA params, excludes signature/MAC)
 
 3. Verify Ed25519 signature (synchronous - fast)
    └── tf5_tesla_ed25519_verify()
@@ -137,6 +138,9 @@ typedef struct {
 1. Unpack TESLA extension from lateNonCriticalExtension
 
 2. Build auth_input for MAC verification
+   └── Re-encode SIB1 (without lateNonCriticalExtension)
+   └── tf5_tesla_build_auth_input(sib1, static_params, dynamic_params)
+       (includes SIB1 + TESLA params, excludes signature/MAC)
 
 3. Check if disclosed key available for buffered SIB1
    └── If interval matches: tf5_tesla_ue_verify_buffered()
