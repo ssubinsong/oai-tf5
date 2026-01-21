@@ -297,50 +297,16 @@ If initial time sync verification fails, the UE falls back to **signature-only m
 
 ### 10.6 State Diagram
 
-```
-                              ┌─────────────────────┐
-                              │  UE Power On        │
-                              └─────────┬───────────┘
-                                        │
-                                        ▼
-                              ┌─────────────────────┐
-                              │  SSB Sync (PHY)     │
-                              │  (radio time align) │
-                              └─────────┬───────────┘
-                                        │
-                                        ▼
-                              ┌─────────────────────┐
-                              │  Receive SIB1       │
-                              │  (record rx_frame,  │
-                              │   rx_slot)          │
-                              └─────────┬───────────┘
-                                        │
-                                        ▼
-                              ┌─────────────────────┐
-                              │  Ed25519 Verify     │
-                              │  (first-time UE)    │
-                              └─────────┬───────────┘
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │  Initial Time Sync Verify     │
-                        │  |RX - TX| ≤ E_sync?          │
-                        └───────────────┬───────────────┘
-                                        │
-                    ┌───────────────────┴───────────────┐
-                    │                                   │
-                    ▼                                   ▼
-        ┌───────────────────┐               ┌───────────────────┐
-        │  timesync_verified│               │ timesync_verified │
-        │  = true           │               │ = false           │
-        └─────────┬─────────┘               └─────────┬─────────┘
-                  │                                   │
-                  ▼                                   ▼
-        ┌───────────────────┐               ┌───────────────────┐
-        │  TESLA MAC Mode   │               │  Signature-Only   │
-        │  (safe packet +   │               │  Mode (Ed25519    │
-        │   delayed verify) │               │   for each SIB1)  │
-        └───────────────────┘               └───────────────────┘
+```mermaid
+flowchart TD
+    A[UE Power On] --> B[SSB Sync - PHY<br/>radio time align]
+    B --> C[Receive SIB1<br/>record rx_frame, rx_slot]
+    C --> D[Ed25519 Verify<br/>first-time UE]
+    D --> E{Initial Time Sync Verify<br/>&#124;RX - TX&#124; ≤ E_sync?}
+    E -->|Yes| F[timesync_verified = true]
+    E -->|No| G[timesync_verified = false]
+    F --> H[TESLA MAC Mode<br/>safe packet + delayed verify]
+    G --> I[Signature-Only Mode<br/>Ed25519 for each SIB1]
 ```
 
 ### 10.7 Code References
