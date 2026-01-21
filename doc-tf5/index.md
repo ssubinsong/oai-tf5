@@ -46,6 +46,7 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 - [gNB Implementation](gnb-implementation.md) - gNB-side initialization and transmission flow
 - [UE Implementation](ue-implementation.md) - UE-side verification and reception flow
 - [HFN Tracking](hfn-tracking.md) - Hyper-Frame Number tracking for SFN wraparound
+- [Time Synchronization](time-sync.md) - Time sync model, D calculation, and safe packet test
 
 ### Integration
 - [Integration Points](integration.md) - File locations and OAI structure modifications
