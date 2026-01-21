@@ -492,13 +492,21 @@ static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const 
 static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index);
 #endif
 
-static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, NR_SIB1_t *sib1, int gNB_index)
+static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, NR_SIB1_t *sib1, int gNB_index,
+                                int rx_frame, int rx_slot)
 {
   if(g_log->log_component[NR_RRC].level >= OAILOG_DEBUG)
     xer_fprint(stdout, &asn_DEF_NR_SIB1, (const void *) sib1);
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef TF5_ENABLE_TESLA
+  // Skip TESLA verification for dedicated SIB1 delivery (rx_frame < 0)
+  // Dedicated delivery is already protected by RRC integrity/ciphering
+  if (rx_frame < 0) {
+    LOG_D(NR_RRC, "TESLA: Skipping verification for dedicated SIB1 delivery\n");
+    goto skip_tesla;
+  }
+
   if (sib1->lateNonCriticalExtension && SI_info->tesla_state) {
     tf5_tesla_extension_t ext;
     int unpack_rc = tf5_tesla_unpack_extension(
@@ -589,6 +597,22 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             LOG_I(NR_RRC, "TESLA: First-time UE - K_0 authenticated via Ed25519, K_%u accepted as anchor (interval %u)\n",
                   disclosed_interval, ext.interval_index);
 
+            /* Verify initial time synchronization (essential TESLA assumption per RFC 4082 Section 2.2) */
+            /* Uses E_sync only as bound since no drift has accumulated yet */
+            int ts_rc = tf5_tesla_verify_initial_timesync(
+                SI_info->tesla_state,
+                ext.timesync_info.ti_sfn, ext.timesync_info.ti_slot,
+                rx_frame, rx_slot);
+
+            if (ts_rc != 0) {
+              LOG_W(NR_RRC, "TESLA: Initial time sync verification FAILED (rc=%d). "
+                    "SSB sync may be compromised. Falling back to signature-only mode.\n", ts_rc);
+              /* Don't abort - gracefully degrade to signature-only */
+              SI_info->tesla_state->timesync_verified = false;
+            } else {
+              SI_info->tesla_state->timesync_verified = true;
+            }
+
             /* If RRCSetupComplete was deferred, send it now */
             if (SI_info->tesla_state->rrcsetup_deferred) {
               LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
@@ -604,19 +628,42 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           }
 
         } else {
-          /* === RETURNING UE: TESLA MAC verification (delayed) === */
-          /* Per RFC 4082 Section 3.5: Safe packet test MUST be Step 1, before buffering or MAC verification */
-          LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
+          /* === RETURNING UE === */
 
-          /* Mark auth in progress until TESLA MAC is verified */
-          if (!SI_info->tesla_state->sib1_authenticated) {
-            SI_info->tesla_state->auth_in_progress = true;
-          }
+          /* Check if time sync was previously verified */
+          if (!SI_info->tesla_state->timesync_verified) {
+            /* Time sync failed during initial verification - stay in signature-only mode */
+            /* Verify Ed25519 signature for each SIB1 instead of using TESLA MAC */
+            LOG_D(NR_RRC, "TESLA: Signature-only mode (time sync not verified) - verifying Ed25519\n");
 
-          /* Step 1 (RFC 4082): Safe packet test FIRST - reject if message could have been forged */
+            int sig_rc = tf5_tesla_ue_verify_signature(SI_info->tesla_state,
+                                                       sig_auth_input, sig_auth_len,
+                                                       ext.gnb_signature);
+            if (sig_rc == 0) {
+              SI_info->tesla_state->sib1_authenticated = true;
+              LOG_I(NR_RRC, "TESLA: Signature-only mode - SIB1 verified via Ed25519\n");
+            } else {
+              LOG_E(NR_RRC, "TESLA: Signature-only mode - Ed25519 verification FAILED\n");
+              SI_info->tesla_state->auth_failed = true;
+              nr_rrc_abort_connection(rrc, gNB_index);
+              return;
+            }
+          } else {
+            /* Normal TESLA MAC verification path (time sync verified) */
+            /* Per RFC 4082 Section 3.5: Safe packet test MUST be Step 1, before buffering or MAC verification */
+            LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
+
+            /* Mark auth in progress until TESLA MAC is verified */
+            if (!SI_info->tesla_state->sib1_authenticated) {
+              SI_info->tesla_state->auth_in_progress = true;
+            }
+
+            /* Step 1 (RFC 4082): Safe packet test FIRST - reject if message could have been forged */
+          /* CRITICAL: Must use actual RX timing, not TX timing from signed extension */
+          /* Using TX timing would allow replay attacks with old signed messages */
           if (!tf5_tesla_ue_safe_packet_test(SI_info->tesla_state, &ext,
-                                              ext.timesync_info.ti_sfn,
-                                              ext.timesync_info.ti_slot)) {
+                                              rx_frame,
+                                              rx_slot)) {
             LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
             /* Skip this SIB1 entirely - do not buffer, do not process further */
           } else {
@@ -671,6 +718,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
               }
             }
           }
+          } /* End of timesync_verified else (TESLA MAC path) */
         }
       } else {
         LOG_E(NR_RRC, "TESLA: Failed to re-encode SIB1 for auth input\n");
@@ -681,6 +729,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   } else if (SI_info->tesla_state) {
     LOG_D(NR_RRC, "TESLA: SIB1 has no lateNonCriticalExtension\n");
   }
+skip_tesla:
+  (void)0; // Empty statement after label (for C compliance)
 #endif
 
   nr_timer_start(&SI_info->sib1_timer);
@@ -1002,7 +1052,8 @@ static void nr_rrc_process_reconfiguration_v1530(NR_UE_RRC_INST_t *rrc, NR_RRCRe
       SEQUENCE_free(&asn_DEF_NR_SIB1, sib1, 1);
     } else {
       // mac layer will free sib1
-      nr_rrc_process_sib1(rrc, SI_info, sib1, gNB_index);
+      // Pass -1 for rx_frame/rx_slot to indicate dedicated delivery (skip TESLA)
+      nr_rrc_process_sib1(rrc, SI_info, sib1, gNB_index, -1, -1);
     }
   }
   if (rec_1530->dedicatedSystemInformationDelivery) {
@@ -1865,7 +1916,8 @@ static void nr_rrc_ue_decode_NR_BCCH_DL_SCH_Message(NR_UE_RRC_INST_t *rrc,
   if (bcch_message->message.present == NR_BCCH_DL_SCH_MessageType_PR_c1) {
     switch (bcch_message->message.choice.c1->present) {
       case NR_BCCH_DL_SCH_MessageType__c1_PR_systemInformationBlockType1:
-        nr_rrc_process_sib1(rrc, SI_info, bcch_message->message.choice.c1->choice.systemInformationBlockType1, gNB_index);
+        nr_rrc_process_sib1(rrc, SI_info, bcch_message->message.choice.c1->choice.systemInformationBlockType1, gNB_index,
+                            frame, slot);
         // mac layer will free after usage the sib1
         bcch_message->message.choice.c1->choice.systemInformationBlockType1 = NULL;
         break;

@@ -51,6 +51,20 @@
 #define TF5_TESLA_TIMESTAMP_LEN     8       // 64-bit Unix timestamp (ms)
 #define TF5_TESLA_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
 
+/*
+ * Default D calculation parameters (per doc-tf5/time-sync.md Section 4)
+ *
+ * D = E_sync + (E_s + E_r) * ΔT_max + M_impl
+ *
+ * D is the upper bound on (sender_time - receiver_time), calculated by
+ * the receiver per RFC 4082 Section 2.2.
+ */
+#define TF5_DEFAULT_E_SYNC_US        500     // E_sync: 500μs sync accuracy (conservative for SSB)
+#define TF5_DEFAULT_E_S_PPB          100     // E_s: 0.1 ppm gNB drift (GNSS-disciplined oscillator)
+#define TF5_DEFAULT_E_R_PPB          10000   // E_r: 10 ppm UE drift (3GPP TS 38.101 worst-case)
+#define TF5_DEFAULT_DELTA_T_MAX_MS   10240   // ΔT_max: 10.24s operating horizon (1 SFN cycle)
+#define TF5_DEFAULT_M_IMPL_US        1000    // M_impl: 1ms implementation margin
+
 // Protocol version
 #define TF5_TESLA_VERSION           0x01
 
@@ -194,6 +208,20 @@ typedef struct {
 
     // Timestamp validation for signature replay protection
     uint64_t timestamp_window_ms;     // Acceptable time window (default 60000ms)
+
+    // Time sync verification state (per doc-tf5/time-sync.md Section 4)
+    bool     timesync_verified;       // Has SSB-based time sync been verified?
+
+    // D calculation parameters (provisioned/configured, used by receiver)
+    // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
+    uint32_t e_sync_us;               // E_sync: Sync accuracy bound (microseconds)
+    uint32_t e_s_ppb;                 // E_s: gNB max drift rate (parts per billion)
+    uint32_t e_r_ppb;                 // E_r: UE max drift rate (parts per billion)
+    uint32_t delta_t_max_ms;          // ΔT_max: Operating horizon / re-sync cadence (ms)
+    uint32_t m_impl_us;               // M_impl: Implementation margin (microseconds)
+
+    // Calculated D value: upper bound on (sender_time - receiver_time)
+    uint32_t d_bound_us;              // Receiver-calculated D in microseconds
 } tf5_tesla_ue_state_t;
 
 /*
@@ -356,6 +384,48 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
  * @param state         Pointer to UE TESLA state structure
  */
 void tf5_tesla_ue_free(tf5_tesla_ue_state_t *state);
+
+/**
+ * Calculate D: upper bound on (sender_time - receiver_time)
+ *
+ * Per RFC 4082 Section 2.2, D_t bounds how much the sender's clock
+ * can be ahead of the receiver's clock.
+ *
+ * Per doc-tf5/time-sync.md Section 4.3-4.4:
+ * D = E_sync + (E_s + E_r) * ΔT_max + M_impl
+ *
+ * @param e_sync_us      E_sync: Sync accuracy bound (microseconds)
+ * @param e_s_ppb        E_s: gNB max drift rate (parts per billion)
+ * @param e_r_ppb        E_r: UE max drift rate (parts per billion)
+ * @param delta_t_max_ms ΔT_max: Operating horizon (milliseconds)
+ * @param m_impl_us      M_impl: Implementation margin (microseconds)
+ * @return D: upper bound on (sender_time - receiver_time) in microseconds
+ */
+uint32_t tf5_tesla_calculate_d_bound(uint32_t e_sync_us,
+                                     uint32_t e_s_ppb,
+                                     uint32_t e_r_ppb,
+                                     uint32_t delta_t_max_ms,
+                                     uint32_t m_impl_us);
+
+/**
+ * Verify initial time synchronization after Ed25519 verification
+ *
+ * Checks that UE's RX timing is consistent with gNB's signed TX timing.
+ * Uses E_sync as the bound since no drift has accumulated yet.
+ *
+ * Per RFC 4082 Section 2.2, this verifies the "loose time synchronization"
+ * assumption required for TESLA protocol operation.
+ *
+ * @param state         UE TESLA state (reads e_sync_us, slots_per_frame)
+ * @param tx_sfn        SFN from signed extension (gNB TX timing)
+ * @param tx_slot       Slot from signed extension (gNB TX timing)
+ * @param rx_sfn        UE's actual RX SFN (from MAC layer)
+ * @param rx_slot       UE's actual RX slot (from MAC layer)
+ * @return 0 if valid, -1 if RX before TX, -2 if diff exceeds E_sync
+ */
+int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
+                                      uint16_t tx_sfn, uint16_t tx_slot,
+                                      uint16_t rx_sfn, uint16_t rx_slot);
 
 /**
  * Unpack TESLA extension from binary format
