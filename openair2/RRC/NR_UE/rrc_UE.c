@@ -599,10 +599,10 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
             /* Verify initial time synchronization (essential TESLA assumption per RFC 4082 Section 2.2) */
             /* Uses E_sync only as bound since no drift has accumulated yet */
+            tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, rx_frame, rx_slot);
             int ts_rc = tf5_tesla_verify_initial_timesync(
                 SI_info->tesla_state,
-                ext.timesync_info.ti_sfn, ext.timesync_info.ti_slot,
-                rx_frame, rx_slot);
+                &ext.timesync_info, &rx_time);
 
             if (ts_rc != 0) {
               LOG_W(NR_RRC, "TESLA: Initial time sync verification FAILED (rc=%d). "
@@ -689,13 +689,13 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                             &ext.timesync_info);
 
             /* Step 2: Buffer current SIB1 for future TESLA verification */
+            tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(
+                ext.timesync_info.hfn, rx_frame, rx_slot);
             tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
                                       mac_auth_input, mac_auth_len,
                                       ext.interval_index,
                                       ext.tesla_tag,
-                                      ext.timesync_info.ti_hfn,
-                                      ext.timesync_info.ti_sfn,
-                                      ext.timesync_info.ti_slot);
+                                      &buffer_rx_time);
             /* Reset sib1_authenticated for next SIB1 (will be set again upon verification) */
             SI_info->tesla_state->sib1_authenticated = false;
 

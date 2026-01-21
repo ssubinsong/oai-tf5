@@ -1306,14 +1306,13 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   LOG_I(NR_MAC, "TESLA: chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
 
   // Initialize TESLA with computed parameters
+  tf5_tesla_slot_time_t t0 = tf5_slot_time_make(0, t0_sfn, t0_slot);  // HFN=0 at init
   rc = tf5_tesla_gnb_init(cc->tesla_state,
                           t_int_ms,    // Computed T_int (aligned with SIB1 repetition)
                           1,           // d = 1 (disclosure delay)
                           chain_len,   // Default chain length
                           private_key,
-                          0,           // T_0 HFN = 0 (initial Hyper-Frame Number)
-                          t0_sfn,      // Computed T_0 SFN
-                          t0_slot,     // Computed T_0 slot
+                          &t0,         // T_0 timing (HFN/SFN/slot)
                           slots_per_frame);
   if (rc != 0) {
     LOG_E(NR_MAC, "TESLA: Failed to initialize (rc=%d)\n", rc);
