@@ -180,6 +180,69 @@ int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
  * =============================================================================
  */
 
+/*
+ * Internal helpers for encoding/decoding static params and timesync info.
+ * These consolidate duplicated serialization logic.
+ */
+
+/* Encode static params (30 bytes) to buffer */
+static size_t tf5_encode_static_params(uint8_t *buf,
+                                        const tf5_tesla_static_params_t *p)
+{
+    size_t offset = 0;
+    buf[offset++] = p->te_version;
+    buf[offset++] = p->crypto_suite_id;
+    tf5_encode_u16_be(buf + offset, p->t_int_ms); offset += 2;
+    buf[offset++] = p->disclosure_delay;
+    buf[offset++] = p->key_len;
+    memcpy(buf + offset, p->root_key, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
+    tf5_encode_u16_be(buf + offset, p->t0_hfn); offset += 2;
+    tf5_encode_u16_be(buf + offset, p->t0_sfn); offset += 2;
+    tf5_encode_u16_be(buf + offset, p->t0_slot); offset += 2;
+    tf5_encode_u32_be(buf + offset, p->chain_len); offset += 4;
+    return offset;  /* Always 30 */
+}
+
+/* Decode static params (30 bytes) from buffer */
+static size_t tf5_decode_static_params(const uint8_t *buf,
+                                        tf5_tesla_static_params_t *p)
+{
+    size_t offset = 0;
+    p->te_version = buf[offset++];
+    p->crypto_suite_id = buf[offset++];
+    p->t_int_ms = tf5_decode_u16_be(buf + offset); offset += 2;
+    p->disclosure_delay = buf[offset++];
+    p->key_len = buf[offset++];
+    memcpy(p->root_key, buf + offset, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
+    p->t0_hfn = tf5_decode_u16_be(buf + offset); offset += 2;
+    p->t0_sfn = tf5_decode_u16_be(buf + offset); offset += 2;
+    p->t0_slot = tf5_decode_u16_be(buf + offset); offset += 2;
+    p->chain_len = tf5_decode_u32_be(buf + offset); offset += 4;
+    return offset;  /* Always 30 */
+}
+
+/* Encode timesync info (6 bytes) to buffer */
+static size_t tf5_encode_timesync_info(uint8_t *buf,
+                                        const tf5_tesla_timesync_info_t *ti)
+{
+    size_t offset = 0;
+    tf5_encode_u16_be(buf + offset, ti->ti_hfn); offset += 2;
+    tf5_encode_u16_be(buf + offset, ti->ti_sfn); offset += 2;
+    tf5_encode_u16_be(buf + offset, ti->ti_slot); offset += 2;
+    return offset;  /* Always 6 */
+}
+
+/* Decode timesync info (6 bytes) from buffer */
+static size_t tf5_decode_timesync_info(const uint8_t *buf,
+                                        tf5_tesla_timesync_info_t *ti)
+{
+    size_t offset = 0;
+    ti->ti_hfn = tf5_decode_u16_be(buf + offset); offset += 2;
+    ti->ti_sfn = tf5_decode_u16_be(buf + offset); offset += 2;
+    ti->ti_slot = tf5_decode_u16_be(buf + offset); offset += 2;
+    return offset;  /* Always 6 */
+}
+
 int tf5_tesla_build_mac_auth_input(uint8_t *out,
                                    size_t *out_len,
                                    const uint8_t *original_sib1,
@@ -198,30 +261,10 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
     offset += sib1_len;
 
     // 2. Static params (30 bytes)
-    out[offset++] = static_params->te_version;
-    out[offset++] = static_params->crypto_suite_id;
-    tf5_encode_u16_be(out + offset, static_params->t_int_ms);
-    offset += 2;
-    out[offset++] = static_params->disclosure_delay;
-    out[offset++] = static_params->key_len;
-    memcpy(out + offset, static_params->root_key, TF5_TESLA_KEY_LEN);
-    offset += TF5_TESLA_KEY_LEN;
-    tf5_encode_u16_be(out + offset, static_params->t0_hfn);
-    offset += 2;
-    tf5_encode_u16_be(out + offset, static_params->t0_sfn);
-    offset += 2;
-    tf5_encode_u16_be(out + offset, static_params->t0_slot);
-    offset += 2;
-    tf5_encode_u32_be(out + offset, static_params->chain_len);
-    offset += 4;
+    offset += tf5_encode_static_params(out + offset, static_params);
 
     // 3. Timesync info (6 bytes) - per RFC 4082, MAC does NOT include interval_index/disclosed_key
-    tf5_encode_u16_be(out + offset, timesync_info->ti_hfn);
-    offset += 2;
-    tf5_encode_u16_be(out + offset, timesync_info->ti_sfn);
-    offset += 2;
-    tf5_encode_u16_be(out + offset, timesync_info->ti_slot);
-    offset += 2;
+    offset += tf5_encode_timesync_info(out + offset, timesync_info);
 
     *out_len = offset;
     return 0;
@@ -284,30 +327,10 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     size_t offset = 0;
 
     // Static params (30 bytes)
-    buf[offset++] = ext->static_params.te_version;
-    buf[offset++] = ext->static_params.crypto_suite_id;
-    tf5_encode_u16_be(buf + offset, ext->static_params.t_int_ms);
-    offset += 2;
-    buf[offset++] = ext->static_params.disclosure_delay;
-    buf[offset++] = ext->static_params.key_len;
-    memcpy(buf + offset, ext->static_params.root_key, TF5_TESLA_KEY_LEN);
-    offset += TF5_TESLA_KEY_LEN;
-    tf5_encode_u16_be(buf + offset, ext->static_params.t0_hfn);
-    offset += 2;
-    tf5_encode_u16_be(buf + offset, ext->static_params.t0_sfn);
-    offset += 2;
-    tf5_encode_u16_be(buf + offset, ext->static_params.t0_slot);
-    offset += 2;
-    tf5_encode_u32_be(buf + offset, ext->static_params.chain_len);
-    offset += 4;
+    offset += tf5_encode_static_params(buf + offset, &ext->static_params);
 
     // Timesync info (6 bytes)
-    tf5_encode_u16_be(buf + offset, ext->timesync_info.ti_hfn);
-    offset += 2;
-    tf5_encode_u16_be(buf + offset, ext->timesync_info.ti_sfn);
-    offset += 2;
-    tf5_encode_u16_be(buf + offset, ext->timesync_info.ti_slot);
-    offset += 2;
+    offset += tf5_encode_timesync_info(buf + offset, &ext->timesync_info);
 
     // Interval index (4 bytes)
     tf5_encode_u32_be(buf + offset, ext->interval_index);
@@ -348,30 +371,10 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     size_t offset = 0;
 
     // Static params (30 bytes)
-    ext->static_params.te_version = buf[offset++];
-    ext->static_params.crypto_suite_id = buf[offset++];
-    ext->static_params.t_int_ms = tf5_decode_u16_be(buf + offset);
-    offset += 2;
-    ext->static_params.disclosure_delay = buf[offset++];
-    ext->static_params.key_len = buf[offset++];
-    memcpy(ext->static_params.root_key, buf + offset, TF5_TESLA_KEY_LEN);
-    offset += TF5_TESLA_KEY_LEN;
-    ext->static_params.t0_hfn = tf5_decode_u16_be(buf + offset);
-    offset += 2;
-    ext->static_params.t0_sfn = tf5_decode_u16_be(buf + offset);
-    offset += 2;
-    ext->static_params.t0_slot = tf5_decode_u16_be(buf + offset);
-    offset += 2;
-    ext->static_params.chain_len = tf5_decode_u32_be(buf + offset);
-    offset += 4;
+    offset += tf5_decode_static_params(buf + offset, &ext->static_params);
 
     // Timesync info (6 bytes)
-    ext->timesync_info.ti_hfn = tf5_decode_u16_be(buf + offset);
-    offset += 2;
-    ext->timesync_info.ti_sfn = tf5_decode_u16_be(buf + offset);
-    offset += 2;
-    ext->timesync_info.ti_slot = tf5_decode_u16_be(buf + offset);
-    offset += 2;
+    offset += tf5_decode_timesync_info(buf + offset, &ext->timesync_info);
 
     // Interval index (4 bytes)
     ext->interval_index = tf5_decode_u32_be(buf + offset);

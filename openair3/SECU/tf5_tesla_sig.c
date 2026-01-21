@@ -35,6 +35,54 @@
 #include <openssl/err.h>
 #include <openssl/rand.h>
 
+/*
+ * Cleanup macro for EVP contexts used in sign/verify operations.
+ */
+#define TF5_EVP_CLEANUP(ctx, pkey) \
+    do { \
+        if (ctx) EVP_MD_CTX_free(ctx); \
+        if (pkey) EVP_PKEY_free(pkey); \
+    } while (0)
+
+/*
+ * Internal helpers to reduce code duplication.
+ */
+
+/* Create EVP_PKEY from raw Ed25519 private key */
+static EVP_PKEY *tf5_evp_pkey_from_private(const uint8_t private_key[32],
+                                            const char *operation)
+{
+    EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL,
+                                                   private_key, 32);
+    if (!pkey) {
+        LOG_E(NR_RRC, "TESLA: Failed to create EVP_PKEY for %s\n", operation);
+    }
+    return pkey;
+}
+
+/* Create EVP_PKEY from raw Ed25519 public key */
+static EVP_PKEY *tf5_evp_pkey_from_public(const uint8_t public_key[32],
+                                           const char *operation)
+{
+    EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL,
+                                                  public_key, 32);
+    if (!pkey) {
+        LOG_E(NR_RRC, "TESLA: Failed to create EVP_PKEY for %s\n", operation);
+    }
+    return pkey;
+}
+
+/* Allocate EVP_MD_CTX, free pkey on failure */
+static EVP_MD_CTX *tf5_evp_md_ctx_new_or_cleanup(EVP_PKEY *pkey)
+{
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        EVP_PKEY_free(pkey);
+        LOG_E(NR_RRC, "TESLA: Failed to create EVP_MD_CTX\n");
+    }
+    return ctx;
+}
+
 int tf5_tesla_ed25519_derive_public(const uint8_t private_key[32],
                                     uint8_t public_key[32])
 {
@@ -42,10 +90,8 @@ int tf5_tesla_ed25519_derive_public(const uint8_t private_key[32],
         return -1;
     }
 
-    EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL,
-                                                   private_key, 32);
+    EVP_PKEY *pkey = tf5_evp_pkey_from_private(private_key, "key derivation");
     if (!pkey) {
-        LOG_E(NR_RRC, "TESLA: Failed to create EVP_PKEY from private key\n");
         return -2;
     }
 
@@ -70,33 +116,27 @@ int tf5_tesla_ed25519_sign(const uint8_t private_key[32],
         return -1;
     }
 
-    EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL,
-                                                   private_key, 32);
+    EVP_PKEY *pkey = tf5_evp_pkey_from_private(private_key, "signing");
     if (!pkey) {
-        LOG_E(NR_RRC, "TESLA: Failed to create EVP_PKEY for signing\n");
         return -2;
     }
 
-    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    EVP_MD_CTX *ctx = tf5_evp_md_ctx_new_or_cleanup(pkey);
     if (!ctx) {
-        EVP_PKEY_free(pkey);
-        LOG_E(NR_RRC, "TESLA: Failed to create EVP_MD_CTX\n");
-        return -3;
+        return -3;  /* pkey already freed by helper */
     }
 
     int rc = EVP_DigestSignInit(ctx, NULL, NULL, NULL, pkey);
     if (rc != 1) {
         LOG_E(NR_RRC, "TESLA: EVP_DigestSignInit failed\n");
-        EVP_MD_CTX_free(ctx);
-        EVP_PKEY_free(pkey);
+        TF5_EVP_CLEANUP(ctx, pkey);
         return -4;
     }
 
     size_t sig_len = 64;
     rc = EVP_DigestSign(ctx, signature, &sig_len, data, data_len);
 
-    EVP_MD_CTX_free(ctx);
-    EVP_PKEY_free(pkey);
+    TF5_EVP_CLEANUP(ctx, pkey);
 
     if (rc != 1 || sig_len != 64) {
         LOG_E(NR_RRC, "TESLA: EVP_DigestSign failed\n");
@@ -115,35 +155,29 @@ int tf5_tesla_ed25519_verify(const uint8_t public_key[32],
         return -1;
     }
 
-    EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL,
-                                                  public_key, 32);
+    EVP_PKEY *pkey = tf5_evp_pkey_from_public(public_key, "verification");
     if (!pkey) {
-        LOG_E(NR_RRC, "TESLA: Failed to create EVP_PKEY for verification\n");
         return -2;
     }
 
-    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    EVP_MD_CTX *ctx = tf5_evp_md_ctx_new_or_cleanup(pkey);
     if (!ctx) {
-        EVP_PKEY_free(pkey);
-        LOG_E(NR_RRC, "TESLA: Failed to create EVP_MD_CTX\n");
-        return -3;
+        return -3;  /* pkey already freed by helper */
     }
 
     int rc = EVP_DigestVerifyInit(ctx, NULL, NULL, NULL, pkey);
     if (rc != 1) {
         LOG_E(NR_RRC, "TESLA: EVP_DigestVerifyInit failed\n");
-        EVP_MD_CTX_free(ctx);
-        EVP_PKEY_free(pkey);
+        TF5_EVP_CLEANUP(ctx, pkey);
         return -4;
     }
 
     rc = EVP_DigestVerify(ctx, signature, 64, data, data_len);
 
-    EVP_MD_CTX_free(ctx);
-    EVP_PKEY_free(pkey);
+    TF5_EVP_CLEANUP(ctx, pkey);
 
     if (rc != 1) {
-        // rc == 0 means signature invalid, rc < 0 means error
+        /* rc == 0 means signature invalid, rc < 0 means error */
         if (rc == 0) {
             LOG_W(NR_RRC, "TESLA: Signature verification failed - invalid signature\n");
         } else {
