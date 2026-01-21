@@ -791,12 +791,23 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
     // Update HFN based on SFN wraparound detection
     tf5_tesla_update_hfn(&state->hfn_tracker, rx_sfn);
 
-    // Compute interval using UE's internally-tracked HFN and CACHED static parameters
-    // (authenticated during first-time UE verification via BLS signature)
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(state->hfn_tracker.current_hfn, rx_sfn, rx_slot);
-    uint32_t x = tf5_tesla_get_interval_index(&current, &state->static_params.t0,
-                                              state->static_params.t_int_ms,
-                                              state->slots_per_frame);
+    // RFC 4082 Section 3.5: Safe packet test
+    // Step 1: Record local time T (in absolute slots)
+    tf5_tesla_slot_time_t local_time = tf5_slot_time_make(state->hfn_tracker.current_hfn, rx_sfn, rx_slot);
+    uint64_t t_abs_slots = tf5_tesla_absolute_slots(&local_time, state->slots_per_frame);
+
+    // Step 2: Compute upper bound on sender's clock: t_j = T + D_t
+    // Convert D from microseconds to slots (ceiling division for upper bound)
+    uint32_t slot_duration_us = 10000 / state->slots_per_frame;
+    uint32_t d_offset_slots = (state->d_bound_us + slot_duration_us - 1) / slot_duration_us;
+    uint64_t t_j_abs_slots = t_abs_slots + d_offset_slots;
+
+    // Step 3: Compute x = floor((t_j - T_0) / T_int)
+    // This is the highest interval the sender could possibly be in
+    uint64_t t0_abs_slots = tf5_tesla_absolute_slots(&state->static_params.t0, state->slots_per_frame);
+    uint64_t slots_since_t0 = (t_j_abs_slots >= t0_abs_slots) ? (t_j_abs_slots - t0_abs_slots) : 0;
+    uint64_t time_ms = (slots_since_t0 * 10) / state->slots_per_frame;
+    uint32_t x = (uint32_t)(time_ms / state->static_params.t_int_ms);
 
     // Safe if: x < i + d
     // This means the sender hasn't yet disclosed K_i
@@ -808,8 +819,8 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
     bool safe = (x < i + d);
 
     if (!safe) {
-        LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - UE interval %u >= claimed %u + d=%u\n",
-              x, i, d);
+        LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - x=%u (T+D, D=%u slots) >= i=%u + d=%u\n",
+              x, d_offset_slots, i, d);
     }
 
     return safe;
