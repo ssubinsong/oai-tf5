@@ -251,7 +251,7 @@ int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
                                       uint16_t rx_sfn, uint16_t rx_slot);
 ```
 
-Called after Ed25519 signature verification to validate that SSB-based time synchronization was successful. Uses only $E_{\text{sync}}$ as the bound since no clock drift has accumulated yet.
+Called after BLS signature verification to validate that SSB-based time synchronization was successful. Uses only $E_{\text{sync}}$ as the bound since no clock drift has accumulated yet.
 
 **Return values:**
 - `0`: Time sync OK
@@ -285,13 +285,13 @@ $$D = 500 + 103.4 + 1000 \approx 1604 \text{ μs} \approx 1.6 \text{ ms}$$
 
 ### 10.4 Two-Stage Verification
 
-1. **Initial verification** (after Ed25519): Uses only $E_{\text{sync}}$ since no drift has accumulated
+1. **Initial verification** (after BLS): Uses only $E_{\text{sync}}$ since no drift has accumulated
 2. **Safe packet test** (ongoing TESLA): Uses full $D = E_{\text{sync}} + (E_s + E_r) \times \Delta T_{\max} + M_{\text{impl}}$
 
 ### 10.5 Graceful Degradation
 
 If initial time sync verification fails, the UE falls back to **signature-only mode**:
-- Each SIB1 is verified via Ed25519 signature
+- Each SIB1 is verified via BLS signature
 - TESLA MAC verification is bypassed
 - This prevents availability attacks via deliberate clock manipulation
 
@@ -301,12 +301,12 @@ If initial time sync verification fails, the UE falls back to **signature-only m
 flowchart TD
     A[UE Power On] --> B[SSB Sync - PHY<br/>radio time align]
     B --> C[Receive SIB1<br/>record rx_frame, rx_slot]
-    C --> D[Ed25519 Verify<br/>first-time UE]
+    C --> D[BLS Verify<br/>first-time UE]
     D --> E{Initial Time Sync Verify<br/>#124;RX - TX#124; ≤ E_sync?}
     E -->|Yes| F[timesync_verified = true]
     E -->|No| G[timesync_verified = false]
     F --> H[TESLA MAC Mode<br/>safe packet + delayed verify]
-    G --> I[Signature-Only Mode<br/>Ed25519 for each SIB1]
+    G --> I[Signature-Only Mode<br/>BLS for each SIB1]
 ```
 
 ### 10.7 Code References
@@ -314,7 +314,7 @@ flowchart TD
 | Function | File | Purpose |
 |----------|------|---------|
 | `tf5_tesla_calculate_d_bound()` | `openair3/SECU/tf5_tesla.c` | Calculate D from parameters |
-| `tf5_tesla_verify_initial_timesync()` | `openair3/SECU/tf5_tesla.c` | Verify initial sync after Ed25519 |
+| `tf5_tesla_verify_initial_timesync()` | `openair3/SECU/tf5_tesla.c` | Verify initial sync after BLS |
 | `tf5_tesla_ue_safe_packet_test()` | `openair3/SECU/tf5_tesla.c` | Safe packet test (uses full D) |
 | `tf5_tesla_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize D parameters |
 | `nr_rrc_process_sib1()` | `openair2/RRC/NR_UE/rrc_UE.c` | SIB1 processing with time sync |

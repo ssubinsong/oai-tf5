@@ -116,9 +116,9 @@ RFC 4082 Section 3.6 states that d=1 "does not work" for packets sent near inter
 
 TF5 implements **two authentication mechanisms**:
 
-### 1. Ed25519 Signature (Immediate)
-- gNB signs the authentication input with its private key
-- UE verifies immediately if it has the pre-provisioned public key
+### 1. BLS Signature (Immediate)
+- gNB signs the authentication input with its BLS private key
+- UE verifies immediately if it has the pre-provisioned BLS public key
 - Provides strong authentication without waiting
 
 ### 2. TESLA MAC (Delayed)

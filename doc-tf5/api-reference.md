@@ -59,7 +59,7 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
 ```c
 // Initialize UE state
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
-                      const uint8_t gnb_public_key[32],
+                      const uint8_t gnb_public_key[96],
                       uint16_t slots_per_frame);
 
 // Free resources
@@ -70,11 +70,11 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
                                size_t buf_len,
                                tf5_tesla_extension_t *ext);
 
-// Verify Ed25519 signature
+// Verify BLS signature
 int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
                                   const uint8_t *auth_input,
                                   size_t auth_input_len,
-                                  const uint8_t signature[64]);
+                                  const uint8_t signature[48]);
 
 // Safe packet test (also initializes HFN tracking)
 // Note: Uses state->static_params (cached from first authenticated SIB1)
@@ -123,26 +123,25 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
 **Source**: [tf5_tesla.h](../openair3/SECU/tf5_tesla.h), [tf5_tesla.c](../openair3/SECU/tf5_tesla.c)
 
 ```c
-// Load Ed25519 private key from PEM file
+// Load BLS secret key from binary file
 // Returns: 0 on success, negative on error
 //   -1: Cannot open file
-//   -2: Cannot parse PEM
-//   -3: Cannot extract raw key
+//   -2: File read error or wrong size
+//   -3: Invalid key format
 int tf5_tesla_load_privkey(const char *filepath, uint8_t privkey_out[32]);
 
-// Load Ed25519 public key from PEM certificate file
+// Load BLS public key from binary file
 // Returns: 0 on success, negative on error
 //   -1: Cannot open file
-//   -2: Cannot parse certificate
-//   -3: Cannot extract public key from certificate
-//   -4: Cannot extract raw key
-int tf5_tesla_load_cert_pubkey(const char *filepath, uint8_t pubkey_out[32]);
+//   -2: File read error or wrong size
+//   -3: Invalid key format
+int tf5_tesla_load_pubkey(const char *filepath, uint8_t pubkey_out[96]);
 ```
 
 | Function | Header | Implementation |
 |----------|--------|----------------|
-| `tf5_tesla_load_privkey` | [tf5_tesla.h:437](../openair3/SECU/tf5_tesla.h#L437) | [tf5_tesla.c:773](../openair3/SECU/tf5_tesla.c#L773) |
-| `tf5_tesla_load_cert_pubkey` | [tf5_tesla.h:450](../openair3/SECU/tf5_tesla.h#L450) | [tf5_tesla.c:812](../openair3/SECU/tf5_tesla.c#L812) |
+| `tf5_tesla_load_privkey` | [tf5_tesla.h:581](../openair3/SECU/tf5_tesla.h#L581) | [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) |
+| `tf5_tesla_load_pubkey` | [tf5_tesla.h:594](../openair3/SECU/tf5_tesla.h#L594) | [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) |
 
 ---
 

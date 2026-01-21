@@ -10,7 +10,7 @@
 |-----------|---------|-------|-------------|
 | `TF5_TESLA_KEY_LEN` | 16 | Fixed | TESLA key size (128 bits) |
 | `TF5_TESLA_TAG_LEN` | 16 | Fixed | MAC tag size (128 bits) |
-| `TF5_TESLA_SIG_LEN` | 64 | Fixed | Ed25519 signature size |
+| `TF5_TESLA_SIG_LEN` | 48 | Fixed | BLS signature size |
 | `TF5_TESLA_CHAIN_LEN` | 65536 | 1-2^32 | Key chain length |
 | `T_int` | 20ms | Configurable | Interval duration |
 | `d` | 1 | 1-255 | Disclosure delay |

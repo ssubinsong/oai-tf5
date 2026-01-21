@@ -27,7 +27,7 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 | Feature | Description |
 |---------|-------------|
 | Delayed key disclosure | Keys revealed one interval after use |
-| Dual authentication | Ed25519 signature + TESLA MAC |
+| Dual authentication | BLS signature + TESLA MAC |
 | HFN tracking | Handles SFN wraparound for long key chains |
 | Conditional compilation | Enabled via `TF5_ENABLE_TESLA` flag |
 

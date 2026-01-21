@@ -9,9 +9,9 @@
 **Location**: [config.c:1121-1192](../openair2/LAYER2/NR_MAC_gNB/config.c#L1121-L1192)
 
 ```
-1. Load Ed25519 key pair from files
+1. Load BLS key pair from files
    ├── tf5_tesla_load_privkey(tesla_privkey_file, private_key)
-   └── tf5_tesla_load_cert_pubkey(tesla_cert_file, public_key)
+   └── tf5_tesla_load_pubkey(tesla_pubkey_file, public_key)
 
 2. Allocate and initialize TESLA state
    └── tf5_tesla_gnb_init()
@@ -28,10 +28,10 @@
 ```
 
 **Command-line parameters**:
-- `--tesla-privkey <path>` - Private key file (default: `./tesla_keys/gnb_tesla_privkey.pem`)
-- `--tesla-cert <path>` - Certificate file (default: `./tesla_keys/gnb_tesla_cert.pem`)
+- `--tesla-privkey <path>` - Private key file (default: `./tesla_keys/gnb_tesla_privkey.bin`)
+- `--tesla-pubkey <path>` - Public key file (default: `./tesla_keys/gnb_tesla_pubkey.bin`)
 
-**Key generation**: Run `./scripts/tf5_generate_cert.sh` before starting gNB.
+**Key generation**: Run `./scripts/tf5_generate_bls_keys.sh` before starting gNB.
 
 ---
 
@@ -51,7 +51,7 @@ Called from scheduler before each SIB1 transmission:
    └── tf5_tesla_gnb_prepare_extension()
        ├── Set dynamic params (i, ti_sfn, ti_slot, K_{i-d})
        ├── Build auth_input = SIB1 || static || dynamic
-       ├── Sign auth_input with Ed25519
+       ├── Sign auth_input with BLS
        └── Compute TESLA tag with K_i
 
 3. Pack extension to binary

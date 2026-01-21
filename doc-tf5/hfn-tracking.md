@@ -48,7 +48,7 @@ static inline void tf5_tesla_update_hfn(uint16_t *hfn,
 
 **Solution**: Use the **signed ti_hfn** from the TESLA extension:
 
-1. The Ed25519 signature covers ti_hfn, making it trustworthy
+1. The BLS signature covers ti_hfn, making it trustworthy
 2. **First SIB1**: UE bootstraps HFN from signed extension
 3. **Subsequent SIB1s**: UE tracks HFN locally via SFN wraparound detection
 

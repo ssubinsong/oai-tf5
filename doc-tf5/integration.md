@@ -10,8 +10,8 @@
 |------|-----------|---------|-------------|
 | [tf5_tesla.h](../openair3/SECU/tf5_tesla.h) | Core | Data structures, API declarations | 1-540 |
 | [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) | Core | Protocol implementation | 1-859 |
-| [tf5_tesla_sig.h](../openair3/SECU/tf5_tesla_sig.h) | Core | Ed25519 function declarations | 1-84 |
-| [tf5_tesla_sig.c](../openair3/SECU/tf5_tesla_sig.c) | Core | Ed25519 implementation | 1-209 |
+| [tf5_tesla_sig.h](../openair3/SECU/tf5_tesla_sig.h) | Core | BLS signature function declarations | 1-103 |
+| [tf5_tesla_sig.c](../openair3/SECU/tf5_tesla_sig.c) | Core | BLS signature implementation | 1-225 |
 | [nr_mac_gNB.h](../openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h) | gNB | State struct definition | [334-339](../openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h#L334-L339) |
 | [config.c](../openair2/LAYER2/NR_MAC_gNB/config.c) | gNB | Initialization | [1121-1192](../openair2/LAYER2/NR_MAC_gNB/config.c#L1121-L1192) |
 | [nr_radio_config.c](../openair2/LAYER2/NR_MAC_gNB/nr_radio_config.c) | gNB | Extension update | [4366-4440](../openair2/LAYER2/NR_MAC_gNB/nr_radio_config.c#L4366-L4440) |

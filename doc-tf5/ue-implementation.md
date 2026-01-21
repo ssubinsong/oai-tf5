@@ -12,20 +12,20 @@
 // Allocate TESLA state
 SI_info->tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
 
-// Load gNB public key from certificate file
+// Load gNB public key from binary file
 nrUE_params_t *params = get_nrUE_params();
-uint8_t gnb_pubkey[32];
-int rc = tf5_tesla_load_cert_pubkey(params->tesla_gnb_cert_file, gnb_pubkey);
+uint8_t gnb_pubkey[96];
+int rc = tf5_tesla_load_pubkey(params->tesla_gnb_pubkey_file, gnb_pubkey);
 if (rc == 0) {
     tf5_tesla_ue_init(SI_info->tesla_state, gnb_pubkey, slots_per_frame);
 }
 ```
 
-**Command-line parameter**: `--tesla-gnb-cert <path>`
-- Default: `./tesla_keys/gnb_tesla_cert.pem`
-- Generate with: `./scripts/tf5_generate_cert.sh`
+**Command-line parameter**: `--tesla-gnb-pubkey <path>`
+- Default: `./tesla_keys/gnb_tesla_pubkey.bin`
+- Generate with: `./scripts/tf5_generate_bls_keys.sh`
 
-**Note**: The gNB certificate must be generated using `tf5_generate_cert.sh` and made available to the UE before starting. The same certificate file should be used by both gNB and UE to ensure matching public keys.
+**Note**: The gNB BLS keys must be generated using `tf5_generate_bls_keys.sh` and the public key file made available to the UE before starting. The same public key file should be used by UE to match the gNB's private key.
 
 ---
 
@@ -43,7 +43,7 @@ If authentication fails, the RRC connection is aborted before any NAS message is
 
 | UE Type | Has K_0? | Authentication Method | Timing |
 |---------|----------|----------------------|--------|
-| First-time | No | Ed25519 signature | Immediate (fast) |
+| First-time | No | BLS signature | Immediate (fast) |
 | Returning | Yes | TESLA MAC | Delayed (waits for key disclosure) |
 
 ### State Fields for Parallel Authentication
@@ -55,7 +55,7 @@ typedef struct {
     // ... existing fields ...
 
     // Parallel authentication state
-    bool     k0_trusted;              // K_0 authenticated via Ed25519 (persistent)
+    bool     k0_trusted;              // K_0 authenticated via BLS (persistent)
     bool     sib1_authenticated;      // Current SIB1 verified (sig OR tesla)
     bool     auth_in_progress;        // Authentication running in parallel
     bool     auth_failed;             // Authentication failed - must abort RRC
@@ -80,9 +80,9 @@ flowchart TB
     subgraph left["Authentication (Parallel)"]
         AUTH["Start Authentication"]
         AUTH --> CHECK{"k0_trusted?"}
-        CHECK -->|"false<br/>(First-time UE)"| ED25519["Ed25519 verify"]
+        CHECK -->|"false<br/>(First-time UE)"| BLS["BLS verify"]
         CHECK -->|"true<br/>(Returning UE)"| TESLA["Wait for TESLA<br/>key disclosure"]
-        ED25519 --> RESULT
+        BLS --> RESULT
         TESLA --> RESULT
         RESULT{"Result"}
         RESULT -->|SUCCESS| SUCCESS["sib1_auth=true<br/>k0_trusted=true"]
@@ -120,8 +120,8 @@ flowchart TB
    └── tf5_tesla_build_sig_auth_input(sib1, static_params, timesync_info, interval_index, disclosed_key)
        (includes full content for signature verification)
 
-3. Verify Ed25519 signature (synchronous - fast)
-   └── tf5_tesla_ed25519_verify()
+3. Verify BLS signature (synchronous - fast)
+   └── tf5_tesla_ue_verify_signature()
    ├── SUCCESS:
    │   └── Accept K_0: k0_trusted = true, sib1_authenticated = true
    │   └── If rrcsetup_deferred: send RRCSetupComplete now
@@ -253,7 +253,7 @@ This ensures disclosed keys are cryptographically validated against a trusted an
 
 Instead of chaining every disclosed key back to K_0 (which requires O(i) hash operations), the UE uses the **last verified key** as anchor:
 
-1. **First SIB1 (interval i)**: Ed25519 signature authenticates both K_0 and K_{i-d}
+1. **First SIB1 (interval i)**: BLS signature authenticates both K_0 and K_{i-d}
    - K_{i-d} becomes the anchor (0 hash ops - signature authenticated)
 2. **Subsequent SIB1s**: New disclosed key verified against last anchor
    - Verify: F(K_{new}) == K_{anchor}? (typically 1 hash op)
@@ -272,7 +272,7 @@ Interval i+2: verify K_{i+1} → K_i (1 hash), anchor = K_{i+1}
 
 ```c
 bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
-    // Require valid anchor (set by Ed25519 or previous TESLA verification)
+    // Require valid anchor (set by BLS or previous TESLA verification)
     if (!state->last_verified_key_valid) return false;
 
     if (key_index > state->last_verified_key_idx) {
@@ -294,8 +294,8 @@ and the buffered SIB1 MAC verification is rejected. This prevents use of forged 
 
 | Scenario | SUCI Protected? | Connection Aborted? |
 |----------|-----------------|---------------------|
-| First-time UE, Ed25519 succeeds | Yes | No |
-| First-time UE, Ed25519 fails | Yes | **Yes** |
+| First-time UE, BLS succeeds | Yes | No |
+| First-time UE, BLS fails | Yes | **Yes** |
 | Returning UE, TESLA MAC succeeds | Yes | No |
 | Returning UE, TESLA MAC fails | Yes | **Yes** |
 | Attacker spoofs SIB1 | Yes | **Yes** |
