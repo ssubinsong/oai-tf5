@@ -302,7 +302,7 @@ flowchart TD
     A[UE Power On] --> B[SSB Sync - PHY<br/>radio time align]
     B --> C[Receive SIB1<br/>record rx_frame, rx_slot]
     C --> D[Ed25519 Verify<br/>first-time UE]
-    D --> E{Initial Time Sync Verify<br/>&#124;RX - TX&#124; ≤ E_sync?}
+    D --> E{Initial Time Sync Verify<br/>#124;RX - TX#124; ≤ E_sync?}
     E -->|Yes| F[timesync_verified = true]
     E -->|No| G[timesync_verified = false]
     F --> H[TESLA MAC Mode<br/>safe packet + delayed verify]
