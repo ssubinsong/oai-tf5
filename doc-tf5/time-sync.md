@@ -331,31 +331,3 @@ state->d_bound_us = tf5_tesla_calculate_d_bound(
     state->e_sync_us, state->e_s_ppb, state->e_r_ppb,
     state->delta_t_max_ms, state->m_impl_us);
 ```
-
----
-
-## 11. Security Considerations
-
-### 11.1 Why Time Sync Matters
-
-Per RFC 4082 Section 2.2:
-> "The sender and the receiver must be loosely time-synchronized."
-
-Without proper time synchronization:
-- Safe packet test may incorrectly accept replayed messages
-- Attacker could replay old signed SIB1 with stale keys
-- TESLA's core security guarantee breaks down
-
-### 11.2 Attack Scenarios
-
-| Attack | Without Time Sync Verification | With Time Sync Verification |
-|--------|-------------------------------|----------------------------|
-| Replay old SIB1 | May pass safe packet test using old TX timing | Rejected: RX timing mismatch detected |
-| Delayed relay | May pass if delay < disclosure interval | Caught by safe packet test using actual RX time |
-| Clock manipulation | UE accepts based on attacker-provided timing | Falls back to signature-only (graceful) |
-
-### 11.3 Trust Assumptions
-
-1. **SSB timing is trustworthy for initial sync**: PHY-layer sync is based on known waveforms; hard to fake without significant effort
-2. **Ed25519 signature binds TX timing**: Attacker cannot forge signatures with different timing
-3. **E_sync bound is conservative**: Covers worst-case legitimate sync scenarios
