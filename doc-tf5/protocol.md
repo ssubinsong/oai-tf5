@@ -26,8 +26,8 @@ Time is divided into discrete intervals:
 
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
-| T_int | 20 ms | Interval duration |
-| chain_len | 65536 | Number of intervals |
+| T_int | 20 ms (pattern 1) or SSB period (pattern 2/3) | Interval duration |
+| chain_len | Scaled to maintain ~21.8 min lifetime | Number of intervals |
 | Duration | ~21.8 minutes | Total key chain lifetime |
 
 **Interval Index Calculation**:
@@ -35,7 +35,51 @@ Time is divided into discrete intervals:
 i = floor((current_time - T_0) / T_int)
 ```
 
-Where `T_0` is the start time of interval 0, specified in static parameters using (HFN, SFN, slot).
+Where `T_0` is the start time of interval 0, aligned with the first SIB1 transmission occasion.
+
+### T_int Alignment with SIB1 Repetition Period
+
+Per **3GPP TS 38.331 Section 5.2.1.2**, the TESLA interval duration (T_int) is aligned with the SIB1 repetition transmission period:
+
+| SSB/CORESET Mux Pattern | SIB1 Repetition Period | T_int |
+|-------------------------|------------------------|-------|
+| Pattern 1 (FR1, FR2 common) | 20 ms (fixed) | 20 ms |
+| Pattern 2 (FR2 120/240kHz SSB) | SSB period | SSB period |
+| Pattern 3 (FR2 120kHz SSB/PDCCH) | SSB period | SSB period |
+
+**SSB Period Values**:
+
+| Enum | Period |
+|------|--------|
+| 0 | 5 ms |
+| 1 | 10 ms |
+| 2 | 20 ms |
+| 3 | 40 ms |
+| 4 | 80 ms |
+| 5 | 160 ms |
+
+### T_0 Alignment with First SIB1 Transmission
+
+T_0 is set to the first SIB1 transmission occasion (SSB index 0):
+- **Mux pattern 1**: First frame where `(SFN % 2 == sfn_c)`, at slot `n_0`
+- **Mux patterns 2/3**: Based on SSB timing, slot `n_c`
+
+### Chain Length Scaling
+
+To maintain a consistent key chain lifetime of ~21.8 minutes regardless of T_int, the chain length is scaled:
+
+```
+chain_len = (65536 * 20) / T_int_ms
+```
+
+| T_int | chain_len | Lifetime |
+|-------|-----------|----------|
+| 5 ms | 262144 | ~21.8 min |
+| 10 ms | 131072 | ~21.8 min |
+| 20 ms | 65536 | ~21.8 min |
+| 40 ms | 32768 | ~21.8 min |
+| 80 ms | 16384 | ~21.8 min |
+| 160 ms | 8192 | ~21.8 min |
 
 ---
 

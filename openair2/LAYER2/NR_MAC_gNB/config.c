@@ -1109,6 +1109,120 @@ void prepare_du_configuration_update(gNB_MAC_INST *mac,
   mac->mac_rrc.gnb_du_configuration_update(&update);
 }
 
+#ifdef TF5_ENABLE_TESLA
+/**
+ * Calculate SIB1 repetition period in milliseconds based on 3GPP TS 38.331
+ *
+ * Per TS 38.331 Section 5.2.1.2:
+ * - For SSB and CORESET multiplexing pattern 1: SIB1 repetition period is 20 ms
+ * - For SSB and CORESET multiplexing pattern 2/3: SIB1 repetition period = SSB period
+ *
+ * @param nrmac gNB MAC instance
+ * @return SIB1 repetition period in milliseconds
+ */
+static uint16_t tf5_get_sib1_repetition_period_ms(gNB_MAC_INST *nrmac)
+{
+  NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
+  const NR_MIB_t *mib = cc->mib->message.choice.mib;
+  NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
+
+  NR_SubcarrierSpacing_t scs_ssb = *scc->ssbSubcarrierSpacing;
+  const long band = *scc->downlinkConfigCommon->frequencyInfoDL->frequencyBandList.list.array[0];
+  uint16_t ssb_start_symbol = get_ssb_start_symbol(band, scs_ssb, 0);
+
+  int8_t ssb_period_enum = *scc->ssb_periodicityServingCell;
+  uint8_t ssb_frame_periodicity = 1;
+  if (ssb_period_enum > 1)
+    ssb_frame_periodicity = 1 << (ssb_period_enum - 1);
+
+  const int8_t numb_slots_frame = nrmac->frame_structure.numb_slots_frame;
+  frequency_range_t frequency_range = scc->ssb_PositionsInBurst->present == 3 ? FR2 : FR1;
+  const int prb_offset = frequency_range == FR1 ? nrmac->ssb_OffsetPointA >> scs_ssb : nrmac->ssb_OffsetPointA >> (scs_ssb - 2);
+
+  // Compute type0 PDCCH CSS config to get mux pattern
+  NR_Type0_PDCCH_CSS_config_t type0_PDCCH_CSS_config = {0};
+  get_type0_PDCCH_CSS_config_parameters(&type0_PDCCH_CSS_config,
+                                        0,
+                                        mib,
+                                        numb_slots_frame,
+                                        nrmac->ssb_SubcarrierOffset,
+                                        ssb_start_symbol,
+                                        scs_ssb,
+                                        frequency_range,
+                                        band,
+                                        0,  // ssb_index = 0
+                                        ssb_frame_periodicity,
+                                        prb_offset);
+
+  // For pattern 1: always 20ms
+  if (type0_PDCCH_CSS_config.type0_pdcch_ss_mux_pattern == 1) {
+    return 20;
+  }
+
+  // For patterns 2/3: use SSB period
+  // SSB period enum to ms: 0=5ms, 1=10ms, 2=20ms, 3=40ms, 4=80ms, 5=160ms
+  static const uint16_t ssb_period_ms[] = {5, 10, 20, 40, 80, 160};
+  if (ssb_period_enum >= 0 && ssb_period_enum <= 5) {
+    return ssb_period_ms[ssb_period_enum];
+  }
+
+  return 20;  // Fallback
+}
+
+/**
+ * Calculate the first SIB1 transmission occasion (T_0 for TESLA)
+ *
+ * @param nrmac gNB MAC instance
+ * @param out_sfn Output: SFN of first SIB1 TX
+ * @param out_slot Output: slot of first SIB1 TX
+ */
+static void tf5_get_first_sib1_occasion(gNB_MAC_INST *nrmac, uint16_t *out_sfn, uint16_t *out_slot)
+{
+  NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
+  const NR_MIB_t *mib = cc->mib->message.choice.mib;
+  NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
+
+  NR_SubcarrierSpacing_t scs_ssb = *scc->ssbSubcarrierSpacing;
+  const long band = *scc->downlinkConfigCommon->frequencyInfoDL->frequencyBandList.list.array[0];
+  uint16_t ssb_start_symbol = get_ssb_start_symbol(band, scs_ssb, 0);
+
+  int8_t ssb_period_enum = *scc->ssb_periodicityServingCell;
+  uint8_t ssb_frame_periodicity = 1;
+  if (ssb_period_enum > 1)
+    ssb_frame_periodicity = 1 << (ssb_period_enum - 1);
+
+  const int8_t numb_slots_frame = nrmac->frame_structure.numb_slots_frame;
+  frequency_range_t frequency_range = scc->ssb_PositionsInBurst->present == 3 ? FR2 : FR1;
+  const int prb_offset = frequency_range == FR1 ? nrmac->ssb_OffsetPointA >> scs_ssb : nrmac->ssb_OffsetPointA >> (scs_ssb - 2);
+
+  // Compute type0 PDCCH CSS config to get timing parameters
+  NR_Type0_PDCCH_CSS_config_t type0_PDCCH_CSS_config = {0};
+  get_type0_PDCCH_CSS_config_parameters(&type0_PDCCH_CSS_config,
+                                        0,
+                                        mib,
+                                        numb_slots_frame,
+                                        nrmac->ssb_SubcarrierOffset,
+                                        ssb_start_symbol,
+                                        scs_ssb,
+                                        frequency_range,
+                                        band,
+                                        0,  // ssb_index = 0
+                                        ssb_frame_periodicity,
+                                        prb_offset);
+
+  // For mux pattern 1: sfn_c determines even/odd frame, n_0 is the slot
+  // SIB1 TX occurs when (frame % 2 == sfn_c) && (slot == n_0)
+  if (type0_PDCCH_CSS_config.type0_pdcch_ss_mux_pattern == 1) {
+    *out_sfn = type0_PDCCH_CSS_config.sfn_c;  // 0 or 1 (first even or odd frame)
+    *out_slot = type0_PDCCH_CSS_config.n_0;
+  } else {
+    // For mux patterns 2/3: first SSB occasion timing
+    *out_sfn = 0;
+    *out_slot = type0_PDCCH_CSS_config.n_c % numb_slots_frame;
+  }
+}
+#endif // TF5_ENABLE_TESLA
+
 void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t cellID, int tac)
 {
   AssertFatal(IS_SA_MODE(get_softmodem_params()), "error: SIB1 only applicable for SA\n");
@@ -1168,15 +1282,33 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
     LOG_I(NR_MAC, "TESLA: Public key (hex): %s\n", hex_buf);
   }
 
-  // Initialize TESLA with T_int=20ms, d=1, chain length for ~21 minutes
+  // Calculate T_int based on SIB1 repetition period (3GPP TS 38.331)
+  // - Pattern 1: T_int = 20ms
+  // - Pattern 2/3: T_int = SSB period
+  uint16_t t_int_ms = tf5_get_sib1_repetition_period_ms(nrmac);
+
+  // Calculate T_0 (first SIB1 transmission occasion)
+  uint16_t t0_sfn = 0, t0_slot = 0;
+  tf5_get_first_sib1_occasion(nrmac, &t0_sfn, &t0_slot);
+
+  // Scale chain length to maintain ~21 min lifetime regardless of T_int
+  // Base: 65536 intervals * 20ms = ~21.8 min
+  // Formula: chain_len = 65536 * 20 / t_int_ms
+  uint32_t chain_len = (65536 * 20) / t_int_ms;
+
+  LOG_I(NR_MAC, "TESLA: T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
+  LOG_I(NR_MAC, "TESLA: T_0=(SFN=%u, slot=%u) (first SIB1 TX occasion)\n", t0_sfn, t0_slot);
+  LOG_I(NR_MAC, "TESLA: chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
+
+  // Initialize TESLA with computed parameters
   rc = tf5_tesla_gnb_init(cc->tesla_state,
-                          20,     // T_int = 20ms
-                          1,      // d = 1 (disclosure delay)
-                          65536,  // chain length (~21 minutes)
+                          t_int_ms,    // Computed T_int (aligned with SIB1 repetition)
+                          1,           // d = 1 (disclosure delay)
+                          chain_len,   // Scaled chain length
                           private_key,
-                          0,      // T_0 HFN = 0 (initial Hyper-Frame Number)
-                          0,      // T_0 SFN = 0 (will be updated on first TX)
-                          0,      // T_0 slot = 0
+                          0,           // T_0 HFN = 0 (initial Hyper-Frame Number)
+                          t0_sfn,      // Computed T_0 SFN
+                          t0_slot,     // Computed T_0 slot
                           slots_per_frame);
   if (rc != 0) {
     LOG_E(NR_MAC, "TESLA: Failed to initialize (rc=%d)\n", rc);
