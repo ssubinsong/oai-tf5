@@ -96,6 +96,20 @@ Interval 6: gNB uses K_6 for MAC, discloses K_5
             UE verifies buffered message from interval 5 using K_5
 ```
 
+### Why d=1 is Safe (RFC 4082 Consideration)
+
+RFC 4082 Section 3.6 states that d=1 "does not work" for packets sent near interval boundaries, as network delay may cause them to arrive after the key is disclosed. However, **d=1 is safe in this implementation** because:
+
+1. **Deterministic broadcast scheduling**: SIB1 is transmitted at the **beginning** of each TESLA interval (aligned with SSB/SIB1 timing per 3GPP TS 38.331)
+
+2. **Full propagation margin**: Packets have the entire interval duration (~20ms) to reach receivers before key disclosure in the next interval
+
+3. **No boundary timing issue**: Unlike generic TESLA deployments where packets may be sent at arbitrary times within an interval, 5G broadcast scheduling ensures packets never approach interval boundaries
+
+**Security guarantee**: RFC 4082 Section 3.2 confirms the scheme "remains secure for any values of T_int and d>0"
+
+**Latency benefit**: Using d=1 minimizes authentication delay (1 interval vs 2+ intervals with higher d values)
+
 ---
 
 ## Dual Authentication Mechanism
