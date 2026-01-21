@@ -10,6 +10,7 @@
 |--------|-----------|-----------|
 | Fake base station | Yes | Ed25519 signature verification |
 | Message tampering | Yes | Signature + MAC verification |
+| Signature replay attack | Yes | Wall-clock timestamp validation (±60s window) |
 | Replay attack (recent) | Yes | Interval check in safe packet test |
 | Replay attack (old HFN cycle) | Yes | HFN mismatch detection |
 | Key compromise | Partial | Delayed disclosure limits exposure |
@@ -63,8 +64,12 @@
 - Attacker cannot replay old messages (HFN/interval check)
 
 ### Replay Attack
-- Same SFN cycle: Interval check detects stale messages
-- Different HFN cycle: HFN mismatch detection (±1 tolerance)
+- **Signature replay**: Wall-clock timestamp in extension (signed by Ed25519)
+  - UE validates timestamp against local system time (GNSS/NTP synced)
+  - Default window: ±60 seconds (configurable via `timestamp_window_ms`)
+  - Attacker capturing and replaying old signed SIB1 is detected
+- **Same SFN cycle**: Interval check detects stale messages
+- **Different HFN cycle**: HFN mismatch detection (±1 tolerance)
 
 ### Key Disclosure Attack
 - Attacker learns K_{i-d} at interval i

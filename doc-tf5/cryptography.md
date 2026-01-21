@@ -69,10 +69,10 @@ The signature and MAC use different authentication inputs per RFC 4082:
 
 ### Signature Auth Input
 
-**Source**: [tf5_tesla.c:193](../openair3/SECU/tf5_tesla.c#L193) `tf5_tesla_build_sig_auth_input()`
+**Source**: [tf5_tesla.c:196](../openair3/SECU/tf5_tesla.c#L196) `tf5_tesla_build_sig_auth_input()`
 
 ```
-sig_auth_input = original_SIB1 || static_params || timesync_info || interval_index || disclosed_key
+sig_auth_input = original_SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
 ```
 
 - **original_SIB1**: SIB1 content without TESLA extension
@@ -80,12 +80,13 @@ sig_auth_input = original_SIB1 || static_params || timesync_info || interval_ind
 - **timesync_info**: 6 bytes of timing information
 - **interval_index**: 4 bytes current interval
 - **disclosed_key**: 16 bytes K_{i-d}
+- **timestamp_ms**: 8 bytes Unix epoch timestamp (milliseconds) for replay protection
 
 ### MAC Auth Input
 
 **Source**: [tf5_tesla.c:149](../openair3/SECU/tf5_tesla.c#L149) `tf5_tesla_build_mac_auth_input()`
 
-Per RFC 4082, the MAC does NOT include the interval index or disclosed key:
+Per RFC 4082, the MAC does NOT include the interval index, disclosed key, or timestamp:
 ```
 mac_auth_input = original_SIB1 || static_params || timesync_info
 ```

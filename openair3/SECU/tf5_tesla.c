@@ -34,6 +34,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 #include <openssl/rand.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
@@ -142,6 +143,39 @@ uint32_t tf5_tesla_get_interval_index(uint16_t hfn,
 
 /*
  * =============================================================================
+ * Timestamp Functions for Replay Protection
+ * =============================================================================
+ */
+
+uint64_t tf5_tesla_get_wallclock_ms(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+        LOG_E(NR_RRC, "TESLA: Failed to get wall-clock time\n");
+        return 0;
+    }
+    return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+}
+
+int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
+                                 uint64_t ext_timestamp_ms,
+                                 uint64_t window_ms)
+{
+    // Check if timestamp is too old: ext_timestamp + window < ue_time
+    if (ext_timestamp_ms + window_ms < ue_time_ms) {
+        return -1;  // Too old
+    }
+
+    // Check if timestamp is too far in the future: ext_timestamp > ue_time + window
+    if (ext_timestamp_ms > ue_time_ms + window_ms) {
+        return -2;  // Too far in future
+    }
+
+    return 0;  // Valid
+}
+
+/*
+ * =============================================================================
  * Binary Pack/Unpack Functions
  * =============================================================================
  */
@@ -200,7 +234,8 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    const tf5_tesla_static_params_t *static_params,
                                    const tf5_tesla_timesync_info_t *timesync_info,
                                    uint32_t interval_index,
-                                   const uint8_t disclosed_key[TF5_TESLA_KEY_LEN])
+                                   const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
+                                   uint64_t timestamp_ms)
 {
     if (!out || !out_len || !original_sib1 || !static_params || !timesync_info || !disclosed_key) {
         return -1;
@@ -224,6 +259,10 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
     memcpy(out + offset, disclosed_key, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
+    // Append timestamp_ms (8 bytes) - for signature replay protection
+    tf5_encode_u64_be(out + offset, timestamp_ms);
+    offset += 8;
+
     *out_len = offset;
     return 0;
 }
@@ -236,8 +275,8 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
         return -1;
     }
 
-    // Total size: 30 + 6 + 4 + 16 + 64 + 16 = 136 bytes
-    const size_t required_len = 136;
+    // Total size: 30 + 6 + 4 + 16 + 8 + 64 + 16 = 144 bytes
+    const size_t required_len = 144;
     if (buf_len < required_len) {
         return -2;
     }
@@ -278,6 +317,10 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     memcpy(buf + offset, ext->disclosed_key, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
+    // Timestamp (8 bytes) - for signature replay protection
+    tf5_encode_u64_be(buf + offset, ext->timestamp_ms);
+    offset += 8;
+
     // Signature (64 bytes)
     memcpy(buf + offset, ext->gnb_signature, TF5_TESLA_SIG_LEN);
     offset += TF5_TESLA_SIG_LEN;
@@ -297,7 +340,7 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
         return -1;
     }
 
-    const size_t required_len = 136;
+    const size_t required_len = 144;
     if (buf_len < required_len) {
         return -2;
     }
@@ -337,6 +380,10 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     // Disclosed key (16 bytes)
     memcpy(ext->disclosed_key, buf + offset, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
+
+    // Timestamp (8 bytes) - for signature replay protection
+    ext->timestamp_ms = tf5_decode_u64_be(buf + offset);
+    offset += 8;
 
     // Signature (64 bytes)
     memcpy(ext->gnb_signature, buf + offset, TF5_TESLA_SIG_LEN);
@@ -506,7 +553,14 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
         memset(ext->disclosed_key, 0, TF5_TESLA_KEY_LEN);
     }
 
-    // Build signature auth input (SIB1 + static + timesync + interval + key)
+    // Set wall-clock timestamp for signature replay protection
+    ext->timestamp_ms = tf5_tesla_get_wallclock_ms();
+    if (ext->timestamp_ms == 0) {
+        LOG_E(NR_RRC, "TESLA: Failed to get wall-clock time\n");
+        return -7;
+    }
+
+    // Build signature auth input (SIB1 + static + timesync + interval + key + timestamp)
     uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
     size_t sig_auth_input_len;
     int rc = tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_input_len,
@@ -514,7 +568,8 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
                                             &ext->static_params,
                                             &ext->timesync_info,
                                             ext->interval_index,
-                                            ext->disclosed_key);
+                                            ext->disclosed_key,
+                                            ext->timestamp_ms);
     if (rc != 0) {
         LOG_E(NR_RRC, "TESLA: Failed to build signature auth input\n");
         return -3;
@@ -594,6 +649,9 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     // auth_start_time = 0
     // rrcsetup_deferred = false
     // rrcsetup_transaction_id = 0
+
+    // Timestamp validation for signature replay protection
+    state->timestamp_window_ms = TF5_TESLA_DEFAULT_TIME_WINDOW_MS;
 
     state->initialized = true;
 

@@ -45,9 +45,9 @@ typedef struct {
 
 ---
 
-## TESLA Extension (136 bytes)
+## TESLA Extension (144 bytes)
 
-**Source**: [tf5_tesla.h:91-103](../openair3/SECU/tf5_tesla.h#L91-L103)
+**Source**: [tf5_tesla.h:91-109](../openair3/SECU/tf5_tesla.h#L91-L109)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
@@ -57,16 +57,17 @@ typedef struct {
     tf5_tesla_timesync_info_t   timesync_info;   // 6B
     uint32_t                    interval_index;  // 4B - Current interval i
     uint8_t                     disclosed_key[16]; // 16B - K_{i-d}
+    uint64_t                    timestamp_ms;    // 8B - Unix epoch (ms) for replay protection
     uint8_t  gnb_signature[64];                  // 64B - Ed25519 signature
     uint8_t  tesla_tag[16];                      // 16B - HMAC tag
 } tf5_tesla_extension_t;
 ```
 
 **Authentication Coverage**:
-- **Signature**: SIB1 || static_params || timesync_info || interval_index || disclosed_key
-- **MAC**: SIB1 || static_params || timesync_info (per RFC 4082)
+- **Signature**: SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
+- **MAC**: SIB1 || static_params || timesync_info (per RFC 4082, excludes timestamp)
 
-**Binary Wire Format** (136 bytes, big-endian):
+**Binary Wire Format** (144 bytes, big-endian):
 ```
 Offset  Size  Field
 ------  ----  -----
@@ -85,10 +86,11 @@ Offset  Size  Field
 34      2     ti_slot
 36      4     interval_index
 40      16    disclosed_key
-56      64    gnb_signature
-120     16    tesla_tag
+56      8     timestamp_ms
+64      64    gnb_signature
+128     16    tesla_tag
 ------
-136 bytes total
+144 bytes total
 ```
 
 ---

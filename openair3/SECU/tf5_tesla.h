@@ -48,6 +48,8 @@
 #define TF5_TESLA_CHAIN_LEN         65536   // ~21 minutes at T_int=20ms
 #define TF5_TESLA_MAX_SIB1_LEN      374     // Max SIB1 encoded size (2976 bits)
 #define TF5_TESLA_MAX_AUTH_INPUT    512     // Max auth input buffer size
+#define TF5_TESLA_TIMESTAMP_LEN     8       // 64-bit Unix timestamp (ms)
+#define TF5_TESLA_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
 
 // Protocol version
 #define TF5_TESLA_VERSION           0x01
@@ -92,16 +94,17 @@ typedef struct {
  * This structure represents the complete TESLA data appended to SIB1
  * via lateNonCriticalExtension.
  *
- * Signature authenticates: SIB1 || static_params || timesync_info || interval_index || disclosed_key
+ * Signature authenticates: SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
  * MAC authenticates:       SIB1 || static_params || timesync_info (per RFC 4082)
  *
- * Total size: 136 bytes
+ * Total size: 144 bytes
  */
 typedef struct {
     tf5_tesla_static_params_t  static_params;                 // 30B
     tf5_tesla_timesync_info_t  timesync_info;                 // 6B
     uint32_t                   interval_index;                // 4B - Current interval i
     uint8_t                    disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
+    uint64_t                   timestamp_ms;                  // 8B - Unix epoch timestamp (ms) for replay protection
     uint8_t                    gnb_signature[TF5_TESLA_SIG_LEN]; // 64B - Ed25519 signature
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_tesla_extension_t;
@@ -188,6 +191,9 @@ typedef struct {
     // Deferred RRCSetupComplete (when auth is pending at RRCSetup time)
     bool     rrcsetup_deferred;       // RRCSetupComplete deferred waiting for auth
     uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete
+
+    // Timestamp validation for signature replay protection
+    uint64_t timestamp_window_ms;     // Acceptable time window (default 60000ms)
 } tf5_tesla_ue_state_t;
 
 /*
@@ -271,7 +277,7 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
  * Build signature authentication input buffer
  *
  * Constructs the data to be signed:
- * original_SIB1 || static_params || timesync_info || interval_index || disclosed_key
+ * original_SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
@@ -281,6 +287,7 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
  * @param timesync_info Time synchronization info
  * @param interval_index Current interval index
  * @param disclosed_key Disclosed key K_{i-d}
+ * @param timestamp_ms  Wall-clock timestamp (ms since Unix epoch) for replay protection
  * @return 0 on success, negative on error
  */
 int tf5_tesla_build_sig_auth_input(uint8_t *out,
@@ -290,7 +297,8 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    const tf5_tesla_static_params_t *static_params,
                                    const tf5_tesla_timesync_info_t *timesync_info,
                                    uint32_t interval_index,
-                                   const uint8_t disclosed_key[TF5_TESLA_KEY_LEN]);
+                                   const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
+                                   uint64_t timestamp_ms);
 
 /**
  * Update dynamic parameters and compute signature/tag
@@ -648,6 +656,59 @@ static inline uint32_t tf5_decode_u32_be(const uint8_t *buf) {
            ((uint32_t)buf[2] << 8) |
            buf[3];
 }
+
+static inline void tf5_encode_u64_be(uint8_t *buf, uint64_t val) {
+    buf[0] = (val >> 56) & 0xFF;
+    buf[1] = (val >> 48) & 0xFF;
+    buf[2] = (val >> 40) & 0xFF;
+    buf[3] = (val >> 32) & 0xFF;
+    buf[4] = (val >> 24) & 0xFF;
+    buf[5] = (val >> 16) & 0xFF;
+    buf[6] = (val >> 8) & 0xFF;
+    buf[7] = val & 0xFF;
+}
+
+static inline uint64_t tf5_decode_u64_be(const uint8_t *buf) {
+    return ((uint64_t)buf[0] << 56) |
+           ((uint64_t)buf[1] << 48) |
+           ((uint64_t)buf[2] << 40) |
+           ((uint64_t)buf[3] << 32) |
+           ((uint64_t)buf[4] << 24) |
+           ((uint64_t)buf[5] << 16) |
+           ((uint64_t)buf[6] << 8) |
+           (uint64_t)buf[7];
+}
+
+/*
+ * =============================================================================
+ * Timestamp Functions for Replay Protection
+ * =============================================================================
+ */
+
+/**
+ * Get current wall-clock time in milliseconds since Unix epoch
+ *
+ * Uses CLOCK_REALTIME for system time. Both gNB and UE must have
+ * synchronized clocks (via NTP, GNSS, or PTP) for this to work.
+ *
+ * @return Current time in milliseconds, or 0 on error
+ */
+uint64_t tf5_tesla_get_wallclock_ms(void);
+
+/**
+ * Validate wall-clock timestamp against local time
+ *
+ * Checks if the received timestamp is within acceptable window of local time.
+ * This prevents signature replay attacks using old captured SIB1 messages.
+ *
+ * @param ue_time_ms      UE's current wall-clock time (ms since epoch)
+ * @param ext_timestamp_ms Timestamp from received extension
+ * @param window_ms       Acceptable time window in milliseconds
+ * @return 0 if valid, -1 if too old, -2 if too far in future
+ */
+int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
+                                 uint64_t ext_timestamp_ms,
+                                 uint64_t window_ms);
 
 #endif /* TF5_ENABLE_TESLA */
 
