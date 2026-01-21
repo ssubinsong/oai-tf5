@@ -105,7 +105,7 @@ int32_t uplink_frequency_offset[MAX_NUM_CCs][4];
 char *uecap_file;
 #ifdef TF5_ENABLE_TESLA
 char *tesla_privkey_file;
-char *tesla_cert_file;
+char *tesla_pubkey_file;
 #endif
 
 runmode_t mode = normal_txrx;

@@ -574,9 +574,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                           ext.timestamp_ms);
 
           SI_info->tesla_state->auth_in_progress = true;
-          int sig_rc = tf5_tesla_ed25519_verify(SI_info->tesla_state->gnb_public_key,
-                                                 sig_auth_input, sig_auth_len,
-                                                 ext.gnb_signature);
+          int sig_rc = tf5_tesla_bls_verify(SI_info->tesla_state->gnb_public_key,
+                                             sig_auth_input, sig_auth_len,
+                                             ext.gnb_signature);
           SI_info->tesla_state->auth_in_progress = false;
 
           if (sig_rc == 0) {
@@ -594,7 +594,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             SI_info->tesla_state->last_verified_key_idx = disclosed_interval;
             SI_info->tesla_state->last_verified_key_valid = true;
 
-            LOG_I(NR_RRC, "TESLA: First-time UE - K_0 authenticated via Ed25519, K_%u accepted as anchor (interval %u)\n",
+            LOG_I(NR_RRC, "TESLA: First-time UE - K_0 authenticated via BLS, K_%u accepted as anchor (interval %u)\n",
                   disclosed_interval, ext.interval_index);
 
             /* Verify initial time synchronization (essential TESLA assumption per RFC 4082 Section 2.2) */
@@ -633,17 +633,28 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           /* Check if time sync was previously verified */
           if (!SI_info->tesla_state->timesync_verified) {
             /* Time sync failed during initial verification - stay in signature-only mode */
-            /* Verify Ed25519 signature for each SIB1 instead of using TESLA MAC */
-            LOG_D(NR_RRC, "TESLA: Signature-only mode (time sync not verified) - verifying Ed25519\n");
+            /* Verify BLS signature for each SIB1 instead of using TESLA MAC */
+            LOG_D(NR_RRC, "TESLA: Signature-only mode (time sync not verified) - verifying BLS\n");
+
+            /* Build signature auth input for verification */
+            uint8_t sig_auth_input_fallback[TF5_TESLA_MAX_AUTH_INPUT];
+            size_t sig_auth_len_fallback = 0;
+            tf5_tesla_build_sig_auth_input(sig_auth_input_fallback, &sig_auth_len_fallback,
+                                            sib1_buf, sib1_len,
+                                            &ext.static_params,
+                                            &ext.timesync_info,
+                                            ext.interval_index,
+                                            ext.disclosed_key,
+                                            ext.timestamp_ms);
 
             int sig_rc = tf5_tesla_ue_verify_signature(SI_info->tesla_state,
-                                                       sig_auth_input, sig_auth_len,
+                                                       sig_auth_input_fallback, sig_auth_len_fallback,
                                                        ext.gnb_signature);
             if (sig_rc == 0) {
               SI_info->tesla_state->sib1_authenticated = true;
-              LOG_I(NR_RRC, "TESLA: Signature-only mode - SIB1 verified via Ed25519\n");
+              LOG_I(NR_RRC, "TESLA: Signature-only mode - SIB1 verified via BLS\n");
             } else {
-              LOG_E(NR_RRC, "TESLA: Signature-only mode - Ed25519 verification FAILED\n");
+              LOG_E(NR_RRC, "TESLA: Signature-only mode - BLS verification FAILED\n");
               SI_info->tesla_state->auth_failed = true;
               nr_rrc_abort_connection(rrc, gNB_index);
               return;
@@ -1571,26 +1582,35 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
     ptr->SInfo.tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
     if (ptr->SInfo.tesla_state) {
       nrUE_params_t *params = get_nrUE_params();
-      uint8_t gnb_pubkey[32];
-      int rc = tf5_tesla_load_cert_pubkey(params->tesla_gnb_cert_file, gnb_pubkey);
-      if (rc == 0) {
-        // Default slots_per_frame, will be updated when SIB1 is received with numerology info
-        uint16_t slots_per_frame = 20;
-        tf5_tesla_ue_init(ptr->SInfo.tesla_state, gnb_pubkey, slots_per_frame);
-        LOG_I(NR_RRC, "TESLA: Loaded gNB certificate from %s\n", params->tesla_gnb_cert_file);
-        // Log public key for verification
-        char hex_buf[65];
-        for (int j = 0; j < 32; j++) {
-          sprintf(&hex_buf[j*2], "%02x", gnb_pubkey[j]);
-        }
-        LOG_I(NR_RRC, "TESLA: gNB public key (hex): %s\n", hex_buf);
-      } else {
-        LOG_E(NR_RRC, "TESLA: Failed to load gNB certificate from %s (rc=%d)\n",
-              params->tesla_gnb_cert_file, rc);
-        LOG_E(NR_RRC, "TESLA: Run ./scripts/tf5_generate_cert.sh to generate keys\n");
-        // Free state and set to NULL to disable TESLA
+
+      // Initialize BLS library
+      int rc = tf5_tesla_bls_init();
+      if (rc != 0) {
+        LOG_E(NR_RRC, "TESLA: Failed to initialize BLS library (rc=%d)\n", rc);
         free(ptr->SInfo.tesla_state);
         ptr->SInfo.tesla_state = NULL;
+      } else {
+        uint8_t gnb_pubkey[TF5_TESLA_PUBKEY_LEN];
+        rc = tf5_tesla_load_pubkey(params->tesla_gnb_pubkey_file, gnb_pubkey);
+        if (rc == 0) {
+          // Default slots_per_frame, will be updated when SIB1 is received with numerology info
+          uint16_t slots_per_frame = 20;
+          tf5_tesla_ue_init(ptr->SInfo.tesla_state, gnb_pubkey, slots_per_frame);
+          LOG_I(NR_RRC, "TESLA: Loaded gNB public key from %s\n", params->tesla_gnb_pubkey_file);
+          // Log public key for verification (first 32 bytes)
+          char hex_buf[65];
+          for (int j = 0; j < 32; j++) {
+            sprintf(&hex_buf[j*2], "%02x", gnb_pubkey[j]);
+          }
+          LOG_I(NR_RRC, "TESLA: gNB public key (first 32 bytes hex): %s...\n", hex_buf);
+        } else {
+          LOG_E(NR_RRC, "TESLA: Failed to load gNB public key from %s (rc=%d)\n",
+                params->tesla_gnb_pubkey_file, rc);
+          LOG_E(NR_RRC, "TESLA: Run ./scripts/tf5_generate_bls_keys.sh to generate keys\n");
+          // Free state and set to NULL to disable TESLA
+          free(ptr->SInfo.tesla_state);
+          ptr->SInfo.tesla_state = NULL;
+        }
       }
     }
 #endif

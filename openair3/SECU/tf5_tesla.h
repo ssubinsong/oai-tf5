@@ -37,14 +37,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "tf5_tesla_sig.h"  // Ed25519 signature functions
+#include "tf5_tesla_sig.h"  // BLS signature functions
 
 /*
  * TESLA Configuration Constants
  */
-#define TF5_TESLA_KEY_LEN           16      // 128-bit keys
+#define TF5_TESLA_KEY_LEN           16      // 128-bit TESLA chain keys
 #define TF5_TESLA_TAG_LEN           16      // Truncated HMAC-SHA256 to 128 bits
-#define TF5_TESLA_SIG_LEN           64      // Ed25519 signature length
+#define TF5_TESLA_SIG_LEN           TF5_BLS_SIGNATURE_LEN   // BLS signature length (48 bytes)
+#define TF5_TESLA_PUBKEY_LEN        TF5_BLS_PUBLIC_KEY_LEN  // BLS public key length (96 bytes)
 #define TF5_TESLA_CHAIN_LEN         65536   // ~21 minutes at T_int=20ms
 #define TF5_TESLA_MAX_SIB1_LEN      374     // Max SIB1 encoded size (2976 bits)
 #define TF5_TESLA_MAX_AUTH_INPUT    512     // Max auth input buffer size
@@ -69,7 +70,7 @@
 #define TF5_TESLA_VERSION           0x01
 
 // Crypto suite identifiers
-#define TF5_CRYPTO_SUITE_HMAC_SHA256_ED25519  0x01
+#define TF5_CRYPTO_SUITE_HMAC_SHA256_BLS  0x02
 
 /*
  * TESLA Static Parameters
@@ -111,7 +112,7 @@ typedef struct {
  * Signature authenticates: SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
  * MAC authenticates:       SIB1 || static_params || timesync_info (per RFC 4082)
  *
- * Total size: 144 bytes
+ * Total size: 128 bytes (with BLS signatures)
  */
 typedef struct {
     tf5_tesla_static_params_t  static_params;                 // 30B
@@ -119,7 +120,7 @@ typedef struct {
     uint32_t                   interval_index;                // 4B - Current interval i
     uint8_t                    disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint64_t                   timestamp_ms;                  // 8B - Unix epoch timestamp (ms) for replay protection
-    uint8_t                    gnb_signature[TF5_TESLA_SIG_LEN]; // 64B - Ed25519 signature
+    uint8_t                    gnb_signature[TF5_TESLA_SIG_LEN]; // 48B - BLS signature
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_tesla_extension_t;
 
@@ -142,9 +143,9 @@ typedef struct {
     uint16_t current_hfn;         // Current Hyper-Frame Number
     uint16_t last_sfn;            // Last seen SFN (to detect wraparound)
 
-    // Ed25519 keys
-    uint8_t  gnb_private_key[32];
-    uint8_t  gnb_public_key[32];
+    // BLS keys
+    uint8_t  gnb_private_key[TF5_BLS_SECRET_KEY_LEN];   // 32B - BLS secret key
+    uint8_t  gnb_public_key[TF5_TESLA_PUBKEY_LEN];      // 96B - BLS public key (G2)
 
     // Slots per frame (depends on numerology)
     uint16_t slots_per_frame;
@@ -162,7 +163,7 @@ typedef struct {
     tf5_tesla_static_params_t static_params;
 
     // Pre-provisioned gNB public key
-    uint8_t  gnb_public_key[32];
+    uint8_t  gnb_public_key[TF5_TESLA_PUBKEY_LEN];  // 96B - BLS public key (G2)
     bool     has_gnb_public_key;     // Is gNB public key configured?
 
     // Verification state
@@ -195,7 +196,7 @@ typedef struct {
     bool     initialized;
 
     // Parallel authentication state (for NAS gating)
-    bool     k0_trusted;              // K_0 authenticated via Ed25519 (persistent across SIB1s)
+    bool     k0_trusted;              // K_0 authenticated via BLS signature (persistent across SIB1s)
     bool     sib1_authenticated;      // Current SIB1 verified (sig OR tesla)
     bool     auth_in_progress;        // Authentication running in parallel with RACH
     bool     auth_failed;             // Authentication failed - must abort RRC
@@ -240,7 +241,7 @@ typedef struct {
  * @param t_int_ms      Interval duration in milliseconds (e.g., 20)
  * @param d             Key disclosure delay (e.g., 1)
  * @param chain_len     Number of intervals in key chain
- * @param private_key   Ed25519 private key (32 bytes)
+ * @param private_key   BLS secret key (32 bytes)
  * @param hfn           Initial HFN (usually 0)
  * @param sfn           Current SFN (for T_0)
  * @param slot          Current slot (for T_0)
@@ -251,7 +252,7 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
                        uint16_t t_int_ms,
                        uint8_t d,
                        uint32_t chain_len,
-                       const uint8_t private_key[32],
+                       const uint8_t private_key[TF5_BLS_SECRET_KEY_LEN],
                        uint16_t hfn,
                        uint16_t sfn,
                        uint16_t slot,
@@ -370,12 +371,12 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
  * Initialize TESLA state on UE
  *
  * @param state         Pointer to UE TESLA state structure
- * @param gnb_public_key Pre-provisioned gNB Ed25519 public key (32 bytes)
+ * @param gnb_public_key Pre-provisioned gNB BLS public key (96 bytes)
  * @param slots_per_frame Number of slots per frame
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
-                      const uint8_t gnb_public_key[32],
+                      const uint8_t gnb_public_key[TF5_TESLA_PUBKEY_LEN],
                       uint16_t slots_per_frame);
 
 /**
@@ -440,12 +441,12 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
                                tf5_tesla_extension_t *ext);
 
 /**
- * Verify Ed25519 signature
+ * Verify BLS signature
  *
  * @param state         Pointer to UE TESLA state structure
  * @param auth_input    Authentication input (SIB1 + static + dynamic)
  * @param auth_input_len Length of auth input
- * @param signature     Signature to verify (64 bytes)
+ * @param signature     Signature to verify (48 bytes)
  * @return 0 on success (signature valid), negative on error
  */
 int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
@@ -534,29 +535,30 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
  */
 
 /**
- * Load Ed25519 private key from PEM file
+ * Load BLS secret key from raw binary file
  *
- * @param filepath      Path to PEM file containing Ed25519 private key
- * @param privkey_out   Output: 32-byte raw private key
+ * @param filepath      Path to binary file containing BLS secret key (32 bytes)
+ * @param privkey_out   Output: 32-byte raw secret key
  * @return 0 on success, negative on error:
  *         -1: Cannot open file
- *         -2: Cannot parse PEM
- *         -3: Cannot extract raw key
+ *         -2: File read error or wrong size
+ *         -3: Invalid key format
  */
-int tf5_tesla_load_privkey(const char *filepath, uint8_t privkey_out[32]);
+int tf5_tesla_load_privkey(const char *filepath,
+                           uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN]);
 
 /**
- * Load Ed25519 public key from PEM certificate file
+ * Load BLS public key from raw binary file
  *
- * @param filepath      Path to PEM certificate file
- * @param pubkey_out    Output: 32-byte raw public key
+ * @param filepath      Path to binary file containing BLS public key (96 bytes)
+ * @param pubkey_out    Output: 96-byte raw public key
  * @return 0 on success, negative on error:
  *         -1: Cannot open file
- *         -2: Cannot parse certificate
- *         -3: Cannot extract public key from certificate
- *         -4: Cannot extract raw key
+ *         -2: File read error or wrong size
+ *         -3: Invalid key format
  */
-int tf5_tesla_load_cert_pubkey(const char *filepath, uint8_t pubkey_out[32]);
+int tf5_tesla_load_pubkey(const char *filepath,
+                          uint8_t pubkey_out[TF5_TESLA_PUBKEY_LEN]);
 
 /*
  * =============================================================================

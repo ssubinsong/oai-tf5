@@ -20,9 +20,10 @@
  */
 
 /*
- * TESLA Broadcast Authentication - Ed25519 Signature Implementation
+ * TESLA Broadcast Authentication - BLS Signature Implementation
  *
- * Uses OpenSSL EVP API for Ed25519 operations.
+ * Uses herumi-bls library with BLS12-381 curve in non-ETH mode.
+ * Signatures in G1 (48 bytes), Public keys in G2 (96 bytes).
  */
 
 #ifdef TF5_ENABLE_TESLA
@@ -31,211 +32,192 @@
 #include "common/utils/LOG/log.h"
 
 #include <string.h>
-#include <openssl/evp.h>
-#include <openssl/err.h>
-#include <openssl/rand.h>
+#include <bls/bls.h>
+#include <mcl/bn.h>
 
-/*
- * Cleanup macro for EVP contexts used in sign/verify operations.
- */
-#define TF5_EVP_CLEANUP(ctx, pkey) \
-    do { \
-        if (ctx) EVP_MD_CTX_free(ctx); \
-        if (pkey) EVP_PKEY_free(pkey); \
-    } while (0)
+/* Track initialization state */
+static int bls_initialized = 0;
 
-/*
- * Internal helpers to reduce code duplication.
- */
-
-/* Create EVP_PKEY from raw Ed25519 private key */
-static EVP_PKEY *tf5_evp_pkey_from_private(const uint8_t private_key[32],
-                                            const char *operation)
+int tf5_tesla_bls_init(void)
 {
-    EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL,
-                                                   private_key, 32);
-    if (!pkey) {
-        LOG_E(NR_RRC, "TESLA: Failed to create EVP_PKEY for %s\n", operation);
+    if (bls_initialized) {
+        return 0;  /* Already initialized */
     }
-    return pkey;
-}
 
-/* Create EVP_PKEY from raw Ed25519 public key */
-static EVP_PKEY *tf5_evp_pkey_from_public(const uint8_t public_key[32],
-                                           const char *operation)
-{
-    EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL,
-                                                  public_key, 32);
-    if (!pkey) {
-        LOG_E(NR_RRC, "TESLA: Failed to create EVP_PKEY for %s\n", operation);
-    }
-    return pkey;
-}
-
-/* Allocate EVP_MD_CTX, free pkey on failure */
-static EVP_MD_CTX *tf5_evp_md_ctx_new_or_cleanup(EVP_PKEY *pkey)
-{
-    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-    if (!ctx) {
-        EVP_PKEY_free(pkey);
-        LOG_E(NR_RRC, "TESLA: Failed to create EVP_MD_CTX\n");
-    }
-    return ctx;
-}
-
-int tf5_tesla_ed25519_derive_public(const uint8_t private_key[32],
-                                    uint8_t public_key[32])
-{
-    if (!private_key || !public_key) {
+    int rc = blsInit(MCL_BLS12_381, MCLBN_COMPILED_TIME_VAR);
+    if (rc != 0) {
+        LOG_E(NR_RRC, "TESLA: blsInit failed with error %d\n", rc);
         return -1;
     }
 
-    EVP_PKEY *pkey = tf5_evp_pkey_from_private(private_key, "key derivation");
-    if (!pkey) {
+    bls_initialized = 1;
+    LOG_I(NR_RRC, "TESLA: BLS library initialized (BLS12-381, non-ETH mode)\n");
+    return 0;
+}
+
+int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+                                uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN])
+{
+    if (!secret_key || !public_key) {
+        return -1;
+    }
+
+    if (!bls_initialized) {
+        LOG_E(NR_RRC, "TESLA: BLS library not initialized\n");
         return -2;
     }
 
-    size_t pub_len = 32;
-    int rc = EVP_PKEY_get_raw_public_key(pkey, public_key, &pub_len);
-    EVP_PKEY_free(pkey);
+    blsSecretKey sec;
+    blsPublicKey pub;
 
-    if (rc != 1 || pub_len != 32) {
-        LOG_E(NR_RRC, "TESLA: Failed to derive public key\n");
+    /* Deserialize secret key */
+    if (blsSecretKeyDeserialize(&sec, secret_key, TF5_BLS_SECRET_KEY_LEN)
+            != TF5_BLS_SECRET_KEY_LEN) {
+        LOG_E(NR_RRC, "TESLA: Failed to deserialize secret key\n");
         return -3;
     }
 
-    return 0;
-}
+    /* Derive public key */
+    blsGetPublicKey(&pub, &sec);
 
-int tf5_tesla_ed25519_sign(const uint8_t private_key[32],
-                           const uint8_t *data,
-                           size_t data_len,
-                           uint8_t signature[64])
-{
-    if (!private_key || !data || !signature || data_len == 0) {
-        return -1;
-    }
-
-    EVP_PKEY *pkey = tf5_evp_pkey_from_private(private_key, "signing");
-    if (!pkey) {
-        return -2;
-    }
-
-    EVP_MD_CTX *ctx = tf5_evp_md_ctx_new_or_cleanup(pkey);
-    if (!ctx) {
-        return -3;  /* pkey already freed by helper */
-    }
-
-    int rc = EVP_DigestSignInit(ctx, NULL, NULL, NULL, pkey);
-    if (rc != 1) {
-        LOG_E(NR_RRC, "TESLA: EVP_DigestSignInit failed\n");
-        TF5_EVP_CLEANUP(ctx, pkey);
+    /* Serialize public key */
+    size_t pub_len = blsPublicKeySerialize(public_key, TF5_BLS_PUBLIC_KEY_LEN, &pub);
+    if (pub_len != TF5_BLS_PUBLIC_KEY_LEN) {
+        LOG_E(NR_RRC, "TESLA: Unexpected public key size: %zu (expected %d)\n",
+              pub_len, TF5_BLS_PUBLIC_KEY_LEN);
         return -4;
     }
 
-    size_t sig_len = 64;
-    rc = EVP_DigestSign(ctx, signature, &sig_len, data, data_len);
+    return 0;
+}
 
-    TF5_EVP_CLEANUP(ctx, pkey);
-
-    if (rc != 1 || sig_len != 64) {
-        LOG_E(NR_RRC, "TESLA: EVP_DigestSign failed\n");
-        return -5;
+int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+                       const uint8_t *data,
+                       size_t data_len,
+                       uint8_t signature[TF5_BLS_SIGNATURE_LEN])
+{
+    if (!secret_key || !data || !signature || data_len == 0) {
+        return -1;
     }
+
+    if (!bls_initialized) {
+        LOG_E(NR_RRC, "TESLA: BLS library not initialized\n");
+        return -2;
+    }
+
+    blsSecretKey sec;
+    blsSignature sig;
+
+    /* Deserialize secret key */
+    if (blsSecretKeyDeserialize(&sec, secret_key, TF5_BLS_SECRET_KEY_LEN)
+            != TF5_BLS_SECRET_KEY_LEN) {
+        LOG_E(NR_RRC, "TESLA: Failed to deserialize secret key for signing\n");
+        return -3;
+    }
+
+    /* Sign the data */
+    blsSign(&sig, &sec, data, data_len);
+
+    /* Serialize signature */
+    size_t sig_len = blsSignatureSerialize(signature, TF5_BLS_SIGNATURE_LEN, &sig);
+    if (sig_len != TF5_BLS_SIGNATURE_LEN) {
+        LOG_E(NR_RRC, "TESLA: Unexpected signature size: %zu (expected %d)\n",
+              sig_len, TF5_BLS_SIGNATURE_LEN);
+        return -4;
+    }
+
+    /* Clear secret key from memory */
+    memset(&sec, 0, sizeof(sec));
 
     return 0;
 }
 
-int tf5_tesla_ed25519_verify(const uint8_t public_key[32],
-                             const uint8_t *data,
-                             size_t data_len,
-                             const uint8_t signature[64])
+int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN],
+                         const uint8_t *data,
+                         size_t data_len,
+                         const uint8_t signature[TF5_BLS_SIGNATURE_LEN])
 {
     if (!public_key || !data || !signature || data_len == 0) {
         return -1;
     }
 
-    EVP_PKEY *pkey = tf5_evp_pkey_from_public(public_key, "verification");
-    if (!pkey) {
+    if (!bls_initialized) {
+        LOG_E(NR_RRC, "TESLA: BLS library not initialized\n");
         return -2;
     }
 
-    EVP_MD_CTX *ctx = tf5_evp_md_ctx_new_or_cleanup(pkey);
-    if (!ctx) {
-        return -3;  /* pkey already freed by helper */
+    blsPublicKey pub;
+    blsSignature sig;
+
+    /* Deserialize public key */
+    if (blsPublicKeyDeserialize(&pub, public_key, TF5_BLS_PUBLIC_KEY_LEN)
+            != TF5_BLS_PUBLIC_KEY_LEN) {
+        LOG_E(NR_RRC, "TESLA: Failed to deserialize public key for verification\n");
+        return -3;
     }
 
-    int rc = EVP_DigestVerifyInit(ctx, NULL, NULL, NULL, pkey);
-    if (rc != 1) {
-        LOG_E(NR_RRC, "TESLA: EVP_DigestVerifyInit failed\n");
-        TF5_EVP_CLEANUP(ctx, pkey);
+    /* Deserialize signature */
+    if (blsSignatureDeserialize(&sig, signature, TF5_BLS_SIGNATURE_LEN)
+            != TF5_BLS_SIGNATURE_LEN) {
+        LOG_E(NR_RRC, "TESLA: Failed to deserialize signature for verification\n");
         return -4;
     }
 
-    rc = EVP_DigestVerify(ctx, signature, 64, data, data_len);
-
-    TF5_EVP_CLEANUP(ctx, pkey);
-
+    /* Verify signature: returns 1 if valid, 0 if invalid */
+    int rc = blsVerify(&sig, &pub, data, data_len);
     if (rc != 1) {
-        /* rc == 0 means signature invalid, rc < 0 means error */
-        if (rc == 0) {
-            LOG_W(NR_RRC, "TESLA: Signature verification failed - invalid signature\n");
-        } else {
-            LOG_E(NR_RRC, "TESLA: EVP_DigestVerify error\n");
-        }
+        LOG_W(NR_RRC, "TESLA: BLS signature verification failed\n");
         return -5;
     }
 
     return 0;
 }
 
-int tf5_tesla_ed25519_keygen(uint8_t private_key[32],
-                             uint8_t public_key[32])
+int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+                         uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN])
 {
-    if (!private_key || !public_key) {
+    if (!secret_key || !public_key) {
         return -1;
     }
 
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, NULL);
-    if (!ctx) {
-        LOG_E(NR_RRC, "TESLA: Failed to create EVP_PKEY_CTX for keygen\n");
+    if (!bls_initialized) {
+        LOG_E(NR_RRC, "TESLA: BLS library not initialized\n");
         return -2;
     }
 
-    int rc = EVP_PKEY_keygen_init(ctx);
-    if (rc != 1) {
-        LOG_E(NR_RRC, "TESLA: EVP_PKEY_keygen_init failed\n");
-        EVP_PKEY_CTX_free(ctx);
+    blsSecretKey sec;
+    blsPublicKey pub;
+
+    /* Generate random secret key using CSPRNG */
+    if (blsSecretKeySetByCSPRNG(&sec) != 0) {
+        LOG_E(NR_RRC, "TESLA: Failed to generate BLS secret key\n");
         return -3;
     }
 
-    EVP_PKEY *pkey = NULL;
-    rc = EVP_PKEY_keygen(ctx, &pkey);
-    EVP_PKEY_CTX_free(ctx);
+    /* Derive public key */
+    blsGetPublicKey(&pub, &sec);
 
-    if (rc != 1 || !pkey) {
-        LOG_E(NR_RRC, "TESLA: EVP_PKEY_keygen failed\n");
+    /* Serialize secret key */
+    size_t sec_len = blsSecretKeySerialize(secret_key, TF5_BLS_SECRET_KEY_LEN, &sec);
+    if (sec_len != TF5_BLS_SECRET_KEY_LEN) {
+        LOG_E(NR_RRC, "TESLA: Unexpected secret key size: %zu (expected %d)\n",
+              sec_len, TF5_BLS_SECRET_KEY_LEN);
+        memset(&sec, 0, sizeof(sec));
         return -4;
     }
 
-    // Extract raw private key
-    size_t priv_len = 32;
-    rc = EVP_PKEY_get_raw_private_key(pkey, private_key, &priv_len);
-    if (rc != 1 || priv_len != 32) {
-        LOG_E(NR_RRC, "TESLA: Failed to extract private key\n");
-        EVP_PKEY_free(pkey);
+    /* Serialize public key */
+    size_t pub_len = blsPublicKeySerialize(public_key, TF5_BLS_PUBLIC_KEY_LEN, &pub);
+    if (pub_len != TF5_BLS_PUBLIC_KEY_LEN) {
+        LOG_E(NR_RRC, "TESLA: Unexpected public key size: %zu (expected %d)\n",
+              pub_len, TF5_BLS_PUBLIC_KEY_LEN);
+        memset(&sec, 0, sizeof(sec));
+        memset(secret_key, 0, TF5_BLS_SECRET_KEY_LEN);
         return -5;
     }
 
-    // Extract raw public key
-    size_t pub_len = 32;
-    rc = EVP_PKEY_get_raw_public_key(pkey, public_key, &pub_len);
-    EVP_PKEY_free(pkey);
-
-    if (rc != 1 || pub_len != 32) {
-        LOG_E(NR_RRC, "TESLA: Failed to extract public key\n");
-        return -6;
-    }
+    /* Clear secret key object from memory */
+    memset(&sec, 0, sizeof(sec));
 
     return 0;
 }

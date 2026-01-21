@@ -20,7 +20,10 @@
  */
 
 /*
- * TESLA Broadcast Authentication - Ed25519 Signature Operations
+ * TESLA Broadcast Authentication - BLS Signature Operations
+ *
+ * Uses herumi-bls library with BLS12-381 curve.
+ * Non-ETH mode: Signatures in G1 (48 bytes), Public keys in G2 (96 bytes).
  */
 
 #ifndef TF5_TESLA_SIG_H
@@ -31,53 +34,68 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/**
- * Derive Ed25519 public key from private key
- *
- * @param private_key   Ed25519 private key (32 bytes)
- * @param public_key    Output: Ed25519 public key (32 bytes)
- * @return 0 on success, negative on error
- */
-int tf5_tesla_ed25519_derive_public(const uint8_t private_key[32],
-                                    uint8_t public_key[32]);
+/* BLS12-381 key and signature sizes (non-ETH mode) */
+#define TF5_BLS_SECRET_KEY_LEN   32   /* Fr element */
+#define TF5_BLS_PUBLIC_KEY_LEN   96   /* G2 point (compressed) */
+#define TF5_BLS_SIGNATURE_LEN    48   /* G1 point (compressed) */
 
 /**
- * Sign data with Ed25519
+ * Initialize BLS library
  *
- * @param private_key   Ed25519 private key (32 bytes)
- * @param data          Data to sign
- * @param data_len      Length of data
- * @param signature     Output: Ed25519 signature (64 bytes)
+ * Must be called once before any other BLS operations.
+ * NOT thread-safe - call at startup before spawning threads.
+ *
  * @return 0 on success, negative on error
  */
-int tf5_tesla_ed25519_sign(const uint8_t private_key[32],
-                           const uint8_t *data,
-                           size_t data_len,
-                           uint8_t signature[64]);
+int tf5_tesla_bls_init(void);
 
 /**
- * Verify Ed25519 signature
+ * Derive BLS public key from secret key
  *
- * @param public_key    Ed25519 public key (32 bytes)
- * @param data          Signed data
- * @param data_len      Length of data
- * @param signature     Signature to verify (64 bytes)
+ * @param secret_key   BLS secret key (32 bytes)
+ * @param public_key   Output: BLS public key (96 bytes)
+ * @return 0 on success, negative on error
+ */
+int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+                                uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN]);
+
+/**
+ * Sign data with BLS
+ *
+ * @param secret_key   BLS secret key (32 bytes)
+ * @param data         Data to sign
+ * @param data_len     Length of data
+ * @param signature    Output: BLS signature (48 bytes)
+ * @return 0 on success, negative on error
+ */
+int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+                       const uint8_t *data,
+                       size_t data_len,
+                       uint8_t signature[TF5_BLS_SIGNATURE_LEN]);
+
+/**
+ * Verify BLS signature
+ *
+ * @param public_key   BLS public key (96 bytes)
+ * @param data         Signed data
+ * @param data_len     Length of data
+ * @param signature    Signature to verify (48 bytes)
  * @return 0 on success (signature valid), negative on error
  */
-int tf5_tesla_ed25519_verify(const uint8_t public_key[32],
-                             const uint8_t *data,
-                             size_t data_len,
-                             const uint8_t signature[64]);
+int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN],
+                         const uint8_t *data,
+                         size_t data_len,
+                         const uint8_t signature[TF5_BLS_SIGNATURE_LEN]);
 
 /**
- * Generate Ed25519 key pair
+ * Generate BLS key pair
  *
- * @param private_key   Output: Ed25519 private key (32 bytes)
- * @param public_key    Output: Ed25519 public key (32 bytes)
+ * @param secret_key   Output: BLS secret key (32 bytes)
+ * @param public_key   Output: BLS public key (96 bytes)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_ed25519_keygen(uint8_t private_key[32],
-                             uint8_t public_key[32]);
+int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+                         uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN]);
 
 #endif /* TF5_ENABLE_TESLA */
 

@@ -13,7 +13,53 @@
 | Key chain derivation | HMAC-SHA256(K, 0x00) | 128 bits (truncated) |
 | MAC key derivation | HMAC-SHA256(K, 0x01) | 256 bits |
 | TESLA tag | HMAC-SHA256(K', data) | 128 bits (truncated) |
-| Signature | Ed25519 | 512 bits |
+| Signature | BLS12-381 (non-ETH mode) | 384 bits (48 bytes) |
+
+---
+
+## BLS Signature Scheme
+
+**Source**: [tf5_tesla_sig.c](../openair3/SECU/tf5_tesla_sig.c)
+
+Uses the herumi-bls library with BLS12-381 curve in non-ETH mode:
+
+| Component | Size | Group |
+|-----------|------|-------|
+| Secret key | 32 bytes | Fr element |
+| Public key | 96 bytes | G2 point (compressed) |
+| Signature | 48 bytes | G1 point (compressed) |
+
+### Key File Format
+
+Keys are stored as raw binary files:
+- **Private key**: 32-byte Fr element (little-endian)
+- **Public key**: 96-byte compressed G2 point
+
+### Initialization
+
+The BLS library must be initialized once at startup before any cryptographic operations:
+
+```c
+int tf5_tesla_bls_init(void);  // Call before spawning threads
+```
+
+### Sign Operation
+
+```c
+int tf5_tesla_bls_sign(const uint8_t secret_key[32],
+                       const uint8_t *data,
+                       size_t data_len,
+                       uint8_t signature[48]);
+```
+
+### Verify Operation
+
+```c
+int tf5_tesla_bls_verify(const uint8_t public_key[96],
+                         const uint8_t *data,
+                         size_t data_len,
+                         const uint8_t signature[48]);
+```
 
 ---
 

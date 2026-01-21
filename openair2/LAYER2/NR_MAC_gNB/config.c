@@ -1247,39 +1247,46 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
 
   // Load key pair from files (command-line parameters or defaults)
   extern char *tesla_privkey_file;
-  extern char *tesla_cert_file;
+  extern char *tesla_pubkey_file;
 
-  uint8_t private_key[32];
-  uint8_t public_key[32];
+  uint8_t private_key[TF5_BLS_SECRET_KEY_LEN];
+  uint8_t public_key[TF5_TESLA_PUBKEY_LEN];
   int rc;
 
-  // Load private key
+  // Initialize BLS library
+  rc = tf5_tesla_bls_init();
+  if (rc != 0) {
+    LOG_E(NR_MAC, "TESLA: Failed to initialize BLS library (rc=%d)\n", rc);
+    goto tesla_disabled;
+  }
+
+  // Load secret key
   rc = tf5_tesla_load_privkey(tesla_privkey_file, private_key);
   if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to load private key from %s (rc=%d)\n", tesla_privkey_file, rc);
-    LOG_E(NR_MAC, "TESLA: Run ./scripts/tf5_generate_cert.sh to generate keys\n");
+    LOG_E(NR_MAC, "TESLA: Failed to load secret key from %s (rc=%d)\n", tesla_privkey_file, rc);
+    LOG_E(NR_MAC, "TESLA: Run ./scripts/tf5_generate_bls_keys.sh to generate keys\n");
     goto tesla_disabled;
   }
 
-  // Load certificate to extract public key
-  rc = tf5_tesla_load_cert_pubkey(tesla_cert_file, public_key);
+  // Load public key
+  rc = tf5_tesla_load_pubkey(tesla_pubkey_file, public_key);
   if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to load certificate from %s (rc=%d)\n", tesla_cert_file, rc);
-    LOG_E(NR_MAC, "TESLA: Run ./scripts/tf5_generate_cert.sh to generate keys\n");
+    LOG_E(NR_MAC, "TESLA: Failed to load public key from %s (rc=%d)\n", tesla_pubkey_file, rc);
+    LOG_E(NR_MAC, "TESLA: Run ./scripts/tf5_generate_bls_keys.sh to generate keys\n");
     goto tesla_disabled;
   }
 
-  LOG_I(NR_MAC, "TESLA: Loaded key pair from files:\n");
-  LOG_I(NR_MAC, "TESLA:   Private key: %s\n", tesla_privkey_file);
-  LOG_I(NR_MAC, "TESLA:   Certificate: %s\n", tesla_cert_file);
+  LOG_I(NR_MAC, "TESLA: Loaded BLS key pair from files:\n");
+  LOG_I(NR_MAC, "TESLA:   Secret key: %s\n", tesla_privkey_file);
+  LOG_I(NR_MAC, "TESLA:   Public key: %s\n", tesla_pubkey_file);
 
-  // Log public key for verification
+  // Log public key for verification (first 32 bytes in hex)
   {
     char hex_buf[65];
     for (int i = 0; i < 32; i++) {
       sprintf(&hex_buf[i*2], "%02x", public_key[i]);
     }
-    LOG_I(NR_MAC, "TESLA: Public key (hex): %s\n", hex_buf);
+    LOG_I(NR_MAC, "TESLA: Public key (first 32 bytes hex): %s...\n", hex_buf);
   }
 
   // Calculate T_int based on SIB1 repetition period (3GPP TS 38.331)

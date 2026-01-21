@@ -11,10 +11,10 @@
 /* TESLA key management defaults                                                                                                        */
 /***************************************************************************************************************************************/
 #ifdef TF5_ENABLE_TESLA
-#define CONFIG_HLP_TESLA_PRIVKEY  "TESLA Ed25519 private key file (PEM format)\n"
-#define CONFIG_HLP_TESLA_CERT     "TESLA gNB certificate file (PEM format, contains public key)\n"
-#define TF5_DEFAULT_PRIVKEY_PATH  "./tesla_keys/gnb_tesla_privkey.pem"
-#define TF5_DEFAULT_CERT_PATH     "./tesla_keys/gnb_tesla_cert.pem"
+#define CONFIG_HLP_TESLA_PRIVKEY  "TESLA BLS secret key file (raw binary, 32 bytes)\n"
+#define CONFIG_HLP_TESLA_PUBKEY   "TESLA BLS public key file (raw binary, 96 bytes)\n"
+#define TF5_DEFAULT_PRIVKEY_PATH  "./tesla_keys/gnb_tesla_privkey.bin"
+#define TF5_DEFAULT_PUBKEY_PATH   "./tesla_keys/gnb_tesla_pubkey.bin"
 #endif
 
 /***************************************************************************************************************************************/
@@ -29,7 +29,7 @@
 #ifdef TF5_ENABLE_TESLA
 #define CMDLINE_TESLA_PARAMS_GNB \
   {"tesla-privkey",         CONFIG_HLP_TESLA_PRIVKEY,  0,                .strptr=&tesla_privkey_file,         .defstrval=TF5_DEFAULT_PRIVKEY_PATH, TYPE_STRING, 0},     \
-  {"tesla-cert",            CONFIG_HLP_TESLA_CERT,     0,                .strptr=&tesla_cert_file,            .defstrval=TF5_DEFAULT_CERT_PATH,    TYPE_STRING, 0},
+  {"tesla-pubkey",          CONFIG_HLP_TESLA_PUBKEY,   0,                .strptr=&tesla_pubkey_file,          .defstrval=TF5_DEFAULT_PUBKEY_PATH,  TYPE_STRING, 0},
 #else
 #define CMDLINE_TESLA_PARAMS_GNB
 #endif
@@ -60,7 +60,7 @@ extern uint64_t ulsch_slot_bitmap;
 extern char *uecap_file;
 #ifdef TF5_ENABLE_TESLA
 extern char *tesla_privkey_file;
-extern char *tesla_cert_file;
+extern char *tesla_pubkey_file;
 #endif
 
 // In nr-gnb.c
