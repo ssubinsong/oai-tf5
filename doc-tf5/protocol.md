@@ -27,8 +27,8 @@ Time is divided into discrete intervals:
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
 | T_int | 20 ms (pattern 1) or SSB period (pattern 2/3) | Interval duration |
-| chain_len | Scaled to maintain ~21.8 min lifetime | Number of intervals |
-| Duration | ~21.8 minutes | Total key chain lifetime |
+| chain_len | 65536 | Number of intervals (configurable) |
+| Duration | Depends on T_int (e.g., ~21.8 min for T_int=20ms) | Total key chain lifetime |
 
 **Interval Index Calculation**:
 ```
@@ -64,22 +64,20 @@ T_0 is set to the first SIB1 transmission occasion (SSB index 0):
 - **Mux pattern 1**: First frame where `(SFN % 2 == sfn_c)`, at slot `n_0`
 - **Mux patterns 2/3**: Based on SSB timing, slot `n_c`
 
-### Chain Length Scaling
+### Chain Length
 
-To maintain a consistent key chain lifetime of ~21.8 minutes regardless of T_int, the chain length is scaled:
-
-```
-chain_len = (65536 * 20) / T_int_ms
-```
+The default chain length is 65536 intervals. Key chain lifetime depends on T_int:
 
 | T_int | chain_len | Lifetime |
 |-------|-----------|----------|
-| 5 ms | 262144 | ~21.8 min |
-| 10 ms | 131072 | ~21.8 min |
+| 5 ms | 65536 | ~5.5 min |
+| 10 ms | 65536 | ~10.9 min |
 | 20 ms | 65536 | ~21.8 min |
-| 40 ms | 32768 | ~21.8 min |
-| 80 ms | 16384 | ~21.8 min |
-| 160 ms | 8192 | ~21.8 min |
+| 40 ms | 65536 | ~43.7 min |
+| 80 ms | 65536 | ~87.4 min |
+| 160 ms | 65536 | ~174.8 min |
+
+The chain length can be configured by the user if a different lifetime is needed.
 
 ---
 

@@ -1291,10 +1291,8 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   uint16_t t0_sfn = 0, t0_slot = 0;
   tf5_get_first_sib1_occasion(nrmac, &t0_sfn, &t0_slot);
 
-  // Scale chain length to maintain ~21 min lifetime regardless of T_int
-  // Base: 65536 intervals * 20ms = ~21.8 min
-  // Formula: chain_len = 65536 * 20 / t_int_ms
-  uint32_t chain_len = (65536 * 20) / t_int_ms;
+  // Default chain length (user can override via configuration if needed)
+  uint32_t chain_len = 65536;
 
   LOG_I(NR_MAC, "TESLA: T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
   LOG_I(NR_MAC, "TESLA: T_0=(SFN=%u, slot=%u) (first SIB1 TX occasion)\n", t0_sfn, t0_slot);
@@ -1304,7 +1302,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   rc = tf5_tesla_gnb_init(cc->tesla_state,
                           t_int_ms,    // Computed T_int (aligned with SIB1 repetition)
                           1,           // d = 1 (disclosure delay)
-                          chain_len,   // Scaled chain length
+                          chain_len,   // Default chain length
                           private_key,
                           0,           // T_0 HFN = 0 (initial Hyper-Frame Number)
                           t0_sfn,      // Computed T_0 SFN
