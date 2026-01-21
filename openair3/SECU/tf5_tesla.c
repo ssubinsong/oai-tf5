@@ -803,18 +803,21 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
     // Update HFN based on SFN wraparound detection
     tf5_tesla_update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
 
-    // Compute interval using UE's internally-tracked HFN
+    // Compute interval using UE's internally-tracked HFN and CACHED static parameters
+    // (authenticated during first-time UE verification via BLS signature)
     uint32_t x = tf5_tesla_get_interval_index(state->current_hfn, rx_sfn, rx_slot,
-                                              ext->static_params.t0_hfn,
-                                              ext->static_params.t0_sfn,
-                                              ext->static_params.t0_slot,
-                                              ext->static_params.t_int_ms,
+                                              state->static_params.t0_hfn,
+                                              state->static_params.t0_sfn,
+                                              state->static_params.t0_slot,
+                                              state->static_params.t_int_ms,
                                               state->slots_per_frame);
 
     // Safe if: x < i + d
     // This means the sender hasn't yet disclosed K_i
+    // Note: interval_index comes from ext (claimed interval from sender)
+    //       disclosure_delay comes from cached state (authenticated)
     uint32_t i = ext->interval_index;
-    uint8_t d = ext->static_params.disclosure_delay;
+    uint8_t d = state->static_params.disclosure_delay;
 
     bool safe = (x < i + d);
 

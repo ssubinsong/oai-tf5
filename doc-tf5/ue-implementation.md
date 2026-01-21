@@ -225,15 +225,20 @@ bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
     // Update HFN based on SFN wraparound detection
     update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
 
-    // Compute current interval using UE's internally-tracked HFN
-    uint32_t x = compute_interval(state->current_hfn, rx_sfn, rx_slot, ...);
-    uint32_t i = ext->interval_index;
-    uint8_t d = ext->static_params.disclosure_delay;
+    // Compute current interval using CACHED static parameters
+    // (authenticated during first-time UE verification via BLS signature)
+    uint32_t x = compute_interval(state->current_hfn, rx_sfn, rx_slot,
+                                  state->static_params.t0_*,
+                                  state->static_params.t_int_ms);
+    uint32_t i = ext->interval_index;  // claimed interval from sender
+    uint8_t d = state->static_params.disclosure_delay;  // cached, authenticated
 
     // Safe if: x < i + d
     return (x < i + d);
 }
 ```
+
+**Note**: The safe packet test uses `state->static_params` (cached from first authenticated SIB1) for timing calculations, while `ext->interval_index` is the claimed interval from the sender. This ensures the UE uses authenticated parameters rather than potentially untrusted values from the current extension.
 
 ---
 

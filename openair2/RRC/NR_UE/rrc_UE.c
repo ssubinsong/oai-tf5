@@ -678,12 +678,14 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
             /* Skip this SIB1 entirely - do not buffer, do not process further */
           } else {
-            /* Build MAC auth input (excludes interval_index and disclosed_key per RFC 4082) */
+            /* Build MAC auth input (excludes interval_index and disclosed_key per RFC 4082)
+             * Use cached static_params (authenticated during first-time UE verification)
+             * but timesync_info from current extension (dynamic per-SIB1) */
             uint8_t mac_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
             size_t mac_auth_len = 0;
             tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
                                             sib1_buf, sib1_len,
-                                            &ext.static_params,
+                                            &SI_info->tesla_state->static_params,
                                             &ext.timesync_info);
 
             /* Step 2: Buffer current SIB1 for future TESLA verification */
@@ -697,10 +699,11 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             /* Reset sib1_authenticated for next SIB1 (will be set again upon verification) */
             SI_info->tesla_state->sib1_authenticated = false;
 
-            /* Step 3 (RFC 4082): Check if disclosed key available for PREVIOUSLY buffered SIB1 */
+            /* Step 3 (RFC 4082): Check if disclosed key available for PREVIOUSLY buffered SIB1
+             * Use cached disclosure_delay (authenticated during first-time UE verification) */
             if (SI_info->tesla_state->buffer.pending &&
-                ext.interval_index > ext.static_params.disclosure_delay) {
-              uint32_t disclosed_interval = ext.interval_index - ext.static_params.disclosure_delay;
+                ext.interval_index > SI_info->tesla_state->static_params.disclosure_delay) {
+              uint32_t disclosed_interval = ext.interval_index - SI_info->tesla_state->static_params.disclosure_delay;
               if (disclosed_interval == SI_info->tesla_state->buffer.interval_index) {
                 int verify_rc = tf5_tesla_ue_verify_buffered(SI_info->tesla_state,
                                                               ext.disclosed_key,

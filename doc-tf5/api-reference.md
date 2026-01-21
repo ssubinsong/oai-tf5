@@ -77,6 +77,8 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
                                   const uint8_t signature[64]);
 
 // Safe packet test (also initializes HFN tracking)
+// Note: Uses state->static_params (cached from first authenticated SIB1)
+//       Only ext->interval_index is used from the extension parameter
 bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
                                    uint16_t rx_sfn,
