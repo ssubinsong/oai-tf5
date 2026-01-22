@@ -22,18 +22,22 @@ typedef struct {
 
 Used for T_0 reference, TX timing, and RX timing throughout the TESLA module.
 
-### HFN Tracking (Core gNB Feature)
+### HFN Tracking (RRC Layer via ITTI)
 
-HFN tracking is now part of the core gNB MAC layer, not TESLA-specific:
+HFN tracking uses symmetric ITTI-based architecture for both gNB and UE:
 
 ```c
-// In NR_COMMON_channels_t (nr_mac_gNB.h)
-uint16_t hfn;       // Current Hyper-Frame Number (10-bit, 0-1023)
-uint16_t last_sfn;  // Last seen SFN for wraparound detection
+// In gNB_RRC_INST (nr_rrc_defs.h) and NR_UE_RRC_INST_t (rrc_defs.h)
+#ifdef TF5_ENABLE_TESLA
+uint16_t current_hfn;  // HFN tracked by RRC, incremented on SFN wrap
+#endif
 ```
 
-- **gNB**: Tracks HFN in `cc->hfn`, updated in `gNB_scheduler_bch.c` on SFN wraparound
-- **UE**: Receives HFN from hyperSFN-r17 in SIB1 and stores it as `uint16_t current_hfn`
+- **gNB**: MAC detects SFN wrap → sends `NRRRC_SFN_WRAP` ITTI → RRC increments `current_hfn`
+- **UE**: PHY detects SFN wrap → sends `NRRRC_SFN_WRAP` ITTI → RRC increments `current_hfn`
+- **UE**: Also reconciles with hyperSFN-r17 from authenticated SIB1
+
+See [hfn-tracking.md](hfn-tracking.md) for detailed architecture.
 
 ### D-Bound Parameters (20 bytes)
 
@@ -144,8 +148,8 @@ typedef struct {
     // Current state
     uint32_t current_interval;
 
-    // HFN tracking moved to NR_COMMON_channels_t (cc->hfn)
-    // gNB tracks HFN as a core feature, not TESLA-specific
+    // HFN tracking is in gNB_RRC_INST (rrc->current_hfn)
+    // MAC sends NRRRC_SFN_WRAP ITTI to RRC on SFN wraparound
 
     // BLS keys
     uint8_t  gnb_private_key[32];
