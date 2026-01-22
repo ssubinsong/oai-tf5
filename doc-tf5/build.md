@@ -84,17 +84,22 @@ Following standard OAI conventions, run from the **build directory**:
 cd cmake_targets/ran_build/build
 ```
 
-**Option 1: Generate keys in build directory**
+**IMPORTANT**: Use the TESLA-optimized configuration file `gnb.sa.band78.fr1.106PRB.tesla.conf`.
+This configuration uses CORESET0 index 11 which provides sufficient resources for the larger
+SIB1 message with TESLA extension. The standard config uses CORESET0 index 12 which limits
+the SIB1 BWP to 48 PRBs, insufficient for TESLA.
+
+**Option 1: Generate keys in build directory (Recommended)**
 
 ```bash
 # Generate keys relative to current directory
 ../../../scripts/tf5_generate_bls_keys.sh
 # Creates ./tesla_keys/ in build directory
 
-# Run gNB (RF simulator mode)
+# Run gNB with TESLA config (RF simulator mode)
 sudo ./nr-softmodem \
-    -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf \
-    --rfsim --gNBs.[0].min_rxtxtime 6
+    -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
+    --rfsim
 
 # Run UE (in another terminal, from same directory)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim \
@@ -108,8 +113,8 @@ If keys were generated elsewhere (e.g., project root):
 ```bash
 # Run gNB with explicit key paths
 sudo ./nr-softmodem \
-    -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf \
-    --rfsim --gNBs.[0].min_rxtxtime 6 \
+    -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
+    --rfsim \
     --tesla-privkey /path/to/oai-tf5/tesla_keys/gnb_tesla_privkey.bin \
     --tesla-pubkey /path/to/oai-tf5/tesla_keys/gnb_tesla_pubkey.bin
 
