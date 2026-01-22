@@ -3232,6 +3232,14 @@ void *rrc_gnb_task(void *args_p) {
         rrc_gNB_free_Handover_Command(&NGAP_HANDOVER_COMMAND(msg_p)); // Free transfered NG message
         break;
 
+#ifdef TF5_ENABLE_TESLA
+      case NRRRC_SFN_WRAP:
+        // SFN wrapped from 1023 to 0 - increment HFN
+        RC.nrrrc[instance]->current_hfn = (RC.nrrrc[instance]->current_hfn + 1) & 0x3FF;  // 10-bit wrap
+        LOG_D(NR_RRC, "SFN wrap detected, HFN incremented to %u\n", RC.nrrrc[instance]->current_hfn);
+        break;
+#endif
+
       default:
         LOG_E(NR_RRC, "[gNB %ld] Received unexpected message %s\n", instance, msg_name_p);
         break;

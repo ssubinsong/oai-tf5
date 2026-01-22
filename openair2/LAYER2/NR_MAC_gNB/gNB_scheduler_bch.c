@@ -598,13 +598,6 @@ void schedule_nr_sib1(module_id_t module_idP,
       const int ntx_req = TX_req->Number_of_PDUs;
       nfapi_nr_pdu_t *tx_req = &TX_req->pdu_list[ntx_req];
 
-      // Update HFN tracking for hyperSFN-r17 (per TS 38.331)
-      // Detect SFN wraparound (1023 -> 0) and increment HFN
-      if (cc->last_sfn > 900 && frameP < 100) {
-        cc->hfn = (cc->hfn + 1) & 0x3FF;  // 10-bit wrap
-      }
-      cc->last_sfn = frameP;
-
 #ifdef TF5_ENABLE_TESLA
       // Update TESLA extension with current frame/slot before transmission
       if (cc->tesla_state && cc->tesla_state->initialized) {

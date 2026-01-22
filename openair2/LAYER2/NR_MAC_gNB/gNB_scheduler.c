@@ -158,6 +158,19 @@ void gNB_dlsch_ulsch_scheduler(module_id_t module_idP, frame_t frame, slot_t slo
   clear_beam_information(&gNB->beam_info, frame, slot, slots_frame);
 
   gNB->frame = frame;
+
+#ifdef TF5_ENABLE_TESLA
+  // Detect SFN wrap: when frame transitions from 1023 to 0
+  static frame_t last_frame = -1;
+  if (last_frame == MAX_FRAME_NUMBER - 1 && frame == 0) {
+    // SFN wrapped - send ITTI notification to RRC
+    MessageDef *msg_p = itti_alloc_new_message(TASK_MAC_GNB, 0, NRRRC_SFN_WRAP);
+    itti_send_msg_to_task(TASK_RRC_GNB, module_idP, msg_p);
+    LOG_D(NR_MAC, "Sent NRRRC_SFN_WRAP notification\n");
+  }
+  last_frame = frame;
+#endif
+
   start_meas(&gNB->gNB_scheduler);
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_gNB_DLSCH_ULSCH_SCHEDULER,VCD_FUNCTION_IN);
 

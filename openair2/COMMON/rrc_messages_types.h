@@ -99,6 +99,7 @@
 
 #define RRC_SUBFRAME_PROCESS(mSGpTR)    (mSGpTR)->ittiMsg.rrc_subframe_process
 #define NRRRC_FRAME_PROCESS(mSGpTR)     (mSGpTR)->ittiMsg.nr_rrc_frame_process
+#define NRRRC_SFN_WRAP(mSGpTR)          (mSGpTR)->ittiMsg.nrrrc_sfn_wrap
 
 #define RLC_SDU_INDICATION(mSGpTR)      (mSGpTR)->ittiMsg.rlc_sdu_indication
 #define NRDuDlReq(mSGpTR)      (mSGpTR)->ittiMsg.nr_du_dl_req
@@ -441,6 +442,12 @@ typedef struct nrrrc_frame_process_s {
   int frame;
   int gnb_id;
 } NRRrcFrameProcess;
+
+// SFN wrap notification: sent when SFN transitions from 1023 to 0
+// Used by both gNB MAC and UE PHY to notify RRC of HFN increment
+typedef struct nrrrc_sfn_wrap_s {
+  // Empty - the message itself is the notification
+} NRRrcSfnWrap;
 
 typedef enum NR_Release_Cause_e {
   RRC_CONNECTION_FAILURE,

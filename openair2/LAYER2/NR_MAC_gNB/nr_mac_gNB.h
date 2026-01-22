@@ -331,9 +331,6 @@ typedef struct {
   /// Max prach length in slots
   int prach_len;
   nr_prach_info_t prach_info;
-  /// HFN tracking for hyperSFN-r17 (per TS 38.331)
-  uint16_t hfn;       // Current Hyper-Frame Number (10-bit, 0-1023)
-  uint16_t last_sfn;  // Last seen SFN for wraparound detection
 #ifdef TF5_ENABLE_TESLA
   /// TESLA broadcast authentication state
   tf5_tesla_gnb_state_t *tesla_state;

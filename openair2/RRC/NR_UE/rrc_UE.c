@@ -672,8 +672,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             /* Step 1 (RFC 4082): Safe packet test FIRST - reject if message could have been forged */
           /* CRITICAL: Must use actual RX timing, not TX timing from signed extension */
           /* Using TX timing would allow replay attacks with old signed messages */
-          /* Record UE's HFN at reception time (from hyperSFN-r17) */
-          uint16_t rx_hfn = SI_info->tesla_state->current_hfn;
+          /* Use RRC-tracked HFN at reception time (authoritative local value) */
+          uint16_t rx_hfn = rrc->current_hfn;
           if (!tf5_tesla_ue_safe_packet_test(SI_info->tesla_state, &ext,
                                               rx_frame,
                                               rx_slot,
@@ -692,9 +692,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                             &ext.timesync_info);
 
             /* Step 2: Buffer current SIB1 for future TESLA verification */
-            /* Use UE's HFN from hyperSFN-r17 (not from TESLA extension) */
+            /* Use RRC-tracked HFN (authoritative local value) */
             tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(
-                SI_info->tesla_state->current_hfn, rx_frame, rx_slot);
+                rrc->current_hfn, rx_frame, rx_slot);
             tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
                                       mac_auth_input, mac_auth_len,
                                       ext.interval_index,
@@ -772,13 +772,32 @@ skip_tesla:
   if (sib1_v1700 && sib1_v1700->hyperSFN_r17 && SI_info->tesla_state) {
     if (sib1_v1700->hyperSFN_r17->size >= 2 && sib1_v1700->hyperSFN_r17->buf) {
       // Decode 10-bit hyperSFN (upper 8 bits in buf[0], lower 2 bits in buf[1] >> 6)
-      uint16_t hypersfn = ((uint16_t)sib1_v1700->hyperSFN_r17->buf[0] << 2) |
-                          ((uint16_t)sib1_v1700->hyperSFN_r17->buf[1] >> 6);
+      uint16_t network_hfn = ((uint16_t)sib1_v1700->hyperSFN_r17->buf[0] << 2) |
+                             ((uint16_t)sib1_v1700->hyperSFN_r17->buf[1] >> 6);
+      tf5_tesla_ue_state_t *ts = SI_info->tesla_state;
 
-      // Initialize/update UE's HFN from hyperSFN-r17
-      SI_info->tesla_state->current_hfn = hypersfn;
-      SI_info->tesla_state->hfn_initialized = true;
-      LOG_D(NR_RRC, "TESLA: HFN synchronized from hyperSFN-r17: %u (frame=%d)\n", hypersfn, rx_frame);
+      if (!ts->hfn_initialized) {
+        // First SIB1 with hyperSFN: initialize RRC HFN from network
+        rrc->current_hfn = network_hfn;
+        ts->hfn_initialized = true;
+        LOG_I(NR_RRC, "TESLA: HFN initialized from hyperSFN-r17: %u (frame=%d)\n", network_hfn, rx_frame);
+      } else {
+        // Reconciliation: compare RRC-tracked HFN vs network hyperSFN
+        int16_t diff = (int16_t)network_hfn - (int16_t)rrc->current_hfn;
+        // Handle wraparound for 10-bit values
+        if (diff > 512) diff -= 1024;
+        if (diff < -512) diff += 1024;
+
+        if (diff == 0) {
+          LOG_D(NR_RRC, "TESLA: HFN in sync (HFN=%u)\n", network_hfn);
+        } else {
+          LOG_W(NR_RRC, "TESLA: HFN mismatch! local=%u, network=%u, diff=%d. Adopting network.\n",
+                rrc->current_hfn, network_hfn, diff);
+          rrc->current_hfn = network_hfn;
+        }
+      }
+      // Keep tesla_state->current_hfn in sync for backward compatibility
+      ts->current_hfn = rrc->current_hfn;
     }
   }
 #endif
@@ -3052,6 +3071,14 @@ void *rrc_nrue(void *notUsed)
       rrc->process_target_ntncfg = false;
     }
     break;
+
+#ifdef TF5_ENABLE_TESLA
+  case NRRRC_SFN_WRAP:
+    // SFN wrapped from 1023 to 0 - increment HFN
+    rrc->current_hfn = (rrc->current_hfn + 1) & 0x3FF;  // 10-bit wrap
+    LOG_D(NR_RRC, "SFN wrap detected, HFN incremented to %u\n", rrc->current_hfn);
+    break;
+#endif
 
   case NR_RRC_MAC_INAC_IND:
     LOG_D(NR_RRC, "Received data inactivity indication from lower layers\n");
