@@ -545,26 +545,23 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           /* Validate wall-clock timestamp (fail fast before expensive Ed25519) */
           uint64_t ue_time_ms = tf5_tesla_get_wallclock_ms();
           if (ue_time_ms == 0) {
-            LOG_E(NR_RRC, "TESLA: Failed to get UE wall-clock time - clock not synced?\n");
-            SI_info->tesla_state->auth_failed = true;
-            nr_rrc_abort_connection(rrc, gNB_index);
-            return;
+            LOG_W(NR_RRC, "TESLA: UE wall-clock not synced - skipping signature replay detection\n");
+          } else {
+            int ts_rc = tf5_tesla_validate_timestamp(ue_time_ms,
+                                                      ext.timestamp_ms,
+                                                      SI_info->tesla_state->timestamp_window_ms);
+            if (ts_rc != 0) {
+              LOG_E(NR_RRC, "TESLA: Timestamp validation FAILED (rc=%d) - "
+                    "ext_ts=%lu, ue_ts=%lu, window=%lu ms\n",
+                    ts_rc, (unsigned long)ext.timestamp_ms, (unsigned long)ue_time_ms,
+                    (unsigned long)SI_info->tesla_state->timestamp_window_ms);
+              SI_info->tesla_state->auth_failed = true;
+              nr_rrc_abort_connection(rrc, gNB_index);
+              return;
+            }
+            LOG_D(NR_RRC, "TESLA: Timestamp valid (delta=%ld ms)\n",
+                  (long)((int64_t)ext.timestamp_ms - (int64_t)ue_time_ms));
           }
-
-          int ts_rc = tf5_tesla_validate_timestamp(ue_time_ms,
-                                                    ext.timestamp_ms,
-                                                    SI_info->tesla_state->timestamp_window_ms);
-          if (ts_rc != 0) {
-            LOG_E(NR_RRC, "TESLA: Timestamp validation FAILED (rc=%d) - "
-                  "ext_ts=%lu, ue_ts=%lu, window=%lu ms\n",
-                  ts_rc, (unsigned long)ext.timestamp_ms, (unsigned long)ue_time_ms,
-                  (unsigned long)SI_info->tesla_state->timestamp_window_ms);
-            SI_info->tesla_state->auth_failed = true;
-            nr_rrc_abort_connection(rrc, gNB_index);
-            return;
-          }
-          LOG_D(NR_RRC, "TESLA: Timestamp valid (delta=%ld ms)\n",
-                (long)((int64_t)ext.timestamp_ms - (int64_t)ue_time_ms));
 
           /* Build signature auth input (includes interval_index, disclosed_key, and timestamp) */
           uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
