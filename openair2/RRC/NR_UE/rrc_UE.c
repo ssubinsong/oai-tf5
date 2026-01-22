@@ -500,6 +500,10 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef TF5_ENABLE_TESLA
+  // Track k0_trusted state before processing (for HFN reconciliation security gate)
+  // Only first-time UE (signature path) transitions k0_trusted from false to true
+  bool was_k0_trusted = (SI_info->tesla_state && SI_info->tesla_state->k0_trusted);
+
   // Skip TESLA verification for dedicated SIB1 delivery (rx_frame < 0)
   // Dedicated delivery is already protected by RRC integrity/ciphering
   if (rx_frame < 0) {
@@ -768,29 +772,38 @@ skip_tesla:
 
 #ifdef TF5_ENABLE_TESLA
   // Extract hyperSFN-r17 for TESLA HFN synchronization
-  // Per TS 38.331, hyperSFN-r17 is a 10-bit BIT STRING indicating the hyper-SFN
+  // SECURITY: Only accept hyperSFN-r17 from signature-authenticated SIB1
+  // - First-time UE: k0_trusted transitioned false→true via signature verification
+  // - Returning UE (TESLA): Current SIB1 not yet authenticated (delayed d intervals)
+  //   → rely on local ITTI-based HFN tracking
   if (sib1_v1700 && sib1_v1700->hyperSFN_r17 && SI_info->tesla_state) {
-    if (sib1_v1700->hyperSFN_r17->size >= 2 && sib1_v1700->hyperSFN_r17->buf) {
-      // Decode 10-bit hyperSFN (upper 8 bits in buf[0], lower 2 bits in buf[1] >> 6)
+    tf5_tesla_ue_state_t *ts = SI_info->tesla_state;
+
+    // Only reconcile if k0_trusted just became true (signature verification path)
+    bool signature_just_verified = !was_k0_trusted && ts->k0_trusted;
+
+    if (!signature_just_verified) {
+      // TESLA path or auth failed: skip reconciliation, use local ITTI tracking
+      LOG_D(NR_RRC, "TESLA: Skipping hyperSFN reconciliation (current SIB1 not signature-verified)\n");
+    } else if (sib1_v1700->hyperSFN_r17->size >= 2 && sib1_v1700->hyperSFN_r17->buf) {
+      // Signature path: current SIB1 was just authenticated, safe to reconcile
       uint16_t network_hfn = ((uint16_t)sib1_v1700->hyperSFN_r17->buf[0] << 2) |
                              ((uint16_t)sib1_v1700->hyperSFN_r17->buf[1] >> 6);
 
       if (!rrc->hfn_initialized) {
-        // First SIB1 with hyperSFN: initialize RRC HFN from network
         rrc->current_hfn = network_hfn;
         rrc->hfn_initialized = true;
-        LOG_I(NR_RRC, "TESLA: HFN initialized from hyperSFN-r17: %u (frame=%d)\n", network_hfn, rx_frame);
+        LOG_I(NR_RRC, "TESLA: HFN initialized from signature-verified SIB1: %u\n", network_hfn);
       } else {
-        // Reconciliation: compare RRC-tracked HFN vs network hyperSFN
+        // Reconciliation after signature verification (rare: UE had local tracking already)
         int16_t diff = (int16_t)network_hfn - (int16_t)rrc->current_hfn;
-        // Handle wraparound for 10-bit values
         if (diff > 512) diff -= 1024;
         if (diff < -512) diff += 1024;
 
         if (diff == 0) {
           LOG_D(NR_RRC, "TESLA: HFN in sync (HFN=%u)\n", network_hfn);
         } else {
-          LOG_W(NR_RRC, "TESLA: HFN mismatch! local=%u, network=%u, diff=%d. Adopting network.\n",
+          LOG_W(NR_RRC, "TESLA: HFN drift corrected: local=%u, network=%u, diff=%d\n",
                 rrc->current_hfn, network_hfn, diff);
           rrc->current_hfn = network_hfn;
         }

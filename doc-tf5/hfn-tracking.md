@@ -141,30 +141,36 @@ In `rrc_UE.c`:
 
 ## UE HFN Initialization and Reconciliation
 
-The UE initializes and reconciles its HFN from the network's hyperSFN-r17 in SIB1:
+The UE initializes its HFN from the network's hyperSFN-r17 in SIB1, but **only when the
+SIB1 is authenticated via BLS signature** (first-time UE path).
+
+**Security**: HFN initialization from hyperSFN-r17 is only performed when the
+SIB1 message is authenticated via BLS signature (first-time UE path):
+
+- **First-time UE**: hyperSFN-r17 trusted after BLS signature verifies
+- **Returning UE (TESLA)**: Local ITTI-based HFN tracking is used exclusively.
+  Current SIB1's hyperSFN-r17 is not reconciled because TESLA verification
+  is delayed by `d` intervals (the current SIB1 is not yet authenticated).
+
+This prevents attackers from injecting malicious HFN values via unauthenticated SIB1.
 
 ```c
 // In rrc_UE.c - SIB1 processing
-if (sib1_v1700 && sib1_v1700->hyperSFN_r17) {
+// Only reconcile if k0_trusted just became true (signature verification path)
+bool signature_just_verified = !was_k0_trusted && ts->k0_trusted;
+
+if (!signature_just_verified) {
+  // TESLA path: skip reconciliation, use local ITTI tracking
+} else if (sib1_v1700->hyperSFN_r17) {
   uint16_t network_hfn = (sib1_v1700->hyperSFN_r17->buf[0] << 2) |
                          (sib1_v1700->hyperSFN_r17->buf[1] >> 6);
 
   if (!rrc->hfn_initialized) {
-    // First SIB1: initialize RRC HFN from network
     rrc->current_hfn = network_hfn;
     rrc->hfn_initialized = true;
   } else {
-    // Reconciliation: compare RRC-tracked HFN vs network hyperSFN
-    int16_t diff = (int16_t)network_hfn - (int16_t)rrc->current_hfn;
-    // Handle wraparound for 10-bit values
-    if (diff > 512) diff -= 1024;
-    if (diff < -512) diff += 1024;
-
-    if (diff != 0) {
-      LOG_W(NR_RRC, "TESLA: HFN mismatch! local=%u, network=%u. Adopting network.\n",
-            rrc->current_hfn, network_hfn);
-      rrc->current_hfn = network_hfn;
-    }
+    // Reconciliation (rare: UE had local tracking already)
+    // ... drift correction logic ...
   }
 }
 ```
