@@ -51,6 +51,7 @@
 #define TF5_TESLA_MAX_AUTH_INPUT    512     // Max auth input buffer size
 #define TF5_TESLA_TIMESTAMP_LEN     8       // 64-bit Unix timestamp (ms)
 #define TF5_TESLA_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
+#define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered per RFC 4082 multi-packet
 
 /*
  * Default D calculation parameters (per doc-tf5/time-sync.md Section 4)
@@ -109,6 +110,22 @@ typedef struct {
     uint32_t delta_t_max_ms; // ΔT_max: Operating horizon (milliseconds)
     uint32_t m_impl_us;      // M_impl: Implementation margin (microseconds)
 } tf5_tesla_d_params_t;
+
+/**
+ * Buffer Entry for Pending TESLA Verification
+ *
+ * Per RFC 4082 Section 3.5, receivers must buffer multiple packets
+ * before key disclosure. This struct represents one buffered SIB1.
+ */
+typedef struct {
+    uint8_t  auth_input[TF5_TESLA_MAX_AUTH_INPUT];
+    size_t   auth_input_len;
+    uint32_t interval_index;
+    uint8_t  tag[TF5_TESLA_TAG_LEN];
+    tf5_tesla_slot_time_t rx_time;   // RX timing (HFN/SFN/slot when received)
+    bool     valid;                  // Entry contains valid data
+    bool     triggered_rrc_setup;    // This SIB1 triggered the current RRC session
+} tf5_tesla_buffer_entry_t;
 
 /* Helper to construct slot_time_t inline */
 static inline tf5_tesla_slot_time_t tf5_slot_time_make(uint16_t hfn,
@@ -227,15 +244,9 @@ typedef struct {
     uint32_t last_verified_key_idx;   // Index of last verified key
     uint8_t  last_verified_key[TF5_TESLA_KEY_LEN];
 
-    // Buffered SIB1 pending TESLA verification
-    struct {
-        uint8_t  auth_input[TF5_TESLA_MAX_AUTH_INPUT];
-        size_t   auth_input_len;
-        uint32_t interval_index;
-        uint8_t  tag[TF5_TESLA_TAG_LEN];
-        tf5_tesla_slot_time_t rx_time;   // RX timing (HFN/SFN/slot when received)
-        bool     pending;
-    } buffer;
+    // Buffer queue for pending TESLA verification (RFC 4082 multi-packet)
+    tf5_tesla_buffer_entry_t buffer_queue[TF5_TESLA_BUFFER_QUEUE_SIZE];
+    uint8_t buffer_queue_count;  // Number of valid entries in queue
 
     // Slots per frame (depends on numerology)
     uint16_t slots_per_frame;
@@ -245,7 +256,7 @@ typedef struct {
 
     // Parallel authentication state (for NAS gating)
     bool     k0_trusted;              // K_0 authenticated via BLS signature (persistent across SIB1s)
-    bool     sib1_authenticated;      // Current SIB1 verified (sig OR tesla)
+    bool     sib1_authenticated;      // SIB1 that triggered RRC setup is verified (sig OR tesla)
     bool     auth_in_progress;        // Authentication running in parallel with RACH
     bool     auth_failed;             // Authentication failed - must abort RRC
     bool     nas_pending;             // NAS waiting for authentication to complete
@@ -516,12 +527,16 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
 /**
  * Buffer SIB1 for delayed TESLA verification
  *
- * @param state         Pointer to UE TESLA state structure
- * @param auth_input    Authentication input
- * @param auth_input_len Length of auth input
- * @param interval_index Interval index of this SIB1
- * @param tag           TESLA tag from SIB1
- * @param rx_time       RX timing (HFN from signed extension, SFN/slot when received)
+ * Per RFC 4082 Section 3.5, buffers SIB1 for verification when key is disclosed.
+ * Supports multiple buffered entries (queue).
+ *
+ * @param state              Pointer to UE TESLA state structure
+ * @param auth_input         Authentication input
+ * @param auth_input_len     Length of auth input
+ * @param interval_index     Interval index of this SIB1
+ * @param tag                TESLA tag from SIB1
+ * @param rx_time            RX timing (HFN from signed extension, SFN/slot when received)
+ * @param triggered_rrc_setup True if this SIB1 triggered the current RRC session
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
@@ -529,10 +544,11 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
                              size_t auth_input_len,
                              uint32_t interval_index,
                              const uint8_t tag[TF5_TESLA_TAG_LEN],
-                             const tf5_tesla_slot_time_t *rx_time);
+                             const tf5_tesla_slot_time_t *rx_time,
+                             bool triggered_rrc_setup);
 
 /**
- * Verify buffered SIB1 using disclosed key
+ * Verify buffered SIB1 using disclosed key (single entry - legacy)
  *
  * @param state         Pointer to UE TESLA state structure
  * @param disclosed_key Disclosed key K_{key_interval}
@@ -542,6 +558,28 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
 int tf5_tesla_ue_verify_buffered(tf5_tesla_ue_state_t *state,
                                  const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
                                  uint32_t key_interval);
+
+/**
+ * Verify all buffered SIB1s for a given interval using disclosed key
+ *
+ * Per RFC 4082 Section 3.5 Step 4: "The receiver continues to verify and
+ * release (or not) any remaining buffered packets that depend on the newly
+ * disclosed key K_{i-d}."
+ *
+ * @param state              Pointer to UE TESLA state structure
+ * @param disclosed_key      Disclosed key K_{key_interval}
+ * @param key_interval       Interval index of disclosed key
+ * @param verified_count     Output: number of successfully verified entries
+ * @param failed_count       Output: number of failed verifications
+ * @param rrc_trigger_verified Output: true if entry with triggered_rrc_setup was verified
+ * @return 0 if at least one verified, negative if all failed or error
+ */
+int tf5_tesla_ue_verify_all_buffered(tf5_tesla_ue_state_t *state,
+                                     const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
+                                     uint32_t key_interval,
+                                     int *verified_count,
+                                     int *failed_count,
+                                     bool *rrc_trigger_verified);
 
 /**
  * Verify key chain integrity
