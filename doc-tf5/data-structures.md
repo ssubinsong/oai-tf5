@@ -74,26 +74,29 @@ typedef struct {
 
 ---
 
-## Time Synchronization Info (6 bytes)
+## Time Synchronization Info (4 bytes)
 
-Timing information for UE-gNB time synchronization. Typedef alias for `tf5_tesla_slot_time_t`:
+Timing information for UE-gNB time synchronization. HFN is now obtained from hyperSFN-r17 in SIB1-v1700-IEs:
 
 ```c
-typedef tf5_tesla_slot_time_t tf5_tesla_timesync_info_t;
+typedef struct {
+    uint16_t sfn;   // 2B - System Frame Number (0-1023)
+    uint16_t slot;  // 2B - Slot within frame
+} tf5_tesla_timesync_info_t;
 ```
 
-Field access: `.hfn`, `.sfn`, `.slot`
+Field access: `.sfn`, `.slot` (HFN obtained separately from hyperSFN-r17)
 
 ---
 
-## TESLA Extension (128 bytes)
+## TESLA Extension (126 bytes)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
 ```c
 typedef struct {
     tf5_tesla_static_params_t   static_params;   // 30B
-    tf5_tesla_timesync_info_t   timesync_info;   // 6B
+    tf5_tesla_timesync_info_t   timesync_info;   // 4B (sfn + slot only)
     uint32_t                    interval_index;  // 4B - Current interval i
     uint8_t                     disclosed_key[16]; // 16B - K_{i-d}
     uint64_t                    timestamp_ms;    // 8B - Unix epoch (ms) for replay protection
@@ -106,7 +109,7 @@ typedef struct {
 - **Signature**: SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
 - **MAC**: SIB1 || static_params || timesync_info (per RFC 4082, excludes timestamp)
 
-**Binary Wire Format** (128 bytes, big-endian):
+**Binary Wire Format** (126 bytes, big-endian):
 ```
 Offset  Size  Field
 ------  ----  -----
