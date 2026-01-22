@@ -21,26 +21,37 @@
 
 **Source**: [tf5_tesla_sig.c](../openair3/SECU/tf5_tesla_sig.c)
 
-Uses the herumi-bls library with BLS12-381 curve in non-ETH mode:
+Uses the blst library (Supranational) with BLS12-381 curve in pk-in-G2 mode
+(minimal-signature-size variant):
 
 | Component | Size | Group |
 |-----------|------|-------|
-| Secret key | 32 bytes | Fr element |
+| Secret key | 32 bytes | Scalar (big-endian) |
 | Public key | 96 bytes | G2 point (compressed) |
 | Signature | 48 bytes | G1 point (compressed) |
+
+### Domain Separation Tag
+
+The implementation uses the following DST for hash-to-curve:
+```
+BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_
+```
+
+This follows the IETF BLS signature draft basic scheme.
 
 ### Key File Format
 
 Keys are stored as raw binary files:
-- **Private key**: 32-byte Fr element (little-endian)
+- **Private key**: 32-byte scalar (big-endian)
 - **Public key**: 96-byte compressed G2 point
 
 ### Initialization
 
-The BLS library must be initialized once at startup before any cryptographic operations:
+The blst library requires no initialization (stateless). The init function is kept
+for API compatibility:
 
 ```c
-int tf5_tesla_bls_init(void);  // Call before spawning threads
+int tf5_tesla_bls_init(void);  // No-op, kept for compatibility
 ```
 
 ### Sign Operation

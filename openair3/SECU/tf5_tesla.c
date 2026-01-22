@@ -777,10 +777,7 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
         return false;
     }
 
-    // Safe packet test requires HFN to already be initialized (from hyperSFN-r17)
-    DevAssert(state->hfn_initialized);
-
-    // HFN is received via hyperSFN-r17 - no local wraparound tracking needed
+    // HFN is received via hyperSFN-r17 in rx_hfn parameter - no local tracking needed
 
     // RFC 4082 Section 3.5: Safe packet test
     // Step 1: Record local time T (in absolute slots)

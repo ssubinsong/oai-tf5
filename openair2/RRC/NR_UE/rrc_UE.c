@@ -600,10 +600,12 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
             /* Verify initial time synchronization (essential TESLA assumption per RFC 4082 Section 2.2) */
             /* Uses E_sync only as bound since no drift has accumulated yet */
+            /* Convert timesync_info (sfn/slot only) to slot_time_t (hfn=0 since we only care about sfn/slot diff) */
+            tf5_tesla_slot_time_t tx_time = tf5_slot_time_make(0, ext.timesync_info.sfn, ext.timesync_info.slot);
             tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, rx_frame, rx_slot);
             int ts_rc = tf5_tesla_verify_initial_timesync(
                 SI_info->tesla_state,
-                &ext.timesync_info, &rx_time);
+                &tx_time, &rx_time);
 
             if (ts_rc != 0) {
               LOG_W(NR_RRC, "TESLA: Initial time sync verification FAILED (rc=%d). "

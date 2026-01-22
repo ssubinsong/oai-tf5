@@ -654,10 +654,17 @@ if(TF5_ENABLE_TESLA)
     ${OPENAIR3_DIR}/SECU/tf5_tesla_sig.c
   )
 
-  # Add herumi-bls library for BLS signatures
-  set(BLS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-  set(BLS_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
-  add_subdirectory(${CMAKE_SOURCE_DIR}/cmake_targets/third_party/herumi-bls herumi-bls)
+  # Build blst library for BLS signatures
+  set(BLST_DIR ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/blst)
+  enable_language(ASM)
+  add_library(blst STATIC
+    ${BLST_DIR}/src/server.c
+    ${BLST_DIR}/build/assembly.S
+  )
+  target_include_directories(blst PUBLIC ${BLST_DIR}/bindings)
+  # Use __BLST_PORTABLE__ to enable both mulx and mulq variants for compatibility
+  target_compile_definitions(blst PRIVATE __BLST_PORTABLE__)
+  target_compile_options(blst PRIVATE -O2 -fno-builtin -fPIC -mno-avx)
 endif()
 
 pkg_check_modules(OpenSSL openssl REQUIRED)
@@ -665,21 +672,15 @@ add_library(SECURITY ${SECURITY_SRC} $<TARGET_OBJECTS:ds>)
 target_include_directories(SECURITY PRIVATE ${OPENAIR_DIR}/common/utils/ds/)
 target_link_libraries(SECURITY PRIVATE ${OpenSSL_LIBRARIES})
 
-# Add BLS library includes and link when TESLA is enabled
+# Add blst library includes and link when TESLA is enabled
 if(TF5_ENABLE_TESLA)
-  target_include_directories(SECURITY PRIVATE
-    ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/herumi-bls/include
-    ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/herumi-bls/mcl/include
-  )
-  target_link_libraries(SECURITY PRIVATE bls384_256)
+  target_include_directories(SECURITY PRIVATE ${BLST_DIR}/bindings)
+  target_link_libraries(SECURITY PRIVATE blst)
 
   # BLS key generation utility
   add_executable(tf5_bls_keygen ${OPENAIR3_DIR}/SECU/tf5_bls_keygen.c)
-  target_include_directories(tf5_bls_keygen PRIVATE
-    ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/herumi-bls/include
-    ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/herumi-bls/mcl/include
-  )
-  target_link_libraries(tf5_bls_keygen PRIVATE bls384_256)
+  target_include_directories(tf5_bls_keygen PRIVATE ${BLST_DIR}/bindings)
+  target_link_libraries(tf5_bls_keygen PRIVATE blst)
 endif()
 
 # Physical Channel Procedures Scheduling

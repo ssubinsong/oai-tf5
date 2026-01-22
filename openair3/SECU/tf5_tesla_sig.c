@@ -22,8 +22,8 @@
 /*
  * TESLA Broadcast Authentication - BLS Signature Implementation
  *
- * Uses herumi-bls library with BLS12-381 curve in non-ETH mode.
- * Signatures in G1 (48 bytes), Public keys in G2 (96 bytes).
+ * Uses blst library (Supranational) with BLS12-381 curve.
+ * Minimal-signature-size variant: Signatures in G1 (48 bytes), Public keys in G2 (96 bytes).
  */
 
 #ifdef TF5_ENABLE_TESLA
@@ -32,26 +32,17 @@
 #include "common/utils/LOG/log.h"
 
 #include <string.h>
-#include <bls/bls.h>
-#include <mcl/bn.h>
+#include <stdio.h>
+#include "blst.h"
 
-/* Track initialization state */
-static int bls_initialized = 0;
+/* Domain Separation Tag for hash-to-curve (IETF BLS basic scheme) */
+static const uint8_t TF5_BLS_DST[] = "BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_";
+static const size_t TF5_BLS_DST_LEN = sizeof(TF5_BLS_DST) - 1;
 
 int tf5_tesla_bls_init(void)
 {
-    if (bls_initialized) {
-        return 0;  /* Already initialized */
-    }
-
-    int rc = blsInit(MCL_BLS12_381, MCLBN_COMPILED_TIME_VAR);
-    if (rc != 0) {
-        LOG_E(NR_RRC, "TESLA: blsInit failed with error %d\n", rc);
-        return -1;
-    }
-
-    bls_initialized = 1;
-    LOG_I(NR_RRC, "TESLA: BLS library initialized (BLS12-381, non-ETH mode)\n");
+    /* blst library requires no initialization - it is stateless */
+    LOG_I(NR_RRC, "TESLA: BLST library ready (BLS12-381, pk-in-G2 mode)\n");
     return 0;
 }
 
@@ -62,31 +53,26 @@ int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN]
         return -1;
     }
 
-    if (!bls_initialized) {
-        LOG_E(NR_RRC, "TESLA: BLS library not initialized\n");
-        return -2;
-    }
+    blst_scalar sk;
+    blst_p2 pk_p2;
 
-    blsSecretKey sec;
-    blsPublicKey pub;
+    /* Deserialize secret key (big-endian) */
+    blst_scalar_from_bendian(&sk, secret_key);
 
-    /* Deserialize secret key */
-    if (blsSecretKeyDeserialize(&sec, secret_key, TF5_BLS_SECRET_KEY_LEN)
-            != TF5_BLS_SECRET_KEY_LEN) {
-        LOG_E(NR_RRC, "TESLA: Failed to deserialize secret key\n");
+    /* Check secret key validity */
+    if (!blst_sk_check(&sk)) {
+        LOG_E(NR_RRC, "TESLA: Invalid secret key scalar\n");
         return -3;
     }
 
-    /* Derive public key */
-    blsGetPublicKey(&pub, &sec);
+    /* Derive public key in G2 */
+    blst_sk_to_pk_in_g2(&pk_p2, &sk);
 
-    /* Serialize public key */
-    size_t pub_len = blsPublicKeySerialize(public_key, TF5_BLS_PUBLIC_KEY_LEN, &pub);
-    if (pub_len != TF5_BLS_PUBLIC_KEY_LEN) {
-        LOG_E(NR_RRC, "TESLA: Unexpected public key size: %zu (expected %d)\n",
-              pub_len, TF5_BLS_PUBLIC_KEY_LEN);
-        return -4;
-    }
+    /* Serialize public key (compressed, 96 bytes) */
+    blst_p2_compress(public_key, &pk_p2);
+
+    /* Clear secret key from memory */
+    memset(&sk, 0, sizeof(sk));
 
     return 0;
 }
@@ -100,34 +86,31 @@ int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
         return -1;
     }
 
-    if (!bls_initialized) {
-        LOG_E(NR_RRC, "TESLA: BLS library not initialized\n");
-        return -2;
-    }
+    blst_scalar sk;
+    blst_p1 hash_point;
+    blst_p1 sig_p1;
 
-    blsSecretKey sec;
-    blsSignature sig;
+    /* Deserialize secret key (big-endian) */
+    blst_scalar_from_bendian(&sk, secret_key);
 
-    /* Deserialize secret key */
-    if (blsSecretKeyDeserialize(&sec, secret_key, TF5_BLS_SECRET_KEY_LEN)
-            != TF5_BLS_SECRET_KEY_LEN) {
-        LOG_E(NR_RRC, "TESLA: Failed to deserialize secret key for signing\n");
+    /* Check secret key validity */
+    if (!blst_sk_check(&sk)) {
+        LOG_E(NR_RRC, "TESLA: Invalid secret key for signing\n");
+        memset(&sk, 0, sizeof(sk));
         return -3;
     }
 
-    /* Sign the data */
-    blsSign(&sig, &sec, data, data_len);
+    /* Hash message to G1 */
+    blst_hash_to_g1(&hash_point, data, data_len, TF5_BLS_DST, TF5_BLS_DST_LEN, NULL, 0);
 
-    /* Serialize signature */
-    size_t sig_len = blsSignatureSerialize(signature, TF5_BLS_SIGNATURE_LEN, &sig);
-    if (sig_len != TF5_BLS_SIGNATURE_LEN) {
-        LOG_E(NR_RRC, "TESLA: Unexpected signature size: %zu (expected %d)\n",
-              sig_len, TF5_BLS_SIGNATURE_LEN);
-        return -4;
-    }
+    /* Sign: sig = sk * H(m) */
+    blst_sign_pk_in_g2(&sig_p1, &hash_point, &sk);
+
+    /* Serialize signature (compressed, 48 bytes) */
+    blst_p1_compress(signature, &sig_p1);
 
     /* Clear secret key from memory */
-    memset(&sec, 0, sizeof(sec));
+    memset(&sk, 0, sizeof(sk));
 
     return 0;
 }
@@ -141,32 +124,45 @@ int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN],
         return -1;
     }
 
-    if (!bls_initialized) {
-        LOG_E(NR_RRC, "TESLA: BLS library not initialized\n");
-        return -2;
-    }
-
-    blsPublicKey pub;
-    blsSignature sig;
+    blst_p2_affine pk_affine;
+    blst_p1_affine sig_affine;
+    BLST_ERROR err;
 
     /* Deserialize public key */
-    if (blsPublicKeyDeserialize(&pub, public_key, TF5_BLS_PUBLIC_KEY_LEN)
-            != TF5_BLS_PUBLIC_KEY_LEN) {
-        LOG_E(NR_RRC, "TESLA: Failed to deserialize public key for verification\n");
+    err = blst_p2_uncompress(&pk_affine, public_key);
+    if (err != BLST_SUCCESS) {
+        LOG_E(NR_RRC, "TESLA: Failed to deserialize public key: %d\n", err);
+        return -3;
+    }
+
+    /* Check public key is in G2 */
+    if (!blst_p2_affine_in_g2(&pk_affine)) {
+        LOG_E(NR_RRC, "TESLA: Public key not in G2\n");
         return -3;
     }
 
     /* Deserialize signature */
-    if (blsSignatureDeserialize(&sig, signature, TF5_BLS_SIGNATURE_LEN)
-            != TF5_BLS_SIGNATURE_LEN) {
-        LOG_E(NR_RRC, "TESLA: Failed to deserialize signature for verification\n");
+    err = blst_p1_uncompress(&sig_affine, signature);
+    if (err != BLST_SUCCESS) {
+        LOG_E(NR_RRC, "TESLA: Failed to deserialize signature: %d\n", err);
         return -4;
     }
 
-    /* Verify signature: returns 1 if valid, 0 if invalid */
-    int rc = blsVerify(&sig, &pub, data, data_len);
-    if (rc != 1) {
-        LOG_W(NR_RRC, "TESLA: BLS signature verification failed\n");
+    /* Check signature is in G1 */
+    if (!blst_p1_affine_in_g1(&sig_affine)) {
+        LOG_E(NR_RRC, "TESLA: Signature not in G1\n");
+        return -4;
+    }
+
+    /* Verify signature using core_verify which handles hash-to-curve internally */
+    err = blst_core_verify_pk_in_g2(&pk_affine, &sig_affine,
+                                     1,  /* hash_or_encode = true for hash */
+                                     data, data_len,
+                                     TF5_BLS_DST, TF5_BLS_DST_LEN,
+                                     NULL, 0);  /* No augmentation */
+
+    if (err != BLST_SUCCESS) {
+        LOG_W(NR_RRC, "TESLA: BLS signature verification failed: %d\n", err);
         return -5;
     }
 
@@ -180,44 +176,40 @@ int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
         return -1;
     }
 
-    if (!bls_initialized) {
-        LOG_E(NR_RRC, "TESLA: BLS library not initialized\n");
-        return -2;
-    }
+    blst_scalar sk;
+    blst_p2 pk_p2;
+    uint8_t ikm[32];
 
-    blsSecretKey sec;
-    blsPublicKey pub;
-
-    /* Generate random secret key using CSPRNG */
-    if (blsSecretKeySetByCSPRNG(&sec) != 0) {
-        LOG_E(NR_RRC, "TESLA: Failed to generate BLS secret key\n");
+    /* Generate random IKM using system CSPRNG */
+    FILE *urandom = fopen("/dev/urandom", "rb");
+    if (!urandom) {
+        LOG_E(NR_RRC, "TESLA: Failed to open /dev/urandom\n");
         return -3;
     }
+    if (fread(ikm, 1, sizeof(ikm), urandom) != sizeof(ikm)) {
+        fclose(urandom);
+        LOG_E(NR_RRC, "TESLA: Failed to read from /dev/urandom\n");
+        return -3;
+    }
+    fclose(urandom);
+
+    /* Derive secret key from IKM using blst_keygen */
+    blst_keygen(&sk, ikm, sizeof(ikm), NULL, 0);
+
+    /* Clear IKM immediately */
+    memset(ikm, 0, sizeof(ikm));
 
     /* Derive public key */
-    blsGetPublicKey(&pub, &sec);
+    blst_sk_to_pk_in_g2(&pk_p2, &sk);
 
-    /* Serialize secret key */
-    size_t sec_len = blsSecretKeySerialize(secret_key, TF5_BLS_SECRET_KEY_LEN, &sec);
-    if (sec_len != TF5_BLS_SECRET_KEY_LEN) {
-        LOG_E(NR_RRC, "TESLA: Unexpected secret key size: %zu (expected %d)\n",
-              sec_len, TF5_BLS_SECRET_KEY_LEN);
-        memset(&sec, 0, sizeof(sec));
-        return -4;
-    }
+    /* Serialize secret key (big-endian, 32 bytes) */
+    blst_bendian_from_scalar(secret_key, &sk);
 
-    /* Serialize public key */
-    size_t pub_len = blsPublicKeySerialize(public_key, TF5_BLS_PUBLIC_KEY_LEN, &pub);
-    if (pub_len != TF5_BLS_PUBLIC_KEY_LEN) {
-        LOG_E(NR_RRC, "TESLA: Unexpected public key size: %zu (expected %d)\n",
-              pub_len, TF5_BLS_PUBLIC_KEY_LEN);
-        memset(&sec, 0, sizeof(sec));
-        memset(secret_key, 0, TF5_BLS_SECRET_KEY_LEN);
-        return -5;
-    }
+    /* Serialize public key (compressed, 96 bytes) */
+    blst_p2_compress(public_key, &pk_p2);
 
-    /* Clear secret key object from memory */
-    memset(&sec, 0, sizeof(sec));
+    /* Clear secret key from memory */
+    memset(&sk, 0, sizeof(sk));
 
     return 0;
 }

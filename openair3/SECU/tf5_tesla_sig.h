@@ -22,8 +22,8 @@
 /*
  * TESLA Broadcast Authentication - BLS Signature Operations
  *
- * Uses herumi-bls library with BLS12-381 curve.
- * Non-ETH mode: Signatures in G1 (48 bytes), Public keys in G2 (96 bytes).
+ * Uses blst library (Supranational) with BLS12-381 curve.
+ * Minimal-signature-size variant: Signatures in G1 (48 bytes), Public keys in G2 (96 bytes).
  */
 
 #ifndef TF5_TESLA_SIG_H

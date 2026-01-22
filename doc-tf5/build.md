@@ -110,6 +110,14 @@ Override the default paths with command-line parameters:
 | Dependency | Purpose |
 |------------|---------|
 | OpenSSL | HMAC-SHA256 for key chain and MAC computation |
-| herumi-bls | BLS12-381 signatures (non-ETH mode) |
+| blst | BLS12-381 signatures (pk-in-G2 mode) |
 
-The herumi-bls library is included as a submodule at `cmake_targets/third_party/herumi-bls/`.
+The blst library (Supranational) is included as a submodule at `cmake_targets/third_party/blst/`.
+
+### Key Migration Note
+
+**IMPORTANT**: If upgrading from a previous version that used herumi-bls, existing keys
+must be regenerated. The blst implementation uses big-endian scalar serialization,
+which is incompatible with herumi-bls's little-endian format.
+
+Run `./scripts/tf5_generate_bls_keys.sh` to generate new keys after upgrading.
