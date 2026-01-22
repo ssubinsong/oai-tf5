@@ -27,9 +27,15 @@ Used for T_0 reference, TX timing, and RX timing throughout the TESLA module.
 HFN tracking uses symmetric ITTI-based architecture for both gNB and UE:
 
 ```c
-// In gNB_RRC_INST (nr_rrc_defs.h) and NR_UE_RRC_INST_t (rrc_defs.h)
+// In gNB_RRC_INST (nr_rrc_defs.h)
 #ifdef TF5_ENABLE_TESLA
 uint16_t current_hfn;  // HFN tracked by RRC, incremented on SFN wrap
+#endif
+
+// In NR_UE_RRC_INST_t (rrc_defs.h)
+#ifdef TF5_ENABLE_TESLA
+uint16_t current_hfn;   // HFN tracked by RRC, incremented on SFN wrap
+bool hfn_initialized;   // Has HFN been initialized from hyperSFN-r17?
 #endif
 ```
 
@@ -182,10 +188,6 @@ typedef struct {
     bool     last_verified_key_valid;
     uint32_t last_verified_key_idx;
     uint8_t  last_verified_key[16];
-
-    // HFN from hyperSFN-r17 (no local tracking needed)
-    uint16_t current_hfn;
-    bool     hfn_initialized;
 
     // Buffered SIB1 pending verification
     struct {

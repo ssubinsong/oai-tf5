@@ -227,10 +227,6 @@ typedef struct {
     uint32_t last_verified_key_idx;   // Index of last verified key
     uint8_t  last_verified_key[TF5_TESLA_KEY_LEN];
 
-    // HFN from hyperSFN-r17 (no local tracking needed - UE receives from SIB1)
-    uint16_t current_hfn;
-    bool     hfn_initialized;     // Has HFN been initialized from hyperSFN-r17?
-
     // Buffered SIB1 pending TESLA verification
     struct {
         uint8_t  auth_input[TF5_TESLA_MAX_AUTH_INPUT];

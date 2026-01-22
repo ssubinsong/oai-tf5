@@ -107,7 +107,8 @@ update_hypersfn_r17(sib1, hfn);
 ```c
 // In rrc_defs.h - NR_UE_RRC_INST_t
 #ifdef TF5_ENABLE_TESLA
-  uint16_t current_hfn;  // HFN tracked by RRC, incremented on SFN wrap
+  uint16_t current_hfn;   // HFN tracked by RRC, incremented on SFN wrap
+  bool hfn_initialized;   // Has HFN been initialized from hyperSFN-r17?
 #endif
 ```
 
@@ -148,10 +149,10 @@ if (sib1_v1700 && sib1_v1700->hyperSFN_r17) {
   uint16_t network_hfn = (sib1_v1700->hyperSFN_r17->buf[0] << 2) |
                          (sib1_v1700->hyperSFN_r17->buf[1] >> 6);
 
-  if (!ts->hfn_initialized) {
+  if (!rrc->hfn_initialized) {
     // First SIB1: initialize RRC HFN from network
     rrc->current_hfn = network_hfn;
-    ts->hfn_initialized = true;
+    rrc->hfn_initialized = true;
   } else {
     // Reconciliation: compare RRC-tracked HFN vs network hyperSFN
     int16_t diff = (int16_t)network_hfn - (int16_t)rrc->current_hfn;

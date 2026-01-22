@@ -626,10 +626,6 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     state->params_received = false;
     state->buffer.pending = false;
 
-    // HFN will be initialized from hyperSFN-r17 in SIB1
-    state->current_hfn = 0;
-    state->hfn_initialized = false;
-
     // Parallel authentication state (initialized by memset to 0/false)
     // k0_trusted = false (first-time UE, needs BLS signature verification)
     // sib1_authenticated = false

@@ -774,12 +774,11 @@ skip_tesla:
       // Decode 10-bit hyperSFN (upper 8 bits in buf[0], lower 2 bits in buf[1] >> 6)
       uint16_t network_hfn = ((uint16_t)sib1_v1700->hyperSFN_r17->buf[0] << 2) |
                              ((uint16_t)sib1_v1700->hyperSFN_r17->buf[1] >> 6);
-      tf5_tesla_ue_state_t *ts = SI_info->tesla_state;
 
-      if (!ts->hfn_initialized) {
+      if (!rrc->hfn_initialized) {
         // First SIB1 with hyperSFN: initialize RRC HFN from network
         rrc->current_hfn = network_hfn;
-        ts->hfn_initialized = true;
+        rrc->hfn_initialized = true;
         LOG_I(NR_RRC, "TESLA: HFN initialized from hyperSFN-r17: %u (frame=%d)\n", network_hfn, rx_frame);
       } else {
         // Reconciliation: compare RRC-tracked HFN vs network hyperSFN
@@ -796,8 +795,6 @@ skip_tesla:
           rrc->current_hfn = network_hfn;
         }
       }
-      // Keep tesla_state->current_hfn in sync for backward compatibility
-      ts->current_hfn = rrc->current_hfn;
     }
   }
 #endif
