@@ -48,7 +48,7 @@
 _Static_assert(sizeof(tf5_tesla_slot_time_t) == 6, "slot_time_t must be 6 bytes");
 _Static_assert(sizeof(tf5_tesla_hfn_tracker_t) == 4, "hfn_tracker_t must be 4 bytes");
 _Static_assert(sizeof(tf5_tesla_d_params_t) == 20, "d_params_t must be 20 bytes");
-_Static_assert(sizeof(tf5_tesla_timesync_info_t) == 6, "timesync_info_t must be 6 bytes");
+_Static_assert(sizeof(tf5_tesla_timesync_info_t) == 4, "timesync_info_t must be 4 bytes (HFN now from hyperSFN-r17)");
 
 /*
  * =============================================================================
@@ -219,26 +219,24 @@ static size_t tf5_decode_static_params(const uint8_t *buf,
     return offset;  /* Always 30 */
 }
 
-/* Encode timesync info (6 bytes) to buffer */
+/* Encode timesync info (4 bytes) to buffer - HFN now from hyperSFN-r17 */
 static size_t tf5_encode_timesync_info(uint8_t *buf,
                                         const tf5_tesla_timesync_info_t *ti)
 {
     size_t offset = 0;
-    tf5_encode_u16_be(buf + offset, ti->hfn); offset += 2;
     tf5_encode_u16_be(buf + offset, ti->sfn); offset += 2;
     tf5_encode_u16_be(buf + offset, ti->slot); offset += 2;
-    return offset;  /* Always 6 */
+    return offset;  /* Always 4 */
 }
 
-/* Decode timesync info (6 bytes) from buffer */
+/* Decode timesync info (4 bytes) from buffer - HFN now from hyperSFN-r17 */
 static size_t tf5_decode_timesync_info(const uint8_t *buf,
                                         tf5_tesla_timesync_info_t *ti)
 {
     size_t offset = 0;
-    ti->hfn = tf5_decode_u16_be(buf + offset); offset += 2;
     ti->sfn = tf5_decode_u16_be(buf + offset); offset += 2;
     ti->slot = tf5_decode_u16_be(buf + offset); offset += 2;
-    return offset;  /* Always 6 */
+    return offset;  /* Always 4 */
 }
 
 int tf5_tesla_build_mac_auth_input(uint8_t *out,
@@ -316,8 +314,9 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
         return -1;
     }
 
-    // Total size: 30 + 6 + 4 + 16 + 8 + 48 + 16 = 128 bytes (with BLS signatures)
-    const size_t required_len = 128;
+    // Total size: 30 + 4 + 4 + 16 + 8 + 48 + 16 = 126 bytes (with BLS signatures)
+    // Note: timesync_info is now 4 bytes (HFN removed - now from hyperSFN-r17)
+    const size_t required_len = 126;
     if (buf_len < required_len) {
         return -2;
     }
@@ -361,7 +360,7 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
         return -1;
     }
 
-    const size_t required_len = 128;
+    const size_t required_len = 126;  // 30 + 4 + 4 + 16 + 8 + 48 + 16 bytes
     if (buf_len < required_len) {
         return -2;
     }
@@ -527,8 +526,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
     // Copy static params
     memcpy(&ext->static_params, &state->params, sizeof(state->params));
 
-    // Set timesync info
-    ext->timesync_info.hfn = state->hfn_tracker.current_hfn;
+    // Set timesync info (HFN is now transmitted via hyperSFN-r17 in SIB1-v1700-IEs)
     ext->timesync_info.sfn = sfn;
     ext->timesync_info.slot = slot;
 
@@ -779,7 +777,8 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
 bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
                                    uint16_t rx_sfn,
-                                   uint16_t rx_slot)
+                                   uint16_t rx_slot,
+                                   uint16_t rx_hfn)
 {
     if (!state || !state->initialized || !ext) {
         return false;
@@ -793,7 +792,7 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
 
     // RFC 4082 Section 3.5: Safe packet test
     // Step 1: Record local time T (in absolute slots)
-    tf5_tesla_slot_time_t local_time = tf5_slot_time_make(state->hfn_tracker.current_hfn, rx_sfn, rx_slot);
+    tf5_tesla_slot_time_t local_time = tf5_slot_time_make(rx_hfn, rx_sfn, rx_slot);
     uint64_t t_abs_slots = tf5_tesla_absolute_slots(&local_time, state->slots_per_frame);
 
     // Step 2: Compute upper bound on sender's clock: t_j = T + D_t

@@ -3009,6 +3009,30 @@ NR_BCCH_DL_SCH_Message_t *get_SIB1_NR(const NR_ServingCellConfigCommon_t *scc,
     }
   }
 
+#ifdef TF5_ENABLE_TESLA
+  // Allocate SIB1-v1700-IEs chain for hyperSFN-r17 (TESLA HFN synchronization)
+  // Per TS 38.331, hyperSFN-r17 is a 10-bit BIT STRING in SIB1-v1700-IEs
+  if (!sib1->nonCriticalExtension) {
+    sib1->nonCriticalExtension = calloc_or_fail(1, sizeof(*sib1->nonCriticalExtension));
+  }
+  NR_SIB1_v1610_IEs_t *sib1_1610_tesla = sib1->nonCriticalExtension;
+  if (!sib1_1610_tesla->nonCriticalExtension) {
+    sib1_1610_tesla->nonCriticalExtension = calloc_or_fail(1, sizeof(*sib1_1610_tesla->nonCriticalExtension));
+  }
+  NR_SIB1_v1630_IEs_t *sib1_1630_tesla = sib1_1610_tesla->nonCriticalExtension;
+  if (!sib1_1630_tesla->nonCriticalExtension) {
+    sib1_1630_tesla->nonCriticalExtension = calloc_or_fail(1, sizeof(*sib1_1630_tesla->nonCriticalExtension));
+  }
+  NR_SIB1_v1700_IEs_t *sib1_1700_tesla = sib1_1630_tesla->nonCriticalExtension;
+
+  // Allocate hyperSFN-r17 (10-bit BIT STRING, 2 bytes with 6 unused bits)
+  sib1_1700_tesla->hyperSFN_r17 = calloc(1, sizeof(BIT_STRING_t));
+  sib1_1700_tesla->hyperSFN_r17->buf = calloc(2, sizeof(uint8_t));
+  sib1_1700_tesla->hyperSFN_r17->size = 2;
+  sib1_1700_tesla->hyperSFN_r17->bits_unused = 6;
+  // Initial value 0; will be updated dynamically by nr_mac_update_sib1_tesla()
+#endif
+
   if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
     xer_fprint(stdout, &asn_DEF_NR_BCCH_DL_SCH_Message, sib1_message);
   }
@@ -4365,6 +4389,32 @@ int encode_measgap_config(const measgap_config_t *c, uint8_t *buf)
 
 #ifdef TF5_ENABLE_TESLA
 /**
+ * Update hyperSFN-r17 in SIB1-v1700-IEs
+ *
+ * hyperSFN-r17 is a 10-bit BIT STRING that tracks SFN wraparound.
+ * Per TS 38.331, this field is excluded when determining SI changes.
+ *
+ * @param sib1  SIB1 structure
+ * @param hfn   Current HFN value (0-1023)
+ */
+static void update_hypersfn_r17(NR_SIB1_t *sib1, uint16_t hfn)
+{
+  NR_SIB1_v1700_IEs_t *sib1_1700 = NULL;
+  if (sib1->nonCriticalExtension
+      && sib1->nonCriticalExtension->nonCriticalExtension
+      && sib1->nonCriticalExtension->nonCriticalExtension->nonCriticalExtension) {
+    sib1_1700 = sib1->nonCriticalExtension->nonCriticalExtension->nonCriticalExtension;
+  }
+
+  if (sib1_1700 && sib1_1700->hyperSFN_r17 && sib1_1700->hyperSFN_r17->buf) {
+    // Encode 10-bit HFN into BIT STRING (MSB first, 6 bits unused in byte 1)
+    uint16_t hfn_10bit = hfn & 0x3FF;  // Mask to 10 bits
+    sib1_1700->hyperSFN_r17->buf[0] = (hfn_10bit >> 2) & 0xFF;  // Upper 8 bits
+    sib1_1700->hyperSFN_r17->buf[1] = (hfn_10bit << 6) & 0xC0;  // Lower 2 bits (shifted left)
+  }
+}
+
+/**
  * Update SIB1 with TESLA authentication extension
  *
  * This function is called before each SIB1 transmission to:
@@ -4426,6 +4476,9 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
               "TESLA: Failed to allocate extension buffer\n");
   memcpy(sib1->lateNonCriticalExtension->buf, ext_buf, ext_len);
   sib1->lateNonCriticalExtension->size = ext_len;
+
+  // Update hyperSFN-r17 with current HFN from TESLA state
+  update_hypersfn_r17(sib1, cc->tesla_state->hfn_tracker.current_hfn);
 
   // Re-encode SIB1 with TESLA extension
   cc->sib1_bcch_length = encode_SIB_NR(cc->sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));

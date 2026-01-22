@@ -82,7 +82,8 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
 bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
                                    uint16_t rx_sfn,
-                                   uint16_t rx_slot);
+                                   uint16_t rx_slot,
+                                   uint16_t rx_hfn);
 
 // Buffer SIB1 for delayed verification
 int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,

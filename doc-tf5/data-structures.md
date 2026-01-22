@@ -114,16 +114,17 @@ Offset  Size  Field
 24      2     t0.sfn
 26      2     t0.slot
 28      4     chain_len
-32      2     timesync_info.hfn
-34      2     timesync_info.sfn
-36      2     timesync_info.slot
-38      4     interval_index
-42      16    disclosed_key
-58      8     timestamp_ms
-66      48    gnb_signature (BLS)
-114     16    tesla_tag
+32      2     timesync_info.sfn
+34      2     timesync_info.slot
+36      4     interval_index
+40      16    disclosed_key
+56      8     timestamp_ms
+64      48    gnb_signature (BLS)
+112     16    tesla_tag
 ------
-128 bytes total (with BLS signatures)
+126 bytes total (with BLS signatures)
+
+Note: HFN removed from timesync_info - now obtained from hyperSFN-r17 in SIB1-v1700-IEs
 ```
 
 ---

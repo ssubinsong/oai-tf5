@@ -672,9 +672,12 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             /* Step 1 (RFC 4082): Safe packet test FIRST - reject if message could have been forged */
           /* CRITICAL: Must use actual RX timing, not TX timing from signed extension */
           /* Using TX timing would allow replay attacks with old signed messages */
+          /* Record UE's tracked HFN at reception time (before any updates inside safe_packet_test) */
+          uint16_t rx_hfn = SI_info->tesla_state->hfn_tracker.current_hfn;
           if (!tf5_tesla_ue_safe_packet_test(SI_info->tesla_state, &ext,
                                               rx_frame,
-                                              rx_slot)) {
+                                              rx_slot,
+                                              rx_hfn)) {
             LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
             /* Skip this SIB1 entirely - do not buffer, do not process further */
           } else {
@@ -689,8 +692,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                             &ext.timesync_info);
 
             /* Step 2: Buffer current SIB1 for future TESLA verification */
+            /* Use UE's tracked HFN from hyperSFN-r17 (not from TESLA extension) */
             tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(
-                ext.timesync_info.hfn, rx_frame, rx_slot);
+                SI_info->tesla_state->hfn_tracker.current_hfn, rx_frame, rx_slot);
             tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
                                       mac_auth_input, mac_auth_len,
                                       ext.interval_index,
@@ -761,6 +765,24 @@ skip_tesla:
     sib1_v1700 = sib1->nonCriticalExtension->nonCriticalExtension->nonCriticalExtension;
     si_SchedInfo_v1700 = sib1_v1700->si_SchedulingInfo_v1700;
   }
+
+#ifdef TF5_ENABLE_TESLA
+  // Extract hyperSFN-r17 for TESLA HFN synchronization
+  // Per TS 38.331, hyperSFN-r17 is a 10-bit BIT STRING indicating the hyper-SFN
+  if (sib1_v1700 && sib1_v1700->hyperSFN_r17 && SI_info->tesla_state) {
+    if (sib1_v1700->hyperSFN_r17->size >= 2 && sib1_v1700->hyperSFN_r17->buf) {
+      // Decode 10-bit hyperSFN (upper 8 bits in buf[0], lower 2 bits in buf[1] >> 6)
+      uint16_t hypersfn = ((uint16_t)sib1_v1700->hyperSFN_r17->buf[0] << 2) |
+                          ((uint16_t)sib1_v1700->hyperSFN_r17->buf[1] >> 6);
+
+      // Initialize/update UE's HFN from hyperSFN-r17
+      SI_info->tesla_state->hfn_tracker.current_hfn = hypersfn;
+      SI_info->tesla_state->hfn_tracker.last_sfn = rx_frame;
+      SI_info->tesla_state->hfn_initialized = true;
+      LOG_D(NR_RRC, "TESLA: HFN synchronized from hyperSFN-r17: %u (frame=%d)\n", hypersfn, rx_frame);
+    }
+  }
+#endif
 
   AssertFatal(sib1->servingCellConfigCommon, "configuration issue in SIB1\n");
   SI_info->scs = sib1->servingCellConfigCommon->downlinkConfigCommon.initialDownlinkBWP.genericParameters.subcarrierSpacing;

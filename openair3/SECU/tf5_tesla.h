@@ -156,13 +156,15 @@ typedef struct {
 } tf5_tesla_static_params_t;
 
 /*
- * TESLA Time Synchronization Info
+ * TESLA Time Synchronization Info (4 bytes)
  *
- * Contains timing information for UE-gNB time synchronization.
- * Alias for tf5_tesla_slot_time_t - same 6-byte wire format.
- * Field access: .hfn, .sfn, .slot (previously ti_hfn, ti_sfn, ti_slot)
+ * Contains SFN/slot timing for UE-gNB time synchronization.
+ * HFN is now obtained from hyperSFN-r17 in SIB1-v1700-IEs (standard 3GPP).
  */
-typedef tf5_tesla_slot_time_t tf5_tesla_timesync_info_t;
+typedef struct {
+    uint16_t sfn;   // 2B - System Frame Number (0-1023)
+    uint16_t slot;  // 2B - Slot within frame
+} tf5_tesla_timesync_info_t;
 
 /*
  * Complete TESLA Extension Payload
@@ -173,11 +175,12 @@ typedef tf5_tesla_slot_time_t tf5_tesla_timesync_info_t;
  * Signature authenticates: SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
  * MAC authenticates:       SIB1 || static_params || timesync_info (per RFC 4082)
  *
- * Total size: 128 bytes (with BLS signatures)
+ * Total size: 126 bytes (with BLS signatures)
+ * Note: HFN removed from timesync_info - now obtained from hyperSFN-r17
  */
 typedef struct {
     tf5_tesla_static_params_t  static_params;                 // 30B
-    tf5_tesla_timesync_info_t  timesync_info;                 // 6B
+    tf5_tesla_timesync_info_t  timesync_info;                 // 4B (sfn + slot only)
     uint32_t                   interval_index;                // 4B - Current interval i
     uint8_t                    disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint64_t                   timestamp_ms;                  // 8B - Unix epoch timestamp (ms) for replay protection
@@ -511,12 +514,14 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
  * @param ext           TESLA extension from received SIB1
  * @param rx_sfn        SFN when packet was received
  * @param rx_slot       Slot when packet was received
+ * @param rx_hfn        HFN when packet was received (UE's tracked HFN at reception time)
  * @return true if packet is safe, false otherwise
  */
 bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
                                    uint16_t rx_sfn,
-                                   uint16_t rx_slot);
+                                   uint16_t rx_slot,
+                                   uint16_t rx_hfn);
 
 /**
  * Buffer SIB1 for delayed TESLA verification

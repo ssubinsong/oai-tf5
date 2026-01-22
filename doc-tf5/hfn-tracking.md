@@ -46,17 +46,22 @@ static inline void tf5_tesla_update_hfn(uint16_t *hfn,
 
 **Problem**: UE learns SFN from SSB synchronization, but **not HFN**. The gNB's HFN is unknown to UE at initial connection.
 
-**Solution**: Use the **signed ti_hfn** from the TESLA extension:
+**Solution**: Use the standard **hyperSFN-r17** field from SIB1-v1700-IEs (per TS 38.331):
 
-1. The BLS signature covers ti_hfn, making it trustworthy
-2. **First SIB1**: UE bootstraps HFN from signed extension
-3. **Subsequent SIB1s**: UE tracks HFN locally via SFN wraparound detection
+1. gNB transmits HFN via hyperSFN-r17 in SIB1-v1700-IEs
+2. **Every SIB1**: UE extracts hyperSFN-r17 and updates its HFN tracker
+3. UE can also track HFN locally via SFN wraparound detection as backup
 
 ```c
-// First reception
-state->current_hfn = ext->timesync_info.ti_hfn;
-state->hfn_initialized = true;
+// Extract hyperSFN-r17 from SIB1-v1700-IEs (10-bit BIT STRING)
+uint16_t hypersfn = (sib1_v1700->hyperSFN_r17->buf[0] << 2) |
+                    (sib1_v1700->hyperSFN_r17->buf[1] >> 6);
 
-// Subsequent receptions - update HFN based on SFN wraparound
-tf5_tesla_update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
+// Update UE's HFN tracker
+state->hfn_tracker.current_hfn = hypersfn;
+state->hfn_tracker.last_sfn = rx_sfn;
+state->hfn_initialized = true;
 ```
+
+> **Note**: HFN is no longer included in the TESLA extension's timesync_info.
+> This reduces the extension size from 128 to 126 bytes and uses standard 3GPP signaling.
