@@ -54,6 +54,7 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 
 ### Build & Configuration
 - [Build Configuration](build.md) - CMake options, build commands, dependencies
+- [Troubleshooting](troubleshooting.md) - Log verification, common errors, debugging
 
 ### Security
 - [Security Analysis](security.md) - Threat model, security properties, attack resistance
