@@ -26,18 +26,28 @@ uint64_t absolute_slots = (HFN × 1024 + SFN) × slots_per_frame + slot;
 
 ---
 
-## Wraparound Detection
+## gNB HFN Tracking (Core Feature)
+
+HFN is tracked as a **core gNB MAC feature** in `NR_COMMON_channels_t`:
 
 ```c
-static inline void tf5_tesla_update_hfn(uint16_t *hfn,
-                                         uint16_t *last_sfn,
-                                         uint16_t current_sfn) {
-    // Detect wraparound: last_sfn near 1023, current_sfn near 0
-    if (*last_sfn > 900 && current_sfn < 100) {
-        (*hfn)++;
-    }
-    *last_sfn = current_sfn;
+// In nr_mac_gNB.h
+typedef struct {
+    // ...
+    uint16_t hfn;       // Current Hyper-Frame Number (10-bit, 0-1023)
+    uint16_t last_sfn;  // Last seen SFN for wraparound detection
+    // ...
+} NR_COMMON_channels_t;
+```
+
+Wraparound detection in `gNB_scheduler_bch.c`:
+```c
+// Update HFN tracking for hyperSFN-r17 (per TS 38.331)
+// Detect SFN wraparound (1023 -> 0) and increment HFN
+if (cc->last_sfn > 900 && frameP < 100) {
+    cc->hfn = (cc->hfn + 1) & 0x3FF;  // 10-bit wrap
 }
+cc->last_sfn = frameP;
 ```
 
 ---
@@ -57,11 +67,12 @@ static inline void tf5_tesla_update_hfn(uint16_t *hfn,
 uint16_t hypersfn = (sib1_v1700->hyperSFN_r17->buf[0] << 2) |
                     (sib1_v1700->hyperSFN_r17->buf[1] >> 6);
 
-// Update UE's HFN tracker
-state->hfn_tracker.current_hfn = hypersfn;
-state->hfn_tracker.last_sfn = rx_sfn;
+// Update UE's HFN (simple storage, no local wraparound tracking needed)
+state->current_hfn = hypersfn;
 state->hfn_initialized = true;
 ```
 
-> **Note**: HFN is no longer included in the TESLA extension's timesync_info.
-> This reduces the extension size from 128 to 126 bytes and uses standard 3GPP signaling.
+> **Note**: UE receives HFN directly from hyperSFN-r17 and stores it as a simple `uint16_t`.
+> No local SFN wraparound detection is needed on UE side (gNB handles this).
+> HFN is no longer included in the TESLA extension's timesync_info, reducing the
+> extension size from 128 to 126 bytes.

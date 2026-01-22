@@ -4438,10 +4438,10 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
 
   NR_SIB1_t *sib1 = cc->sib1->message.choice.c1->choice.systemInformationBlockType1;
 
-  // Prepare TESLA extension for current frame/slot
+  // Prepare TESLA extension for current HFN/frame/slot
   tf5_tesla_extension_t ext;
   int rc = tf5_tesla_gnb_prepare_extension(cc->tesla_state,
-                                           frame, slot,
+                                           cc->hfn, frame, slot,
                                            cc->sib1_original,
                                            cc->sib1_original_length,
                                            &ext);
@@ -4477,8 +4477,8 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
   memcpy(sib1->lateNonCriticalExtension->buf, ext_buf, ext_len);
   sib1->lateNonCriticalExtension->size = ext_len;
 
-  // Update hyperSFN-r17 with current HFN from TESLA state
-  update_hypersfn_r17(sib1, cc->tesla_state->hfn_tracker.current_hfn);
+  // Update hyperSFN-r17 with current HFN from common channel (core gNB feature)
+  update_hypersfn_r17(sib1, cc->hfn);
 
   // Re-encode SIB1 with TESLA extension
   cc->sib1_bcch_length = encode_SIB_NR(cc->sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));

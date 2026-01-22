@@ -672,8 +672,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             /* Step 1 (RFC 4082): Safe packet test FIRST - reject if message could have been forged */
           /* CRITICAL: Must use actual RX timing, not TX timing from signed extension */
           /* Using TX timing would allow replay attacks with old signed messages */
-          /* Record UE's tracked HFN at reception time (before any updates inside safe_packet_test) */
-          uint16_t rx_hfn = SI_info->tesla_state->hfn_tracker.current_hfn;
+          /* Record UE's HFN at reception time (from hyperSFN-r17) */
+          uint16_t rx_hfn = SI_info->tesla_state->current_hfn;
           if (!tf5_tesla_ue_safe_packet_test(SI_info->tesla_state, &ext,
                                               rx_frame,
                                               rx_slot,
@@ -692,9 +692,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                             &ext.timesync_info);
 
             /* Step 2: Buffer current SIB1 for future TESLA verification */
-            /* Use UE's tracked HFN from hyperSFN-r17 (not from TESLA extension) */
+            /* Use UE's HFN from hyperSFN-r17 (not from TESLA extension) */
             tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(
-                SI_info->tesla_state->hfn_tracker.current_hfn, rx_frame, rx_slot);
+                SI_info->tesla_state->current_hfn, rx_frame, rx_slot);
             tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
                                       mac_auth_input, mac_auth_len,
                                       ext.interval_index,
@@ -776,8 +776,7 @@ skip_tesla:
                           ((uint16_t)sib1_v1700->hyperSFN_r17->buf[1] >> 6);
 
       // Initialize/update UE's HFN from hyperSFN-r17
-      SI_info->tesla_state->hfn_tracker.current_hfn = hypersfn;
-      SI_info->tesla_state->hfn_tracker.last_sfn = rx_frame;
+      SI_info->tesla_state->current_hfn = hypersfn;
       SI_info->tesla_state->hfn_initialized = true;
       LOG_D(NR_RRC, "TESLA: HFN synchronized from hyperSFN-r17: %u (frame=%d)\n", hypersfn, rx_frame);
     }

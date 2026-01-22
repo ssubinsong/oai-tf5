@@ -22,16 +22,18 @@ typedef struct {
 
 Used for T_0 reference, TX timing, and RX timing throughout the TESLA module.
 
-### HFN Tracker (4 bytes)
+### HFN Tracking (Core gNB Feature)
 
-Tracks HFN state for SFN wraparound detection:
+HFN tracking is now part of the core gNB MAC layer, not TESLA-specific:
 
 ```c
-typedef struct {
-    uint16_t current_hfn;  // 2B - Current Hyper-Frame Number
-    uint16_t last_sfn;     // 2B - Last seen SFN (wraparound detection)
-} tf5_tesla_hfn_tracker_t;
+// In NR_COMMON_channels_t (nr_mac_gNB.h)
+uint16_t hfn;       // Current Hyper-Frame Number (10-bit, 0-1023)
+uint16_t last_sfn;  // Last seen SFN for wraparound detection
 ```
+
+- **gNB**: Tracks HFN in `cc->hfn`, updated in `gNB_scheduler_bch.c` on SFN wraparound
+- **UE**: Receives HFN from hyperSFN-r17 in SIB1 and stores it as `uint16_t current_hfn`
 
 ### D-Bound Parameters (20 bytes)
 
@@ -142,8 +144,8 @@ typedef struct {
     // Current state
     uint32_t current_interval;
 
-    // HFN tracking
-    tf5_tesla_hfn_tracker_t hfn_tracker;
+    // HFN tracking moved to NR_COMMON_channels_t (cc->hfn)
+    // gNB tracks HFN as a core feature, not TESLA-specific
 
     // BLS keys
     uint8_t  gnb_private_key[32];
@@ -174,8 +176,8 @@ typedef struct {
     uint32_t last_verified_key_idx;
     uint8_t  last_verified_key[16];
 
-    // HFN tracking
-    tf5_tesla_hfn_tracker_t hfn_tracker;
+    // HFN from hyperSFN-r17 (no local tracking needed)
+    uint16_t current_hfn;
     bool     hfn_initialized;
 
     // Buffered SIB1 pending verification

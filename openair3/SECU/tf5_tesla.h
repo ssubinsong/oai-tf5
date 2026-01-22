@@ -91,17 +91,9 @@ typedef struct {
     uint16_t slot;  // 2B - Slot within frame
 } tf5_tesla_slot_time_t;
 
-/**
- * HFN Tracking State
- *
- * Tracks current HFN and last-seen SFN for wraparound detection.
- * Used by both gNB and UE state structures.
- * Total size: 4 bytes
- */
-typedef struct {
-    uint16_t current_hfn;  // 2B - Current Hyper-Frame Number
-    uint16_t last_sfn;     // 2B - Last seen SFN (for wraparound detection)
-} tf5_tesla_hfn_tracker_t;
+// Note: HFN tracking is now handled by the gNB MAC layer (NR_COMMON_channels_t)
+// gNB: cc->hfn, cc->last_sfn (updated in gNB_scheduler_bch.c)
+// UE: receives HFN from hyperSFN-r17 in SIB1
 
 /**
  * D-Bound Calculation Parameters
@@ -203,8 +195,8 @@ typedef struct {
     // Current state
     uint32_t current_interval;
 
-    // HFN tracking (for SFN wraparound handling)
-    tf5_tesla_hfn_tracker_t hfn_tracker;
+    // HFN tracking moved to NR_COMMON_channels_t (cc->hfn)
+    // gNB tracks HFN as a core feature, not TESLA-specific
 
     // BLS keys
     uint8_t  gnb_private_key[TF5_BLS_SECRET_KEY_LEN];   // 32B - BLS secret key
@@ -235,9 +227,9 @@ typedef struct {
     uint32_t last_verified_key_idx;   // Index of last verified key
     uint8_t  last_verified_key[TF5_TESLA_KEY_LEN];
 
-    // HFN tracking (for SFN wraparound handling)
-    tf5_tesla_hfn_tracker_t hfn_tracker;
-    bool     hfn_initialized;     // Has HFN been initialized from first signed SIB1?
+    // HFN from hyperSFN-r17 (no local tracking needed - UE receives from SIB1)
+    uint16_t current_hfn;
+    bool     hfn_initialized;     // Has HFN been initialized from hyperSFN-r17?
 
     // Buffered SIB1 pending TESLA verification
     struct {
@@ -317,16 +309,16 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
 void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state);
 
 /**
- * Get current interval index from SFN/slot
+ * Get current interval index from HFN/SFN/slot
  *
- * Updates internal HFN tracking based on SFN wraparound detection.
- *
- * @param state         Pointer to gNB TESLA state structure (updated for HFN)
+ * @param state         Pointer to gNB TESLA state structure
+ * @param hfn           Current HFN (from cc->hfn)
  * @param sfn           Current SFN
  * @param slot          Current slot
  * @return Current interval index
  */
 uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
+                                    uint16_t hfn,
                                     uint16_t sfn,
                                     uint16_t slot);
 
@@ -386,6 +378,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
  * This should be called before each SIB1 transmission.
  *
  * @param state         Pointer to gNB TESLA state structure
+ * @param hfn           Current HFN (from cc->hfn)
  * @param sfn           Current SFN
  * @param slot          Current slot
  * @param original_sib1 Original SIB1 encoded data
@@ -394,6 +387,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
  * @return 0 on success, negative on error
  */
 int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
+                                    uint16_t hfn,
                                     uint16_t sfn,
                                     uint16_t slot,
                                     const uint8_t *original_sib1,
@@ -697,25 +691,8 @@ static inline uint64_t tf5_tesla_absolute_slots(const tf5_tesla_slot_time_t *tim
     return total_frames * slots_per_frame + time->slot;
 }
 
-/**
- * Update HFN tracker based on SFN transition
- *
- * Detects SFN wraparound (1023 -> 0) and increments HFN.
- * Call this whenever processing a new SFN value.
- *
- * @param tracker        HFN tracker struct (will be updated)
- * @param current_sfn    Current SFN value
- */
-static inline void tf5_tesla_update_hfn(tf5_tesla_hfn_tracker_t *tracker,
-                                         uint16_t current_sfn)
-{
-    // Detect wraparound: last_sfn near 1023, current_sfn near 0
-    // Use threshold to handle slight variations in timing
-    if (tracker->last_sfn > 900 && current_sfn < 100) {
-        tracker->current_hfn++;
-    }
-    tracker->last_sfn = current_sfn;
-}
+// Note: HFN update logic is now directly in gNB_scheduler_bch.c (cc->hfn tracking)
+// UE receives HFN from hyperSFN-r17 in SIB1
 
 /*
  * =============================================================================

@@ -46,7 +46,6 @@
  * but the wire format is 30 bytes (serialization skips padding).
  */
 _Static_assert(sizeof(tf5_tesla_slot_time_t) == 6, "slot_time_t must be 6 bytes");
-_Static_assert(sizeof(tf5_tesla_hfn_tracker_t) == 4, "hfn_tracker_t must be 4 bytes");
 _Static_assert(sizeof(tf5_tesla_d_params_t) == 20, "d_params_t must be 20 bytes");
 _Static_assert(sizeof(tf5_tesla_timesync_info_t) == 4, "timesync_info_t must be 4 bytes (HFN now from hyperSFN-r17)");
 
@@ -458,9 +457,8 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
     state->params.t0 = *t0;
     state->params.chain_len = chain_len;
 
-    // Initialize HFN tracking
-    state->hfn_tracker.current_hfn = t0->hfn;
-    state->hfn_tracker.last_sfn = t0->sfn;
+    // HFN tracking is now in NR_COMMON_channels_t (cc->hfn)
+    // gNB tracks HFN as a core feature, not TESLA-specific
 
     state->slots_per_frame = slots_per_frame;
     state->current_interval = 0;
@@ -486,6 +484,7 @@ void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state)
 }
 
 uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
+                                    uint16_t hfn,
                                     uint16_t sfn,
                                     uint16_t slot)
 {
@@ -493,16 +492,15 @@ uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
         return 0;
     }
 
-    // Update HFN tracking based on SFN wraparound detection
-    tf5_tesla_update_hfn(&state->hfn_tracker, sfn);
-
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(state->hfn_tracker.current_hfn, sfn, slot);
+    // HFN is now tracked by gNB core (NR_COMMON_channels_t) and passed in
+    tf5_tesla_slot_time_t current = tf5_slot_time_make(hfn, sfn, slot);
     return tf5_tesla_get_interval_index(&current, &state->params.t0,
                                         state->params.t_int_ms,
                                         state->slots_per_frame);
 }
 
 int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
+                                    uint16_t hfn,
                                     uint16_t sfn,
                                     uint16_t slot,
                                     const uint8_t *original_sib1,
@@ -513,8 +511,8 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
         return -1;
     }
 
-    // Get current interval
-    uint32_t interval = tf5_tesla_gnb_get_interval(state, sfn, slot);
+    // Get current interval (HFN from cc->hfn passed by caller)
+    uint32_t interval = tf5_tesla_gnb_get_interval(state, hfn, sfn, slot);
 
     // Check if interval is within chain bounds
     if (interval >= state->key_chain_len) {
@@ -628,9 +626,8 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     state->params_received = false;
     state->buffer.pending = false;
 
-    // HFN tracking will be initialized from first valid signed SIB1
-    state->hfn_tracker.current_hfn = 0;
-    state->hfn_tracker.last_sfn = 0;
+    // HFN will be initialized from hyperSFN-r17 in SIB1
+    state->current_hfn = 0;
     state->hfn_initialized = false;
 
     // Parallel authentication state (initialized by memset to 0/false)
@@ -784,11 +781,10 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
         return false;
     }
 
-    // Safe packet test requires HFN to already be initialized (by first authenticated SIB1)
+    // Safe packet test requires HFN to already be initialized (from hyperSFN-r17)
     DevAssert(state->hfn_initialized);
 
-    // Update HFN based on SFN wraparound detection
-    tf5_tesla_update_hfn(&state->hfn_tracker, rx_sfn);
+    // HFN is received via hyperSFN-r17 - no local wraparound tracking needed
 
     // RFC 4082 Section 3.5: Safe packet test
     // Step 1: Record local time T (in absolute slots)
