@@ -11,12 +11,48 @@ In the IBS scheme, the Core PKG:
 
 UEs only need the master public key (MPK) pre-provisioned (e.g., in SIM) to verify signatures from any gNB whose key was issued by this PKG.
 
+## Dependencies
+
+This module depends on the [blst](https://github.com/supranational/blst) library for BLS12-381 elliptic curve operations. The blst library is included as a git submodule.
+
 ## Building
 
+### Quick Start (with submodule)
+
 ```bash
+git clone --recursive <repo-url>
 cd tf5-core-pkg
 mkdir build && cd build
 cmake ..
+make
+```
+
+If cloned without `--recursive`:
+```bash
+git submodule update --init
+mkdir build && cd build
+cmake ..
+make
+```
+
+### Using Setup Script
+
+The setup script handles submodule initialization and builds the utilities:
+
+```bash
+./scripts/tf5_setup_pkg.sh
+```
+
+### Using Shared BLST Installation
+
+To use blst from a shared location (e.g., oai-tf5 in sibling directory):
+
+```bash
+mkdir build && cd build
+# Absolute path
+cmake -DBLST_DIR=/path/to/oai-tf5/cmake_targets/third_party/blst ..
+# Or relative path (from source directory)
+cmake -DBLST_DIR=../oai-tf5/cmake_targets/third_party/blst ..
 make
 ```
 
@@ -109,6 +145,9 @@ See [doc/ibs-protocol.md](doc/ibs-protocol.md) for the full cryptographic specif
 tf5-core-pkg/
 ├── CMakeLists.txt
 ├── README.md
+├── .gitmodules              # Submodule declaration
+├── third_party/
+│   └── blst/                # BLS12-381 library (submodule)
 ├── doc/
 │   └── ibs-protocol.md      # Cryptographic specification
 ├── include/

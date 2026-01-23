@@ -4,8 +4,27 @@ project(tf5-core-pkg C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# BLST library path (relative to this project, using the copy from oai-tf5)
-set(BLST_DIR "${CMAKE_SOURCE_DIR}/../oai-tf5/cmake_targets/third_party/blst")
+# BLST library path - configurable via -DBLST_DIR=<path>
+# Default: use local submodule at third_party/blst
+if(NOT DEFINED BLST_DIR)
+    set(BLST_DIR "${CMAKE_SOURCE_DIR}/third_party/blst")
+endif()
+
+# Convert to absolute path (required for INTERFACE_INCLUDE_DIRECTORIES)
+# Resolve relative paths from source directory, not build directory
+get_filename_component(BLST_DIR "${BLST_DIR}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+
+# Verify blst directory exists
+if(NOT EXISTS "${BLST_DIR}/src/server.c")
+    message(FATAL_ERROR
+        "BLST library not found at ${BLST_DIR}\n"
+        "Options:\n"
+        "  1. Initialize submodule: git submodule update --init\n"
+        "  2. Specify path: cmake -DBLST_DIR=/path/to/blst ..")
+endif()
+
+message(STATUS "Using BLST library from: ${BLST_DIR}")
+
 set(BLST_LIB "${BLST_DIR}/libblst.a")
 
 # Build BLST using its native build script (handles platform-specific assembly)
