@@ -536,7 +536,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
         if (!SI_info->tesla_state->k0_trusted) {
           /* === FIRST-TIME UE: Ed25519 signature verification === */
           AssertFatal(SI_info->tesla_state->has_gnb_public_key,
-                      "TESLA: gNB public key not configured - required for K_0 authentication");
+                      "TESLA: gNB public key not configured - required for K_0 authentication. "
+                      "Configure it with --tesla-gnb-pubkey or generate keys via ./scripts/tf5_generate_bls_keys.sh");
 
           /* Validate wall-clock timestamp (fail fast before expensive Ed25519) */
           uint64_t ue_time_ms = tf5_tesla_get_wallclock_ms();
