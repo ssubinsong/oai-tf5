@@ -106,6 +106,7 @@ char *uecap_file;
 #ifdef TF5_ENABLE_TESLA
 char *tesla_privkey_file;
 char *tesla_pubkey_file;
+unsigned int tesla_chain_len;
 #endif
 
 runmode_t mode = normal_txrx;

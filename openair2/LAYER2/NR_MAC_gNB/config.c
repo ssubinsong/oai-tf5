@@ -1248,6 +1248,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   // Load key pair from files (command-line parameters or defaults)
   extern char *tesla_privkey_file;
   extern char *tesla_pubkey_file;
+  extern unsigned int tesla_chain_len;
 
   uint8_t private_key[TF5_BLS_SECRET_KEY_LEN];
   uint8_t public_key[TF5_TESLA_PUBKEY_LEN];
@@ -1298,8 +1299,9 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   uint16_t t0_sfn = 0, t0_slot = 0;
   tf5_get_first_sib1_occasion(nrmac, &t0_sfn, &t0_slot);
 
-  // Default chain length (user can override via configuration if needed)
-  uint32_t chain_len = 65536;
+  // Use configurable chain length (set via --tesla-chain-len command-line parameter)
+  // Default: 65536 keys (~21.8 min with T_int=20ms, ~36.4 min with T_int=SSB period)
+  uint32_t chain_len = (uint32_t)tesla_chain_len;
 
   LOG_I(NR_MAC, "TESLA: T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
   LOG_I(NR_MAC, "TESLA: T_0=(SFN=%u, slot=%u) (first SIB1 TX occasion)\n", t0_sfn, t0_slot);
