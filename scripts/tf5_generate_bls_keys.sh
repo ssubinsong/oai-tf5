@@ -3,7 +3,8 @@
 #
 # Usage: ./tf5_generate_bls_keys.sh [output_dir]
 #
-# Default output_dir is ./tesla_keys/ (matches default paths in OAI softmodem)
+# Default output_dir is ${PROJECT_ROOT}/tesla_keys/ to persist across build cleans.
+# Can also be set via TF5_TESLA_KEYDIR environment variable.
 #
 # Generates:
 #   - gnb_tesla_privkey.bin  (BLS secret key, 32 bytes raw binary)
@@ -20,9 +21,17 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Default output directory matches the default paths in nr-softmodem.h and nr-uesoftmodem.h
-OUTPUT_DIR="${1:-./tesla_keys}"
+# Default output directory: project root tesla_keys/ (survives build cleans)
+# Priority: 1) TF5_TESLA_KEYDIR env var, 2) CLI argument, 3) project root default
+if [ -n "${TF5_TESLA_KEYDIR}" ]; then
+    OUTPUT_DIR="${TF5_TESLA_KEYDIR}"
+elif [ -n "$1" ]; then
+    OUTPUT_DIR="$1"
+else
+    OUTPUT_DIR="${PROJECT_ROOT}/tesla_keys"
+fi
 PRIVKEY="${OUTPUT_DIR}/gnb_tesla_privkey.bin"
 PUBKEY="${OUTPUT_DIR}/gnb_tesla_pubkey.bin"
 
@@ -81,19 +90,26 @@ echo "=========================================="
 echo " Usage"
 echo "=========================================="
 echo ""
-echo "These are the default paths used by OAI softmodem."
-echo "Just run gNB and UE without extra arguments:"
+echo "Keys are stored in project root and persist across build cleans."
 echo ""
-echo "  gNB: ./nr-softmodem -O gnb.conf"
-echo "  UE:  ./nr-uesoftmodem -O ue.conf"
+echo "Option 1: Source oaienv (sets OPENAIR_DIR, keys auto-discovered):"
 echo ""
-echo "Or override with custom paths:"
+echo "  source oaienv"
+echo "  cd cmake_targets/ran_build/build"
+echo "  ./nr-softmodem -O gnb.conf"
+echo ""
+echo "Option 2: Set TF5_TESLA_KEYDIR explicitly:"
+echo ""
+echo "  export TF5_TESLA_KEYDIR=${OUTPUT_DIR}"
+echo "  ./nr-softmodem -O gnb.conf"
+echo ""
+echo "Option 3: Override with custom paths:"
 echo ""
 echo "  gNB: ./nr-softmodem -O gnb.conf \\"
-echo "         --tesla-privkey /path/to/privkey.bin \\"
-echo "         --tesla-pubkey /path/to/pubkey.bin"
+echo "         --tesla-privkey ${PRIVKEY} \\"
+echo "         --tesla-pubkey ${PUBKEY}"
 echo ""
 echo "  UE:  ./nr-uesoftmodem -O ue.conf \\"
-echo "         --tesla-gnb-pubkey /path/to/pubkey.bin"
+echo "         --tesla-gnb-pubkey ${PUBKEY}"
 echo ""
 echo "=========================================="

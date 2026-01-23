@@ -1652,6 +1652,16 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
     if (ptr->SInfo.tesla_state) {
       nrUE_params_t *params = get_nrUE_params();
 
+      // Resolve key path: use runtime resolution if using default
+      char resolved_pubkey_path[512];
+      const char *pubkey_path = params->tesla_gnb_pubkey_file;
+      if (strcmp(params->tesla_gnb_pubkey_file, TF5_DEFAULT_GNB_PUBKEY_PATH) == 0) {
+        if (tf5_tesla_get_default_keypath(resolved_pubkey_path, sizeof(resolved_pubkey_path),
+                                           "gnb_tesla_pubkey.bin") == 0) {
+          pubkey_path = resolved_pubkey_path;
+        }
+      }
+
       // Initialize BLS library
       int rc = tf5_tesla_bls_init();
       if (rc != 0) {
@@ -1660,12 +1670,12 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
         ptr->SInfo.tesla_state = NULL;
       } else {
         uint8_t gnb_pubkey[TF5_TESLA_PUBKEY_LEN];
-        rc = tf5_tesla_load_pubkey(params->tesla_gnb_pubkey_file, gnb_pubkey);
+        rc = tf5_tesla_load_pubkey(pubkey_path, gnb_pubkey);
         if (rc == 0) {
           // Default slots_per_frame, will be updated when SIB1 is received with numerology info
           uint16_t slots_per_frame = 20;
           tf5_tesla_ue_init(ptr->SInfo.tesla_state, gnb_pubkey, slots_per_frame);
-          LOG_I(NR_RRC, "TESLA: Loaded gNB public key from %s\n", params->tesla_gnb_pubkey_file);
+          LOG_I(NR_RRC, "TESLA: Loaded gNB public key from %s\n", pubkey_path);
           // Log public key for verification (first 32 bytes)
           char hex_buf[65];
           for (int j = 0; j < 32; j++) {
@@ -1674,7 +1684,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
           LOG_I(NR_RRC, "TESLA: gNB public key (first 32 bytes hex): %s...\n", hex_buf);
         } else {
           LOG_E(NR_RRC, "TESLA: Failed to load gNB public key from %s (rc=%d)\n",
-                params->tesla_gnb_pubkey_file, rc);
+                pubkey_path, rc);
           LOG_E(NR_RRC, "TESLA: Run ./scripts/tf5_generate_bls_keys.sh to generate keys\n");
           // Free state and set to NULL to disable TESLA
           free(ptr->SInfo.tesla_state);
