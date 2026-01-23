@@ -15,6 +15,15 @@ KEYS_DIR="$PKG_DIR/pkg_keys"
 echo "=== TF5 IBS PKG Setup ==="
 echo ""
 
+# Initialize blst submodule if needed
+if [ ! -f "$PKG_DIR/third_party/blst/src/server.c" ]; then
+    echo "Initializing blst submodule..."
+    cd "$PKG_DIR"
+    git submodule update --init third_party/blst
+    echo "Submodule initialized."
+    echo ""
+fi
+
 # Build
 echo "Building PKG utilities..."
 mkdir -p "$BUILD_DIR"
