@@ -49,6 +49,13 @@ extern uint16_t ue_id_g;
 /*   optname                     helpstr                paramflags                      XXXptr        defXXXval         type       numelt   */
 /*------------------------------------------------------------------------------------------------------------------------------------------*/
 // clang-format off
+#ifdef TF5_ENABLE_TESLA
+#define CMDLINE_TESLA_PARAMS_UE \
+  {"tesla-gnb-pubkey",             CONFIG_HLP_TESLA_GNB_PUBKEY, 0,              .strptr=&nrUE_params.tesla_gnb_pubkey_file,  .defstrval=TF5_DEFAULT_GNB_PUBKEY_PATH, TYPE_STRING, 0},
+#else
+#define CMDLINE_TESLA_PARAMS_UE
+#endif
+
 #define CMDLINE_NRUEPARAMS_DESC {  \
   {"usrp-args",                CONFIG_HLP_USRP_ARGS,           0,               .strptr=&nrUE_params.usrp_args,           .defstrval="type=b200",          TYPE_STRING,   0}, \
   {"tx_subdev",                CONFIG_HLP_TX_SUBDEV,           0,               .strptr=&nrUE_params.tx_subdev,           .defstrval=NULL,                 TYPE_STRING,   0}, \
@@ -91,13 +98,6 @@ extern uint16_t ue_id_g;
   {"extra-pdu-id",                 CONFIG_HLP_EXTRA_PDU_ID,   0,                .iptr=&nrUE_params.extra_pdu_id,             .defintval=-1,     TYPE_INT,      0}, \
   CMDLINE_TESLA_PARAMS_UE \
 }
-
-#ifdef TF5_ENABLE_TESLA
-#define CMDLINE_TESLA_PARAMS_UE \
-  {"tesla-gnb-pubkey",             CONFIG_HLP_TESLA_GNB_PUBKEY, 0,              .strptr=&nrUE_params.tesla_gnb_pubkey_file,  .defstrval=TF5_DEFAULT_GNB_PUBKEY_PATH, TYPE_STRING, 0},
-#else
-#define CMDLINE_TESLA_PARAMS_UE
-#endif
 // clang-format on
 
 typedef struct {
