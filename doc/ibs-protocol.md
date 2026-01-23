@@ -13,32 +13,30 @@ This document specifies the Identity-Based Signature (IBS) scheme used for authe
 - **Curve:** BLS12-381
 - **Variant:** Minimal signature size (pk-in-G2)
 - **Groups:**
-  - G1: 48-byte compressed points (signatures)
-  - G2: 96-byte compressed points (public keys)
-  - GT: Target group for pairing
-- **Order:** r ≈ 2^255 (prime)
+  - $G_1$: 48-byte compressed points (signatures)
+  - $G_2$: 96-byte compressed points (public keys)
+  - $G_T$: Target group for pairing
+- **Order:** $r \approx 2^{255}$ (prime)
 
 ### 2.2 Bilinear Pairing
 
-```
-e: G1 × G2 → GT
-```
+$$e: G_1 \times G_2 \rightarrow G_T$$
 
 Properties:
-- Bilinearity: `e(aP, bQ) = e(P, Q)^(ab)`
-- Non-degeneracy: `e(G1, G2) ≠ 1`
+- Bilinearity: $e(aP, bQ) = e(P, Q)^{ab}$
+- Non-degeneracy: $e(G_1, G_2) \neq 1$
 
 ### 2.3 Hash Functions
 
-**H_s: Identity → Scalar (Z_r)**
+**$H_s: \text{Identity} \rightarrow \text{Scalar}\ (\mathbb{Z}_r)$**
 - Input: NR Cell ID (36 bits)
-- Output: Scalar in Z_r
+- Output: Scalar in $\mathbb{Z}_r$
 - Implementation: IETF hash-to-field via `blst_keygen` with DST
 - DST: `"TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"`
 
-**H_m: Message → G1**
+**$H_m: \text{Message} \rightarrow G_1$**
 - Input: Arbitrary-length message
-- Output: Point in G1
+- Output: Point in $G_1$
 - Implementation: IETF hash-to-curve via `blst_hash_to_g1`
 - DST: `"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_"`
 
@@ -67,81 +65,95 @@ Properties:
 
 ### 4.1 Setup (Core PKG)
 
-**Input:** Security parameter λ (implicit: BLS12-381)
+**Input:** Security parameter $\lambda$ (implicit: BLS12-381)
 
-**Output:** Master secret `s`, Master public key `MPK`
+**Output:** Master secret $s$, Master public key $MPK$
 
-```
-1. s ← random scalar in Z_r
-2. MPK ← s * Q, where Q is the generator of G2
-3. Return (s, MPK)
-```
+$$
+\begin{aligned}
+1. &\ s \leftarrow \text{random scalar in } \mathbb{Z}_r \\
+2. &\ MPK \leftarrow s \cdot Q, \text{ where } Q \text{ is the generator of } G_2 \\
+3. &\ \text{Return } (s, MPK)
+\end{aligned}
+$$
 
 **File Output:**
-- `msk.bin`: 32 bytes, `s` serialized big-endian
-- `mpk.bin`: 96 bytes, `MPK` compressed
+- `msk.bin`: 32 bytes, $s$ serialized big-endian
+- `mpk.bin`: 96 bytes, $MPK$ compressed
 
 ### 4.2 Key Issuance (Core PKG)
 
-**Input:** Master secret `s`, gNB identity `ID` (NR Cell ID, 36 bits)
+**Input:** Master secret $s$, gNB identity $ID$ (NR Cell ID, 36 bits)
 
-**Output:** gNB secret key `sk_ID`
+**Output:** gNB secret key $sk_{ID}$
 
-```
-1. pk_ID ← H_s(ID)           // Hash identity to scalar
-2. sk_ID ← s * pk_ID mod r   // Scalar multiplication
-3. Return sk_ID
-```
+$$
+\begin{aligned}
+1. &\ pk_{ID} \leftarrow H_s(ID) & \text{// Hash identity to scalar} \\
+2. &\ sk_{ID} \leftarrow s \cdot pk_{ID} \mod r & \text{// Scalar multiplication} \\
+3. &\ \text{Return } sk_{ID}
+\end{aligned}
+$$
 
 **Properties:**
-- `sk_ID` is a 32-byte scalar
+- $sk_{ID}$ is a 32-byte scalar
 - Different Cell IDs produce different keys
 - Core can issue keys without gNB interaction
 
 ### 4.3 Sign (gNB)
 
-**Input:** gNB secret key `sk_ID`, message `m`
+**Input:** gNB secret key $sk_{ID}$, message $m$
 
-**Output:** Signature `Σ`
+**Output:** Signature $\Sigma$
 
-```
-1. h ← H_m(m)               // Hash message to G1
-2. Σ ← sk_ID * h            // Scalar multiplication in G1
-3. Return Σ
-```
+$$
+\begin{aligned}
+1. &\ h \leftarrow H_m(m) & \text{// Hash message to } G_1 \\
+2. &\ \Sigma \leftarrow sk_{ID} \cdot h & \text{// Scalar multiplication in } G_1 \\
+3. &\ \text{Return } \Sigma
+\end{aligned}
+$$
 
 **Properties:**
-- `Σ` is a 48-byte G1 point (compressed)
+- $\Sigma$ is a 48-byte $G_1$ point (compressed)
 - Same algorithm as standard BLS signature
-- `sk_ID` acts as the signing key
+- $sk_{ID}$ acts as the signing key
 
 ### 4.4 Verify (UE)
 
-**Input:** Master public key `MPK`, identity `ID`, message `m`, signature `Σ`
+**Input:** Master public key $MPK$, identity $ID$, message $m$, signature $\Sigma$
 
 **Output:** Accept or Reject
 
-```
-1. pk_ID ← H_s(ID)          // Derive identity-based public key (scalar)
-2. PK ← pk_ID * MPK         // Compute verification key (G2 point)
-3. h ← H_m(m)               // Hash message to G1
-4. Accept iff e(Σ, Q) = e(h, PK)
-```
+$$
+\begin{aligned}
+1. &\ pk_{ID} \leftarrow H_s(ID) & \text{// Derive identity-based public key (scalar)} \\
+2. &\ PK \leftarrow pk_{ID} \cdot MPK & \text{// Compute verification key (} G_2 \text{ point)} \\
+3. &\ h \leftarrow H_m(m) & \text{// Hash message to } G_1 \\
+4. &\ \text{Accept iff } e(\Sigma, Q) = e(h, PK)
+\end{aligned}
+$$
 
 **Verification Equation Derivation:**
 
-```
-e(Σ, Q) = e(sk_ID * h, Q)
-        = e(h, Q)^sk_ID
-        = e(h, sk_ID * Q)
+$$
+\begin{aligned}
+e(\Sigma, Q) &= e(sk_{ID} \cdot h, Q) \\
+             &= e(h, Q)^{sk_{ID}} \\
+             &= e(h, sk_{ID} \cdot Q)
+\end{aligned}
+$$
 
-pk_ID * MPK = pk_ID * (s * Q)
-            = (pk_ID * s) * Q
-            = (s * pk_ID) * Q
-            = sk_ID * Q
+$$
+\begin{aligned}
+pk_{ID} \cdot MPK &= pk_{ID} \cdot (s \cdot Q) \\
+                  &= (pk_{ID} \cdot s) \cdot Q \\
+                  &= (s \cdot pk_{ID}) \cdot Q \\
+                  &= sk_{ID} \cdot Q
+\end{aligned}
+$$
 
-Therefore: e(Σ, Q) = e(h, sk_ID * Q) = e(h, pk_ID * MPK) = e(h, PK)
-```
+$$\text{Therefore: } e(\Sigma, Q) = e(h, sk_{ID} \cdot Q) = e(h, pk_{ID} \cdot MPK) = e(h, PK)$$
 
 ## 5. Message Format
 
@@ -157,7 +169,7 @@ Where:
 - `static_params`: TESLA parameters (30 bytes)
 - `timesync_info`: TX timing (4 bytes)
 - `interval_index`: Current TESLA interval (4 bytes)
-- `disclosed_key`: Key K_{i-d} (16 bytes)
+- `disclosed_key`: Key $K_{i-d}$ (16 bytes)
 - `timestamp_ms`: Unix timestamp in milliseconds (8 bytes)
 
 ## 6. Identity Format
@@ -185,14 +197,14 @@ byte[4] = bits 3-0 (upper nibble), padding (lower nibble)
 ### 7.1 Security Model
 
 The scheme provides **existential unforgeability under chosen message attack (EUF-CMA)** in the random oracle model, assuming:
-- CDH (Computational Diffie-Hellman) is hard in G1 and G2
-- H_s and H_m are modeled as random oracles
+- CDH (Computational Diffie-Hellman) is hard in $G_1$ and $G_2$
+- $H_s$ and $H_m$ are modeled as random oracles
 
 ### 7.2 Security Properties
 
 | Property | Guarantee |
 |----------|-----------|
-| Signature Unforgeability | Cannot forge signature without sk_ID |
+| Signature Unforgeability | Cannot forge signature without $sk_{ID}$ |
 | Identity Binding | Signature valid only for correct Cell ID |
 | Key Isolation | Compromising one gNB key doesn't affect others |
 | Forward Secrecy | Not provided (would require key evolution) |
@@ -201,15 +213,15 @@ The scheme provides **existential unforgeability under chosen message attack (EU
 
 | Entity | Trusts | Holds |
 |--------|--------|-------|
-| Core PKG | — | Master secret (s) |
-| gNB | Core PKG | sk_ID |
-| UE | Core PKG | MPK |
+| Core PKG | — | Master secret ($s$) |
+| gNB | Core PKG | $sk_{ID}$ |
+| UE | Core PKG | $MPK$ |
 
 ### 7.4 Attack Resistance
 
 **Key Extraction Attack:**
-- Attacker with MPK and Cell ID cannot compute sk_ID
-- Requires solving CDH: given `Q`, `s*Q`, compute `s*pk_ID*Q`
+- Attacker with $MPK$ and Cell ID cannot compute $sk_{ID}$
+- Requires solving CDH: given $Q$, $s \cdot Q$, compute $s \cdot pk_{ID} \cdot Q$
 
 **Rogue Key Attack:**
 - Not applicable: gNB doesn't choose its own key
@@ -230,26 +242,26 @@ Uses **blst** (Supranational) for BLS12-381 operations:
 - `blst_hash_to_g1`: Hash-to-curve for messages
 - `blst_sign_pk_in_g2`: BLS signing
 - `blst_core_verify_pk_in_g2`: BLS verification
-- `blst_p2_mult`: G2 scalar multiplication (for pk_ID * MPK)
+- `blst_p2_mult`: $G_2$ scalar multiplication (for $pk_{ID} \cdot MPK$)
 
 ### 8.2 Performance
 
 | Operation | Approximate Time |
 |-----------|-----------------|
-| H_s (hash to scalar) | ~50 μs |
+| $H_s$ (hash to scalar) | ~50 μs |
 | Sign | ~500 μs |
 | Verify (IBS) | ~2 ms |
 
-Note: IBS verification includes one extra G2 scalar multiplication compared to standard BLS.
+Note: IBS verification includes one extra $G_2$ scalar multiplication compared to standard BLS.
 
 ### 8.3 Key Sizes
 
 | Key | Size | Encoding |
 |-----|------|----------|
-| Master secret (s) | 32 bytes | Scalar, big-endian |
-| Master public (MPK) | 96 bytes | G2 compressed |
-| gNB secret (sk_ID) | 32 bytes | Scalar, big-endian |
-| Signature (Σ) | 48 bytes | G1 compressed |
+| Master secret ($s$) | 32 bytes | Scalar, big-endian |
+| Master public ($MPK$) | 96 bytes | $G_2$ compressed |
+| gNB secret ($sk_{ID}$) | 32 bytes | Scalar, big-endian |
+| Signature ($\Sigma$) | 48 bytes | $G_1$ compressed |
 
 ## 9. References
 
