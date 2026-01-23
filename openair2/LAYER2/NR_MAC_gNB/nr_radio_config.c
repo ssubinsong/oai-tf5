@@ -4492,17 +4492,20 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
     sib1->lateNonCriticalExtension = calloc(1, sizeof(OCTET_STRING_t));
     AssertFatal(sib1->lateNonCriticalExtension != NULL,
                 "TESLA: Failed to allocate lateNonCriticalExtension\n");
-  } else {
-    // Free existing buffer
-    if (sib1->lateNonCriticalExtension->buf) {
-      free(sib1->lateNonCriticalExtension->buf);
-    }
   }
 
-  // Allocate and copy extension data
-  sib1->lateNonCriticalExtension->buf = malloc(ext_len);
-  AssertFatal(sib1->lateNonCriticalExtension->buf != NULL,
-              "TESLA: Failed to allocate extension buffer\n");
+  // Ensure extension buffer is allocated and large enough
+  if (sib1->lateNonCriticalExtension->buf == NULL
+      || sib1->lateNonCriticalExtension->size < (size_t)ext_len) {
+    if (sib1->lateNonCriticalExtension->buf != NULL) {
+      free(sib1->lateNonCriticalExtension->buf);
+    }
+    sib1->lateNonCriticalExtension->buf = malloc(ext_len);
+    AssertFatal(sib1->lateNonCriticalExtension->buf != NULL,
+                "TESLA: Failed to allocate extension buffer\n");
+  }
+
+  // Copy extension data
   memcpy(sib1->lateNonCriticalExtension->buf, ext_buf, ext_len);
   sib1->lateNonCriticalExtension->size = ext_len;
 
