@@ -13,7 +13,7 @@
 #ifdef TF5_ENABLE_TESLA
 #define CONFIG_HLP_TESLA_PRIVKEY  "TESLA BLS secret key file (raw binary, 32 bytes)\n"
 #define CONFIG_HLP_TESLA_PUBKEY   "TESLA BLS public key file (raw binary, 96 bytes)\n"
-#define CONFIG_HLP_TESLA_CHAINLEN "TESLA key chain length (default: 65536, approx. 21.8 minutes with 20ms T_int)\n"
+#define CONFIG_HLP_TESLA_CHAINLEN "TESLA key chain length (default: 65536, approx. 21.8 min with T_int=20ms, 36.4 min with SSB period)\n"
 #define TF5_DEFAULT_PRIVKEY_PATH  "./tesla_keys/gnb_tesla_privkey.bin"
 #define TF5_DEFAULT_PUBKEY_PATH   "./tesla_keys/gnb_tesla_pubkey.bin"
 #define TF5_DEFAULT_CHAIN_LEN     65536

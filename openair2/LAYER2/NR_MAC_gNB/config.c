@@ -1301,7 +1301,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
 
   // Use configurable chain length (set via --tesla-chain-len command-line parameter)
   // Default: 65536 keys (~21.8 min with T_int=20ms, ~36.4 min with T_int=SSB period)
-  uint32_t chain_len = tesla_chain_len;
+  uint32_t chain_len = (uint32_t)tesla_chain_len;
 
   LOG_I(NR_MAC, "TESLA: T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
   LOG_I(NR_MAC, "TESLA: T_0=(SFN=%u, slot=%u) (first SIB1 TX occasion)\n", t0_sfn, t0_slot);
