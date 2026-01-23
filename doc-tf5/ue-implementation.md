@@ -290,6 +290,86 @@ and the buffered SIB1 MAC verification is rejected. This prevents use of forged 
 
 ---
 
+## Key Recovery for Lost Disclosures
+
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_ue_verify_with_key_recovery()`
+
+Per RFC 4082 Section 3.5:
+> "Using a disclosed key, we can calculate all previous disclosed keys, so even if packets are lost, we will still be able to verify buffered, safe packets from earlier time intervals."
+
+### Problem Scenario
+
+When a SIB1 containing a key disclosure is lost, buffered SIB1s from earlier intervals cannot be verified without key recovery:
+
+```
+Interval 5: SIB1 buffered (needs K_5 for MAC verification)
+Interval 6: SIB1 LOST (would have disclosed K_5)
+Interval 7: SIB1 received, discloses K_6
+```
+
+Without key recovery, the SIB1 from interval 5 would never be verified.
+
+### Recovery Algorithm
+
+Using the one-way chain property `K_i = F(K_{i+1})`, the UE can derive missing keys:
+
+1. Receive disclosed key K_{disclosed_interval}
+2. Find all buffered intervals requiring verification
+3. Derive intermediate keys: `K_{disclosed} → K_{disclosed-1} → ... → K_{earliest}`
+4. Verify all buffered entries using the derived keys
+5. Update anchor to disclosed_interval
+
+### Example (d=1, Lost SIB1)
+
+```
+Interval 5: SIB1 buffered (needs K_5)
+Interval 6: SIB1 LOST
+Interval 7: SIB1 received, discloses K_6
+
+Key Recovery:
+  1. Verify K_6 chains to anchor (one-time check)
+  2. Derive K_5 = F(K_6)
+  3. Verify interval 5 entry with derived K_5
+  4. Update anchor to K_6
+```
+
+### Implementation
+
+```c
+int tf5_tesla_ue_verify_with_key_recovery(state, disclosed_key, disclosed_interval, ...) {
+    // Step 1: Find range of buffered intervals
+    uint32_t earliest_buffered = find_earliest_buffered(state);
+    uint32_t verify_start = MAX(earliest_buffered, last_verified_idx + 1);
+    uint32_t verify_end = MIN(latest_buffered, disclosed_interval);
+
+    // Step 2: Verify disclosed key chains to anchor (once)
+    if (!tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval))
+        return -6;  // Key chain failed
+
+    // Step 3: Derive all keys from disclosed_interval down to verify_start
+    key_cache[disclosed_interval] = disclosed_key;
+    for (i = disclosed_interval - 1; i >= verify_start; i--)
+        key_cache[i] = F(key_cache[i + 1]);  // tf5_tesla_chain_key()
+
+    // Step 4: Verify all buffered entries
+    for each buffered entry in [verify_start, verify_end]:
+        verify_mac(entry, key_cache[entry.interval_index]);
+
+    // Step 5: Update anchor
+    state->last_verified_key = disclosed_key;
+    state->last_verified_key_idx = disclosed_interval;
+}
+```
+
+### Complexity
+
+- **Time**: O(d + buffer_size) where d = gap between earliest buffered and disclosed interval
+- **Space**: O(buffer_size) for key cache (stack allocated, bounded by `TF5_TESLA_BUFFER_QUEUE_SIZE`)
+
+In practice with `d=1` and `buffer_size=4`, this is at most 5-6 key derivations per verification.
+
+---
+
 ## Security Summary
 
 | Scenario | SUCI Protected? | Connection Aborted? |

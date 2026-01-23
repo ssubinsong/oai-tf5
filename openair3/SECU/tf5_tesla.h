@@ -595,6 +595,36 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
                                    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
                                    uint32_t key_index);
 
+/**
+ * Verify buffered SIB1s with key recovery for lost disclosures
+ *
+ * Per RFC 4082 Section 3.5: "Using a disclosed key, we can calculate all
+ * previous disclosed keys, so even if packets are lost, we will still be
+ * able to verify buffered, safe packets from earlier time intervals."
+ *
+ * This function derives intermediate keys from disclosed_key down to the
+ * earliest buffered interval and verifies all pending entries.
+ *
+ * @param state              Pointer to UE TESLA state structure
+ * @param disclosed_key      Disclosed key K_{disclosed_interval}
+ * @param disclosed_interval Interval index of disclosed key
+ * @param total_verified     Output: total successfully verified entries
+ * @param total_failed       Output: total failed verifications
+ * @param rrc_trigger_verified Output: true if RRC-triggering entry verified
+ * @return 0 if at least one verified, negative on error:
+ *         -1: Invalid parameters
+ *         -2: No buffered entries to verify
+ *         -5: All entries failed verification
+ *         -6: Key chain verification failed
+ */
+int tf5_tesla_ue_verify_with_key_recovery(
+    tf5_tesla_ue_state_t *state,
+    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
+    uint32_t disclosed_interval,
+    int *total_verified,
+    int *total_failed,
+    bool *rrc_trigger_verified);
+
 /*
  * =============================================================================
  * File I/O Functions

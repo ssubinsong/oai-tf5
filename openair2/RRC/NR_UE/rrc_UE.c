@@ -713,23 +713,25 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                       should_trigger_rrc);
 
             /* Step 3 (RFC 4082): Check if disclosed key available for PREVIOUSLY buffered SIB1(s)
-             * Per RFC 4082 Section 3.5 Step 4: verify ALL buffered packets for disclosed interval */
+             * Per RFC 4082 Section 3.5: "Using a disclosed key, we can calculate all previous
+             * disclosed keys, so even if packets are lost, we will still be able to verify
+             * buffered, safe packets from earlier time intervals." */
             if (SI_info->tesla_state->buffer_queue_count > 0 &&
                 ext.interval_index > SI_info->tesla_state->static_params.disclosure_delay) {
               uint32_t disclosed_interval = ext.interval_index - SI_info->tesla_state->static_params.disclosure_delay;
 
               int verified_count = 0, failed_count = 0;
               bool rrc_trigger_verified = false;
-              int verify_rc = tf5_tesla_ue_verify_all_buffered(SI_info->tesla_state,
-                                                                ext.disclosed_key,
-                                                                disclosed_interval,
-                                                                &verified_count,
-                                                                &failed_count,
-                                                                &rrc_trigger_verified);
+              int verify_rc = tf5_tesla_ue_verify_with_key_recovery(SI_info->tesla_state,
+                                                                     ext.disclosed_key,
+                                                                     disclosed_interval,
+                                                                     &verified_count,
+                                                                     &failed_count,
+                                                                     &rrc_trigger_verified);
 
               if (verify_rc == 0 && verified_count > 0) {
-                LOG_I(NR_RRC, "TESLA: Returning UE - %d SIB1(s) MAC verified (interval %u)\n",
-                      verified_count, disclosed_interval);
+                LOG_I(NR_RRC, "TESLA: Returning UE - %d SIB1(s) MAC verified (with key recovery)\n",
+                      verified_count);
 
                 /* Only set sib1_authenticated if the RRC-triggering SIB1 was verified */
                 if (rrc_trigger_verified) {
