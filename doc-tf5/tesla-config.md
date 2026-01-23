@@ -62,6 +62,26 @@ Assertion (k2 >= GET_DURATION_RX_TO_TX(get_UE_ul_slot_offset(nrUE_config))) fail
 
 Setting `min_rxtxtime = 6` in the config eliminates the need to pass `--gNBs.[0].min_rxtxtime 6` on the command line.
 
+### 3. SIB1 Time Domain Allocation
+
+| Parameter | Original | TESLA | Rationale |
+|-----------|----------|-------|-----------|
+| `sib1_tda` | 1 (default) | 5 | Avoids SSB symbol overlap |
+
+**Why this matters**:
+
+SSB occupies symbols 2-5 in the SIB1 slot. The default TDA (index 1) places SIB1 PDSCH in symbols 2-11, causing time-domain overlap with SSB. During this overlap, SSB's 20 RBs are unavailable in the vrb_map, leaving only 14 contiguous RBs on each side of SSB - insufficient for the 234-byte TESLA SIB1.
+
+TDA index 5 places SIB1 PDSCH in symbols 9-12, completely avoiding SSB overlap:
+- Symbols 9-12: 4 OFDM symbols for PDSCH
+- All 48 RBs available (no SSB conflict)
+- Capacity: ~500+ bytes (sufficient for 234-byte TESLA SIB1)
+
+Without this parameter, the gNB fails with:
+```
+Couldn't allocate enough resources for 234 bytes in SIB PDSCH (rbStart 0, rbSize 14, bwpSize 48)
+```
+
 ---
 
 ## Complete Parameter Reference
@@ -120,12 +140,14 @@ To create a TESLA-compatible config for a different band or bandwidth:
 If you see this error with the TESLA config:
 
 ```
-Couldn't allocate enough resources for X bytes in SIB PDSCH
+Couldn't allocate enough resources for X bytes in SIB PDSCH (rbStart 0, rbSize 14, bwpSize 48)
 ```
 
-The CORESET0 configuration still doesn't provide enough resources. Try:
-1. A different CORESET0 index with fewer symbols
-2. A configuration with larger carrier bandwidth
-3. Verify the config file is being loaded correctly (check gNB startup logs)
+This typically indicates time-domain overlap between SIB1 PDSCH and SSB. The fix is to add `sib1_tda = 5` to the config file, which places SIB1 PDSCH in symbols 9-12 (avoiding SSB's symbols 2-5).
+
+If the error persists after adding `sib1_tda`:
+1. Try alternative TDA values: `sib1_tda = 7` (symbols 5-11) or `sib1_tda = 15` (symbols 8-11)
+2. Verify the config file is being loaded correctly (check gNB startup logs for parameter values)
+3. Try a different CORESET0 index (10, 11, or 12 all provide 48 RBs)
 
 See [Troubleshooting](troubleshooting.md) for more details.
