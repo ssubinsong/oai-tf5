@@ -8,13 +8,11 @@
 #define DEFAULT_DLF 2680000000
 
 /***************************************************************************************************************************************/
-/* TESLA key management defaults                                                                                                        */
+/* TESLA key parameters (no defaults - must be explicitly provided)                                                                     */
 /***************************************************************************************************************************************/
 #ifdef TF5_ENABLE_TESLA
-#define CONFIG_HLP_TESLA_PRIVKEY  "TESLA BLS secret key file (raw binary, 32 bytes)\n"
-#define CONFIG_HLP_TESLA_PUBKEY   "TESLA BLS public key file (raw binary, 96 bytes)\n"
-#define TF5_DEFAULT_PRIVKEY_PATH  "./tesla_keys/gnb_tesla_privkey.bin"
-#define TF5_DEFAULT_PUBKEY_PATH   "./tesla_keys/gnb_tesla_pubkey.bin"
+#define CONFIG_HLP_TESLA_PRIVKEY  "TESLA BLS secret key file (raw binary, 32 bytes). REQUIRED.\n"
+#define CONFIG_HLP_TESLA_PUBKEY   "TESLA BLS public key file (raw binary, 96 bytes). REQUIRED.\n"
 #endif
 
 /***************************************************************************************************************************************/
@@ -28,8 +26,8 @@
 // clang-format off
 #ifdef TF5_ENABLE_TESLA
 #define CMDLINE_TESLA_PARAMS_GNB \
-  {"tesla-privkey",         CONFIG_HLP_TESLA_PRIVKEY,  0,                .strptr=&tesla_privkey_file,         .defstrval=TF5_DEFAULT_PRIVKEY_PATH, TYPE_STRING, 0},     \
-  {"tesla-pubkey",          CONFIG_HLP_TESLA_PUBKEY,   0,                .strptr=&tesla_pubkey_file,          .defstrval=TF5_DEFAULT_PUBKEY_PATH,  TYPE_STRING, 0},
+  {"tesla-privkey",         CONFIG_HLP_TESLA_PRIVKEY,  0,                .strptr=&tesla_privkey_file,         .defstrval=NULL, TYPE_STRING, 0},     \
+  {"tesla-pubkey",          CONFIG_HLP_TESLA_PUBKEY,   0,                .strptr=&tesla_pubkey_file,          .defstrval=NULL,  TYPE_STRING, 0},
 #else
 #define CMDLINE_TESLA_PARAMS_GNB
 #endif

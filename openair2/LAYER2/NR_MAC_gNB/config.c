@@ -51,7 +51,6 @@
 #ifdef TF5_ENABLE_TESLA
 #include "openair3/SECU/tf5_tesla.h"
 #include "openair3/SECU/tf5_tesla_sig.h"
-#include "executables/nr-softmodem.h"  // For TF5_DEFAULT_*_PATH
 #endif
 #include "common/ran_context.h"
 #include "common/utils/T/T.h"
@@ -1254,24 +1253,16 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   uint8_t public_key[TF5_TESLA_PUBKEY_LEN];
   int rc;
 
-  // Resolve key paths: use runtime resolution if using defaults
-  char resolved_privkey_path[512];
-  char resolved_pubkey_path[512];
-  const char *privkey_path = tesla_privkey_file;
-  const char *pubkey_path = tesla_pubkey_file;
-
-  // If using default paths, resolve via environment variables (TF5_TESLA_KEYDIR, OPENAIR_DIR)
-  if (strcmp(tesla_privkey_file, TF5_DEFAULT_PRIVKEY_PATH) == 0) {
-    if (tf5_tesla_get_default_keypath(resolved_privkey_path, sizeof(resolved_privkey_path),
-                                       "gnb_tesla_privkey.bin") == 0) {
-      privkey_path = resolved_privkey_path;
-    }
+  // Check that key paths are provided (no defaults - must be explicit)
+  if (tesla_privkey_file == NULL || tesla_privkey_file[0] == '\0') {
+    LOG_E(NR_MAC, "TESLA: --tesla-privkey is required. Specify path to BLS secret key file.\n");
+    LOG_E(NR_MAC, "TESLA: Generate keys with: ./scripts/tf5_generate_bls_keys.sh\n");
+    goto tesla_disabled;
   }
-  if (strcmp(tesla_pubkey_file, TF5_DEFAULT_PUBKEY_PATH) == 0) {
-    if (tf5_tesla_get_default_keypath(resolved_pubkey_path, sizeof(resolved_pubkey_path),
-                                       "gnb_tesla_pubkey.bin") == 0) {
-      pubkey_path = resolved_pubkey_path;
-    }
+  if (tesla_pubkey_file == NULL || tesla_pubkey_file[0] == '\0') {
+    LOG_E(NR_MAC, "TESLA: --tesla-pubkey is required. Specify path to BLS public key file.\n");
+    LOG_E(NR_MAC, "TESLA: Generate keys with: ./scripts/tf5_generate_bls_keys.sh\n");
+    goto tesla_disabled;
   }
 
   // Initialize BLS library
@@ -1282,24 +1273,24 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   }
 
   // Load secret key
-  rc = tf5_tesla_load_privkey(privkey_path, private_key);
+  rc = tf5_tesla_load_privkey(tesla_privkey_file, private_key);
   if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to load secret key from %s (rc=%d)\n", privkey_path, rc);
+    LOG_E(NR_MAC, "TESLA: Failed to load secret key from %s (rc=%d)\n", tesla_privkey_file, rc);
     LOG_E(NR_MAC, "TESLA: Run ./scripts/tf5_generate_bls_keys.sh to generate keys\n");
     goto tesla_disabled;
   }
 
   // Load public key
-  rc = tf5_tesla_load_pubkey(pubkey_path, public_key);
+  rc = tf5_tesla_load_pubkey(tesla_pubkey_file, public_key);
   if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to load public key from %s (rc=%d)\n", pubkey_path, rc);
+    LOG_E(NR_MAC, "TESLA: Failed to load public key from %s (rc=%d)\n", tesla_pubkey_file, rc);
     LOG_E(NR_MAC, "TESLA: Run ./scripts/tf5_generate_bls_keys.sh to generate keys\n");
     goto tesla_disabled;
   }
 
   LOG_I(NR_MAC, "TESLA: Loaded BLS key pair from files:\n");
-  LOG_I(NR_MAC, "TESLA:   Secret key: %s\n", privkey_path);
-  LOG_I(NR_MAC, "TESLA:   Public key: %s\n", pubkey_path);
+  LOG_I(NR_MAC, "TESLA:   Secret key: %s\n", tesla_privkey_file);
+  LOG_I(NR_MAC, "TESLA:   Public key: %s\n", tesla_pubkey_file);
 
   // Log public key for verification (first 32 bytes in hex)
   {

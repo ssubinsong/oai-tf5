@@ -4,17 +4,12 @@
 # Usage: ./tf5_generate_bls_keys.sh [output_dir]
 #
 # Default output_dir is ${PROJECT_ROOT}/tesla_keys/ to persist across build cleans.
-# Can also be set via TF5_TESLA_KEYDIR environment variable.
 #
 # Generates:
 #   - gnb_tesla_privkey.bin  (BLS secret key, 32 bytes raw binary)
 #   - gnb_tesla_pubkey.bin   (BLS public key, 96 bytes raw binary)
 #
-# The generated files can be used directly with the OAI gNB and UE:
-#   gNB: ./nr-softmodem -O gnb.conf
-#   UE:  ./nr-uesoftmodem -O ue.conf
-#
-# Or with custom paths:
+# Key paths MUST be specified explicitly when running gNB and UE:
 #   gNB: --tesla-privkey <path> --tesla-pubkey <path>
 #   UE:  --tesla-gnb-pubkey <path>
 
@@ -91,19 +86,7 @@ echo " Usage"
 echo "=========================================="
 echo ""
 echo "Keys are stored in project root and persist across build cleans."
-echo ""
-echo "Option 1: Source oaienv (sets OPENAIR_DIR, keys auto-discovered):"
-echo ""
-echo "  source oaienv"
-echo "  cd cmake_targets/ran_build/build"
-echo "  ./nr-softmodem -O gnb.conf"
-echo ""
-echo "Option 2: Set TF5_TESLA_KEYDIR explicitly:"
-echo ""
-echo "  export TF5_TESLA_KEYDIR=${OUTPUT_DIR}"
-echo "  ./nr-softmodem -O gnb.conf"
-echo ""
-echo "Option 3: Override with custom paths:"
+echo "Key paths MUST be specified explicitly on the command line."
 echo ""
 echo "  gNB: ./nr-softmodem -O gnb.conf \\"
 echo "         --tesla-privkey ${PRIVKEY} \\"

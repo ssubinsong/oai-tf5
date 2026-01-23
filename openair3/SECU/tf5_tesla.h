@@ -657,30 +657,6 @@ int tf5_tesla_load_privkey(const char *filepath,
 int tf5_tesla_load_pubkey(const char *filepath,
                           uint8_t pubkey_out[TF5_TESLA_PUBKEY_LEN]);
 
-/**
- * Get the default TESLA key directory path.
- *
- * Resolution order:
- * 1. Environment variable TF5_TESLA_KEYDIR if set
- * 2. $OPENAIR_DIR/tesla_keys/ if OPENAIR_DIR is set
- * 3. ./tesla_keys/ as fallback (backwards compatibility)
- *
- * @param buf      Output buffer for the path
- * @param bufsize  Size of the output buffer
- * @return         0 on success, -1 on error (buffer too small)
- */
-int tf5_tesla_get_default_keydir(char *buf, size_t bufsize);
-
-/**
- * Build a default key file path.
- *
- * @param buf       Output buffer for the full path
- * @param bufsize   Size of the output buffer
- * @param filename  Key filename (e.g., "gnb_tesla_privkey.bin")
- * @return          0 on success, -1 on error (buffer too small)
- */
-int tf5_tesla_get_default_keypath(char *buf, size_t bufsize, const char *filename);
-
 /*
  * =============================================================================
  * Utility Functions

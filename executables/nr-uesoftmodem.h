@@ -28,8 +28,7 @@ extern uint16_t ue_id_g;
 #define  CONFIG_HLP_EXTRA_PDU_ID           "ID of an additional PDU session to configure alongside default PDU session\n"
 
 #ifdef TF5_ENABLE_TESLA
-#define  CONFIG_HLP_TESLA_GNB_PUBKEY       "TESLA gNB BLS public key file (96-byte raw binary)\n"
-#define  TF5_DEFAULT_GNB_PUBKEY_PATH       "./tesla_keys/gnb_tesla_pubkey.bin"
+#define  CONFIG_HLP_TESLA_GNB_PUBKEY       "TESLA gNB BLS public key file (96-byte raw binary). REQUIRED.\n"
 #endif
 
 /***************************************************************************************************************************************/
@@ -94,7 +93,7 @@ extern uint16_t ue_id_g;
 
 #ifdef TF5_ENABLE_TESLA
 #define CMDLINE_TESLA_PARAMS_UE \
-  {"tesla-gnb-pubkey",             CONFIG_HLP_TESLA_GNB_PUBKEY, 0,              .strptr=&nrUE_params.tesla_gnb_pubkey_file,  .defstrval=TF5_DEFAULT_GNB_PUBKEY_PATH, TYPE_STRING, 0},
+  {"tesla-gnb-pubkey",             CONFIG_HLP_TESLA_GNB_PUBKEY, 0,              .strptr=&nrUE_params.tesla_gnb_pubkey_file,  .defstrval=NULL, TYPE_STRING, 0},
 #else
 #define CMDLINE_TESLA_PARAMS_UE
 #endif
