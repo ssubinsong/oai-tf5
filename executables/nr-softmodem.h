@@ -29,7 +29,7 @@
 #ifdef TF5_ENABLE_TESLA
 #define CMDLINE_TESLA_PARAMS_GNB \
   {"tesla-privkey",         CONFIG_HLP_TESLA_PRIVKEY,  0,                .strptr=&tesla_privkey_file,         .defstrval=NULL, TYPE_STRING, 0},     \
-  {"tesla-pubkey",          CONFIG_HLP_TESLA_PUBKEY,   0,                .strptr=&tesla_pubkey_file,          .defstrval=NULL,  TYPE_STRING, 0},
+  {"tesla-pubkey",          CONFIG_HLP_TESLA_PUBKEY,   0,                .strptr=&tesla_pubkey_file,          .defstrval=NULL,  TYPE_STRING, 0},     \
   {"tesla-chain-len",       CONFIG_HLP_TESLA_CHAINLEN, 0,                .uptr=&tesla_chain_len,              .defuintval=TF5_DEFAULT_CHAIN_LEN,   TYPE_UINT,   0},
 #else
 #define CMDLINE_TESLA_PARAMS_GNB

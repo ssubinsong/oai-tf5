@@ -96,3 +96,6 @@ dkms.conf
 *.dwo
 
 tesla_keys/
+
+# Beyond Compare files
+*.orig
