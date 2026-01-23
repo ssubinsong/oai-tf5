@@ -29,5 +29,7 @@
 
 void sha_256_hmac(const uint8_t key[32], byte_array_t data, size_t len, uint8_t out[len]);
 
+void sha_256(byte_array_t data, uint8_t out[32]);
+
 #endif
 

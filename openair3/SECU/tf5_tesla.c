@@ -58,29 +58,28 @@ _Static_assert(sizeof(tf5_tesla_timesync_info_t) == 4, "timesync_info_t must be 
 void tf5_tesla_derive_mac_key(const uint8_t key_in[TF5_TESLA_KEY_LEN],
                               uint8_t mac_key_out[32])
 {
-    // K'_i = F'(K_i) = HMAC-SHA256(K_i_padded, 0x01)
-    // Pad 16-byte key to 32 bytes for sha_256_hmac
-    uint8_t padded_key[32] = {0};
-    memcpy(padded_key, key_in, TF5_TESLA_KEY_LEN);
+    // K'_i = F'(K_i) = SHA-256(0x01 || K_i)
+    // Per RFC 4082 Section 3.4: use constant 0x01 for MAC key derivation
+    uint8_t input[1 + TF5_TESLA_KEY_LEN];
+    input[0] = 0x01;  // Domain separation prefix
+    memcpy(input + 1, key_in, TF5_TESLA_KEY_LEN);
 
-    uint8_t input[1] = {0x01};
-    byte_array_t data = {.buf = input, .len = 1};
-
-    sha_256_hmac(padded_key, data, 32, mac_key_out);
+    byte_array_t data = {.buf = input, .len = sizeof(input)};
+    sha_256(data, mac_key_out);
 }
 
 void tf5_tesla_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
                          uint8_t key_out[TF5_TESLA_KEY_LEN])
 {
-    // K_i = F(K_{i+1}) = HMAC-SHA256(K_{i+1}_padded, 0x00)[0:15]
-    uint8_t padded_key[32] = {0};
-    memcpy(padded_key, key_next, TF5_TESLA_KEY_LEN);
+    // K_i = F(K_{i+1}) = SHA-256(0x00 || K_{i+1})[0:15]
+    // Per RFC 4082 Section 3.2: use constant 0x00 for key chain derivation
+    uint8_t input[1 + TF5_TESLA_KEY_LEN];
+    input[0] = 0x00;  // Domain separation prefix
+    memcpy(input + 1, key_next, TF5_TESLA_KEY_LEN);
 
-    uint8_t input[1] = {0x00};
-    byte_array_t data = {.buf = input, .len = 1};
-
+    byte_array_t data = {.buf = input, .len = sizeof(input)};
     uint8_t full_hash[32];
-    sha_256_hmac(padded_key, data, 32, full_hash);
+    sha_256(data, full_hash);
 
     // Truncate to 16 bytes
     memcpy(key_out, full_hash, TF5_TESLA_KEY_LEN);

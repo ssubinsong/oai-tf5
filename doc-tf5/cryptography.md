@@ -10,8 +10,8 @@
 
 | Primitive | Algorithm | Key/Output Size |
 |-----------|-----------|-----------------|
-| Key chain derivation | HMAC-SHA256(K, 0x00) | 128 bits (truncated) |
-| MAC key derivation | HMAC-SHA256(K, 0x01) | 256 bits |
+| Key chain derivation | SHA-256(0x00 \|\| K) | 128 bits (truncated) |
+| MAC key derivation | SHA-256(0x01 \|\| K) | 256 bits |
 | TESLA tag | HMAC-SHA256(K', data) | 128 bits (truncated) |
 | Signature | BLS12-381 (non-ETH mode) | 384 bits (48 bytes) |
 
@@ -76,20 +76,24 @@ int tf5_tesla_bls_verify(const uint8_t public_key[96],
 
 ## Key Chain Function (F)
 
-**Source**: [tf5_tesla.c:62](../openair3/SECU/tf5_tesla.c#L62) `tf5_tesla_chain_key()`
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_chain_key()`
 
 Derives the previous key in the chain:
 ```c
-K_i = F(K_{i+1}) = HMAC-SHA256(K_{i+1}, 0x00)[0:15]
+K_i = F(K_{i+1}) = SHA-256(0x00 || K_{i+1})[0:15]
 ```
+
+Per RFC 4082 Section 3.2: uses constant 0x00 for domain separation.
 
 Implementation:
 ```c
 void tf5_tesla_chain_key(const uint8_t key_next[16], uint8_t key_out[16]) {
-    uint8_t hmac_out[32];
-    uint8_t constant = 0x00;
-    HMAC(EVP_sha256(), key_next, 16, &constant, 1, hmac_out, NULL);
-    memcpy(key_out, hmac_out, 16);  // Truncate to 128 bits
+    uint8_t input[1 + 16];
+    input[0] = 0x00;  // Domain separation prefix
+    memcpy(input + 1, key_next, 16);
+    uint8_t hash_out[32];
+    SHA256(input, sizeof(input), hash_out);
+    memcpy(key_out, hash_out, 16);  // Truncate to 128 bits
 }
 ```
 
@@ -97,14 +101,17 @@ void tf5_tesla_chain_key(const uint8_t key_next[16], uint8_t key_out[16]) {
 
 ## MAC Key Derivation (F')
 
-**Source**: [tf5_tesla.c:48](../openair3/SECU/tf5_tesla.c#L48) `tf5_tesla_derive_mac_key()`
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_derive_mac_key()`
 
 Derives the MAC key from a TESLA key:
 ```c
-K'_i = F'(K_i) = HMAC-SHA256(K_i, 0x01)
+K'_i = F'(K_i) = SHA-256(0x01 || K_i)
 ```
 
-This separation ensures that revealing K_i doesn't directly expose the MAC key used.
+Per RFC 4082 Section 3.4: uses constant 0x01 for domain separation.
+
+This separation ensures that F and F' are cryptographically independent functions,
+so revealing K_i doesn't directly expose the MAC key used.
 
 ---
 

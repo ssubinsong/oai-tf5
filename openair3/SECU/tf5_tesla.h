@@ -666,7 +666,9 @@ int tf5_tesla_load_pubkey(const char *filepath,
 /**
  * Derive MAC key from TESLA key
  *
- * K'_i = F'(K_i) = HMAC-SHA256(K_i, 0x01)
+ * K'_i = F'(K_i) = SHA-256(0x01 || K_i)
+ *
+ * Per RFC 4082 Section 3.4: uses constant 0x01 for domain separation
  *
  * @param key_in        Input TESLA key K_i (16 bytes)
  * @param mac_key_out   Output MAC key K'_i (32 bytes)
@@ -677,7 +679,9 @@ void tf5_tesla_derive_mac_key(const uint8_t key_in[TF5_TESLA_KEY_LEN],
 /**
  * Compute next key in backward chain
  *
- * K_i = F(K_{i+1}) = HMAC-SHA256(K_{i+1}, 0x00)[0:15]
+ * K_i = F(K_{i+1}) = SHA-256(0x00 || K_{i+1})[0:15]
+ *
+ * Per RFC 4082 Section 3.2: uses constant 0x00 for domain separation
  *
  * @param key_next      Input key K_{i+1} (16 bytes)
  * @param key_out       Output key K_i (16 bytes)

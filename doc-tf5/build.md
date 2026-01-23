@@ -120,7 +120,7 @@ sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi
 
 | Dependency | Purpose |
 |------------|---------|
-| OpenSSL | HMAC-SHA256 for key chain and MAC computation |
+| OpenSSL | SHA-256 for key derivation, HMAC-SHA256 for MAC computation |
 | blst | BLS12-381 signatures (pk-in-G2 mode) |
 
 The blst library (Supranational) is included as a submodule at `cmake_targets/third_party/blst/`.
