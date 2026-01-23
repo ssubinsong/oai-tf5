@@ -1,0 +1,172 @@
+/*
+ * TF5 IBS - gNB Secret Key Issuance Utility
+ *
+ * Issues a gNB-specific secret key based on its NR Cell ID.
+ * sk_ID = s * H_s(cell_id) mod r
+ *
+ * Usage: tf5_ibs_issue <msk_path> <cell_id_hex> <sk_path>
+ *
+ * Example: tf5_ibs_issue pkg_keys/msk.bin 123456789 gnb_keys/sk_001.bin
+ */
+
+#include "tf5_ibs_pkg.h"
+#include "blst.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+
+/*
+ * Write binary data to file with specified permissions
+ */
+static int write_key_file(const char *path, const uint8_t *data, size_t len, mode_t mode)
+{
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
+    if (fd < 0) {
+        perror("Failed to create output file");
+        return -1;
+    }
+
+    ssize_t n = write(fd, data, len);
+    close(fd);
+
+    if (n != (ssize_t)len) {
+        fprintf(stderr, "Failed to write %zu bytes to %s\n", len, path);
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * Issue gNB secret key and save to file
+ */
+int tf5_ibs_issue_gnb_key(const char *msk_path,
+                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                           const char *sk_path)
+{
+    if (!msk_path || !cell_id || !sk_path) {
+        return -1;
+    }
+
+    uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
+    uint8_t sk_id[TF5_IBS_GNB_SECRET_LEN];
+    int rc;
+
+    /* Load master secret key */
+    rc = tf5_ibs_load_master_secret(msk_path, msk);
+    if (rc != 0) {
+        fprintf(stderr, "Failed to load master secret (error %d)\n", rc);
+        return -2;
+    }
+
+    /* Compute gNB secret key */
+    rc = tf5_ibs_compute_gnb_secret(msk, cell_id, sk_id);
+
+    /* Clear master secret from memory */
+    memset(msk, 0, TF5_IBS_MASTER_SECRET_LEN);
+
+    if (rc != 0) {
+        fprintf(stderr, "Failed to compute gNB secret key (error %d)\n", rc);
+        return -4;
+    }
+
+    /* Write gNB secret key (restricted permissions) */
+    rc = write_key_file(sk_path, sk_id, TF5_IBS_GNB_SECRET_LEN, 0600);
+
+    /* Clear sk_id from memory */
+    memset(sk_id, 0, TF5_IBS_GNB_SECRET_LEN);
+
+    if (rc != 0) {
+        return -5;
+    }
+
+    return 0;
+}
+
+/*
+ * Print usage information
+ */
+static void print_usage(const char *prog)
+{
+    fprintf(stderr, "TF5 IBS - gNB Secret Key Issuance\n\n");
+    fprintf(stderr, "Usage: %s <msk_path> <cell_id_hex> <sk_path>\n\n", prog);
+    fprintf(stderr, "Arguments:\n");
+    fprintf(stderr, "  msk_path     Path to master secret key file\n");
+    fprintf(stderr, "  cell_id_hex  NR Cell ID as 9-character hex string (36 bits)\n");
+    fprintf(stderr, "  sk_path      Path to save gNB secret key (32 bytes)\n\n");
+    fprintf(stderr, "Example:\n");
+    fprintf(stderr, "  %s pkg_keys/msk.bin 123456789 gnb_keys/sk_001.bin\n\n", prog);
+    fprintf(stderr, "Cell ID format:\n");
+    fprintf(stderr, "  The NR Cell ID is a 36-bit value per 3GPP TS 38.331.\n");
+    fprintf(stderr, "  Provide as 9 hex characters (e.g., \"123456789\").\n");
+}
+
+/*
+ * Print computed pk_ID for debugging/verification
+ */
+static void print_pk_id(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN])
+{
+    uint8_t pk_id_bytes[32];
+    tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, pk_id_bytes);
+
+    printf("  pk_ID (H_s(cell_id)): ");
+    for (int i = 0; i < 32; i++) {
+        printf("%02x", pk_id_bytes[i]);
+    }
+    printf("\n");
+
+    memset(pk_id_bytes, 0, 32);
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc != 4) {
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    const char *msk_path = argv[1];
+    const char *cell_id_hex = argv[2];
+    const char *sk_path = argv[3];
+
+    /* Parse Cell ID from hex string */
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
+    int rc = tf5_ibs_parse_cell_id_hex(cell_id_hex, cell_id);
+    if (rc != 0) {
+        fprintf(stderr, "Invalid Cell ID format: \"%s\"\n", cell_id_hex);
+        fprintf(stderr, "Expected 9 hex characters (36 bits), e.g., \"123456789\"\n");
+        return 1;
+    }
+
+    /* Format back for display */
+    char cell_id_str[10];
+    tf5_ibs_format_cell_id_hex(cell_id, cell_id_str);
+
+    printf("Issuing gNB secret key...\n");
+    printf("  Master secret: %s\n", msk_path);
+    printf("  Cell ID: 0x%s (36 bits)\n", cell_id_str);
+    printf("  Output: %s\n", sk_path);
+
+    /* Show pk_ID for verification */
+    print_pk_id(cell_id);
+
+    /* Issue the key */
+    rc = tf5_ibs_issue_gnb_key(msk_path, cell_id, sk_path);
+    if (rc != 0) {
+        fprintf(stderr, "Failed to issue gNB key (error %d)\n", rc);
+        return 1;
+    }
+
+    printf("gNB secret key issued successfully.\n");
+    printf("\n");
+    printf("Next steps:\n");
+    printf("  1. Securely transfer %s to the gNB\n", sk_path);
+    printf("  2. Configure gNB with: --tesla-privkey %s\n", sk_path);
+    printf("  3. Ensure gNB's Cell ID matches 0x%s\n", cell_id_str);
+
+    return 0;
+}
