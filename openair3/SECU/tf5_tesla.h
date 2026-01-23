@@ -71,7 +71,20 @@
 #define TF5_TESLA_VERSION           0x01
 
 // Crypto suite identifiers
-#define TF5_CRYPTO_SUITE_HMAC_SHA256_BLS  0x02
+#define TF5_CRYPTO_SUITE_HMAC_SHA256_IBS  0x03   // IBS-BLS (Identity-Based Signature)
+
+/*
+ * IBS (Identity-Based Signature) Constants
+ *
+ * NR Cell ID is used as the gNB identity for IBS key derivation.
+ * UE derives gNB's verification key from Cell ID and Core's MPK.
+ */
+#define TF5_IBS_CELL_ID_LEN   5    // 36 bits = 5 bytes (per 3GPP TS 38.331)
+#define TF5_IBS_CELL_ID_BITS  36
+
+// Domain Separation Tag for H_s (identity-to-scalar hash)
+#define TF5_IBS_DST_HS        "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"
+#define TF5_IBS_DST_HS_LEN    35
 
 /*
  * =============================================================================
@@ -215,9 +228,9 @@ typedef struct {
     // HFN tracking moved to NR_COMMON_channels_t (cc->hfn)
     // gNB tracks HFN as a core feature, not TESLA-specific
 
-    // BLS keys
-    uint8_t  gnb_private_key[TF5_BLS_SECRET_KEY_LEN];   // 32B - BLS secret key
-    uint8_t  gnb_public_key[TF5_TESLA_PUBKEY_LEN];      // 96B - BLS public key (G2)
+    // IBS keys
+    uint8_t  gnb_private_key[TF5_BLS_SECRET_KEY_LEN];   // 32B - sk_ID (issued by Core PKG)
+    uint8_t  gnb_cell_id[TF5_IBS_CELL_ID_LEN];          // 5B - NR Cell ID (36 bits)
 
     // Slots per frame (depends on numerology)
     uint16_t slots_per_frame;
@@ -234,9 +247,9 @@ typedef struct {
 typedef struct {
     tf5_tesla_static_params_t static_params;
 
-    // Pre-provisioned gNB public key
-    uint8_t  gnb_public_key[TF5_TESLA_PUBKEY_LEN];  // 96B - BLS public key (G2)
-    bool     has_gnb_public_key;     // Is gNB public key configured?
+    // Pre-provisioned Core Master Public Key (IBS mode)
+    uint8_t  mpk[TF5_TESLA_PUBKEY_LEN];  // 96B - Core's MPK = s*Q (G2 point)
+    bool     has_mpk;                     // Is Core MPK configured?
 
     // Verification state
     bool     params_received;         // Have we received static params?
@@ -420,15 +433,15 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
  */
 
 /**
- * Initialize TESLA state on UE
+ * Initialize TESLA state on UE (IBS mode)
  *
  * @param state         Pointer to UE TESLA state structure
- * @param gnb_public_key Pre-provisioned gNB BLS public key (96 bytes)
+ * @param mpk           Pre-provisioned Core Master Public Key (96 bytes)
  * @param slots_per_frame Number of slots per frame
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
-                      const uint8_t gnb_public_key[TF5_TESLA_PUBKEY_LEN],
+                      const uint8_t mpk[TF5_TESLA_PUBKEY_LEN],
                       uint16_t slots_per_frame);
 
 /**
@@ -483,15 +496,20 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
                                tf5_tesla_extension_t *ext);
 
 /**
- * Verify BLS signature
+ * Verify IBS signature
  *
- * @param state         Pointer to UE TESLA state structure
+ * Verifies signature using Identity-Based Signature scheme:
+ *   e(Σ, Q) = e(H_m(auth_input), H_s(cell_id) * MPK)
+ *
+ * @param state         Pointer to UE TESLA state structure (contains MPK)
+ * @param cell_id       gNB's NR Cell ID (5 bytes, 36 bits) from SIB1
  * @param auth_input    Authentication input (SIB1 + static + dynamic)
  * @param auth_input_len Length of auth input
  * @param signature     Signature to verify (48 bytes)
  * @return 0 on success (signature valid), negative on error
  */
 int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
+                                  const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                   const uint8_t *auth_input,
                                   size_t auth_input_len,
                                   const uint8_t signature[TF5_TESLA_SIG_LEN]);

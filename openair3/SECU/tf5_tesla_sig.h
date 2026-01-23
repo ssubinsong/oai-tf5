@@ -97,6 +97,59 @@ int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN],
 int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
                          uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN]);
 
+/*
+ * =============================================================================
+ * IBS (Identity-Based Signature) Functions
+ * =============================================================================
+ */
+
+/* IBS Cell ID size (also defined in tf5_tesla.h) */
+#ifndef TF5_IBS_CELL_ID_LEN
+#define TF5_IBS_CELL_ID_LEN   5    /* 36 bits = 5 bytes */
+#endif
+
+/**
+ * Verify IBS signature
+ *
+ * Verifies a BLS signature using Identity-Based Signature scheme:
+ *   1. Compute pk_ID = H_s(cell_id) (scalar)
+ *   2. Compute derived_pk = pk_ID * MPK (G2 point)
+ *   3. Verify: e(signature, Q) = e(H_m(data), derived_pk)
+ *
+ * @param mpk         Core's Master Public Key (96 bytes, G2 point)
+ * @param cell_id     gNB's NR Cell ID (5 bytes, 36 bits)
+ * @param data        Signed data
+ * @param data_len    Length of data
+ * @param signature   Signature to verify (48 bytes, G1 point)
+ * @return 0 on success (signature valid), negative on error
+ *
+ * Error codes:
+ *   -1: Invalid parameters
+ *   -3: Invalid MPK format
+ *   -4: Invalid signature format
+ *   -5: Signature verification failed
+ */
+int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBLIC_KEY_LEN],
+                          const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                          const uint8_t *data,
+                          size_t data_len,
+                          const uint8_t signature[TF5_BLS_SIGNATURE_LEN]);
+
+/**
+ * Hash Cell ID to scalar (H_s function)
+ *
+ * Implements H_s: {0,1}* -> Z_r for IBS key derivation.
+ * Used by both Core PKG (for key issuance) and UE (for verification).
+ *
+ * @param cell_id       NR Cell ID (5 bytes)
+ * @param cell_id_len   Length of cell_id
+ * @param scalar_out    Output scalar (32 bytes, big-endian)
+ * @return 0 on success, negative on error
+ */
+int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
+                                  size_t cell_id_len,
+                                  uint8_t scalar_out[TF5_BLS_SECRET_KEY_LEN]);
+
 #endif /* TF5_ENABLE_TESLA */
 
 #endif /* TF5_TESLA_SIG_H */

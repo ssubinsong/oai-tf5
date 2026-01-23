@@ -13,63 +13,66 @@
 | Key chain derivation | SHA-256(0x00 \|\| K) | 128 bits (truncated) |
 | MAC key derivation | SHA-256(0x01 \|\| K) | 256 bits |
 | TESLA tag | HMAC-SHA256(K', data) | 128 bits (truncated) |
-| Signature | BLS12-381 (non-ETH mode) | 384 bits (48 bytes) |
+| Signature | BLS12-381 IBS (pk-in-G2) | 384 bits (48 bytes) |
 
 ---
 
-## BLS Signature Scheme
+## Identity-Based Signature (IBS) Scheme
 
 **Source**: [tf5_tesla_sig.c](../openair3/SECU/tf5_tesla_sig.c)
 
+For full IBS documentation, see [ibs-overview.md](ibs-overview.md).
+
 Uses the blst library (Supranational) with BLS12-381 curve in pk-in-G2 mode
-(minimal-signature-size variant):
+for Identity-Based Signatures:
 
 | Component | Size | Group |
 |-----------|------|-------|
-| Secret key | 32 bytes | Scalar (big-endian) |
-| Public key | 96 bytes | G2 point (compressed) |
-| Signature | 48 bytes | G1 point (compressed) |
+| Master secret (s) | 32 bytes | Scalar (big-endian) |
+| Master public key (MPK) | 96 bytes | G2 point (compressed) |
+| gNB secret key (sk_ID) | 32 bytes | Scalar (big-endian) |
+| Signature (Σ) | 48 bytes | G1 point (compressed) |
 
-### Domain Separation Tag
+### IBS Scheme
 
-The implementation uses the following DST for hash-to-curve:
 ```
-BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_
+Sign:   Σ = sk_ID * H_m(message)
+Verify: e(Σ, Q) = e(H_m(message), pk_ID * MPK)
 ```
 
-This follows the IETF BLS signature draft basic scheme.
+Where `pk_ID = H_s(Cell_ID)` is the identity-derived scalar.
+
+### Domain Separation Tags
+
+| Function | DST |
+|----------|-----|
+| H_s (identity to scalar) | `TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1` |
+| H_m (message to G1) | `BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_` |
 
 ### Key File Format
 
 Keys are stored as raw binary files:
-- **Private key**: 32-byte scalar (big-endian)
-- **Public key**: 96-byte compressed G2 point
-
-### Initialization
-
-The blst library requires no initialization (stateless). The init function is kept
-for API compatibility:
-
-```c
-int tf5_tesla_bls_init(void);  // No-op, kept for compatibility
-```
+- **Master secret key (msk)**: 32-byte scalar (big-endian)
+- **Master public key (mpk)**: 96-byte compressed G2 point
+- **gNB secret key (sk_ID)**: 32-byte scalar (big-endian)
 
 ### Sign Operation
 
 ```c
-int tf5_tesla_bls_sign(const uint8_t secret_key[32],
+int tf5_tesla_bls_sign(const uint8_t secret_key[32],  // sk_ID
                        const uint8_t *data,
                        size_t data_len,
                        uint8_t signature[48]);
 ```
 
-### Verify Operation
+### IBS Verify Operation
 
 ```c
-int tf5_tesla_bls_verify(const uint8_t public_key[96],
-                         const uint8_t *data,
-                         size_t data_len,
-                         const uint8_t signature[48]);
+int tf5_tesla_ibs_verify(const uint8_t mpk[96],           // Core's MPK
+                          const uint8_t cell_id[5],        // gNB's Cell ID
+                          const uint8_t *data,
+                          size_t data_len,
+                          const uint8_t signature[48]);
 ```
 
 ---

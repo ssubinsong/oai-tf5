@@ -6,26 +6,26 @@
 
 ## Initialization
 
-**Location**: [rrc_UE.c:1475-1499](../openair2/RRC/NR_UE/rrc_UE.c#L1475-L1499)
+**Location**: [rrc_UE.c:1651-1694](../openair2/RRC/NR_UE/rrc_UE.c#L1651-L1694)
 
 ```c
 // Allocate TESLA state
 SI_info->tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
 
-// Load gNB public key from binary file
+// Load Core's Master Public Key (MPK) for IBS verification
 nrUE_params_t *params = get_nrUE_params();
-uint8_t gnb_pubkey[96];
-int rc = tf5_tesla_load_pubkey(params->tesla_gnb_pubkey_file, gnb_pubkey);
+uint8_t mpk[96];
+int rc = tf5_tesla_load_pubkey(params->tesla_gnb_pubkey_file, mpk);
 if (rc == 0) {
-    tf5_tesla_ue_init(SI_info->tesla_state, gnb_pubkey, slots_per_frame);
+    tf5_tesla_ue_init(SI_info->tesla_state, mpk, slots_per_frame);
 }
 ```
 
 **Command-line parameter**: `--tesla-gnb-pubkey <path>`
-- Default: `./tesla_keys/gnb_tesla_pubkey.bin`
-- Generate with: `./scripts/tf5_generate_bls_keys.sh`
+- Path to Core's Master Public Key (MPK) file (96 bytes)
+- Generate with: `./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin`
 
-**Note**: The gNB BLS keys must be generated using `tf5_generate_bls_keys.sh` and the public key file made available to the UE before starting. The same public key file should be used by UE to match the gNB's private key.
+**Note**: In IBS mode, UEs need only the **Core's Master Public Key (MPK)**, not individual gNB public keys. The same MPK file can verify signatures from any gNB whose key was issued by the Core PKG.
 
 ---
 
@@ -43,7 +43,7 @@ If authentication fails, the RRC connection is aborted before any NAS message is
 
 | UE Type | Has K_0? | Authentication Method | Timing |
 |---------|----------|----------------------|--------|
-| First-time | No | BLS signature | Immediate (fast) |
+| First-time | No | IBS signature | Immediate (fast) |
 | Returning | Yes | TESLA MAC | Delayed (waits for key disclosure) |
 
 ### State Fields for Parallel Authentication
@@ -80,9 +80,9 @@ flowchart TB
     subgraph left["Authentication (Parallel)"]
         AUTH["Start Authentication"]
         AUTH --> CHECK{"k0_trusted?"}
-        CHECK -->|"false<br/>(First-time UE)"| BLS["BLS verify"]
+        CHECK -->|"false<br/>(First-time UE)"| IBS["IBS verify"]
         CHECK -->|"true<br/>(Returning UE)"| TESLA["Wait for TESLA<br/>key disclosure"]
-        BLS --> RESULT
+        IBS --> RESULT
         TESLA --> RESULT
         RESULT{"Result"}
         RESULT -->|SUCCESS| SUCCESS["sib1_auth=true<br/>k0_trusted=true"]
@@ -120,8 +120,11 @@ flowchart TB
    └── tf5_tesla_build_sig_auth_input(sib1, static_params, timesync_info, interval_index, disclosed_key)
        (includes full content for signature verification)
 
-3. Verify BLS signature (synchronous - fast)
-   └── tf5_tesla_ue_verify_signature()
+3. Extract Cell ID from SIB1's cellAccessRelatedInfo
+   └── tf5_extract_cell_id_from_sib1(sib1, cell_id)
+
+4. Verify IBS signature (synchronous - fast)
+   └── tf5_tesla_ibs_verify(mpk, cell_id, auth_input, signature)
    ├── SUCCESS:
    │   └── Accept K_0: k0_trusted = true, sib1_authenticated = true
    │   └── If rrcsetup_deferred: send RRCSetupComplete now

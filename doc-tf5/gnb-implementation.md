@@ -9,29 +9,38 @@
 **Location**: [config.c:1121-1192](../openair2/LAYER2/NR_MAC_gNB/config.c#L1121-L1192)
 
 ```
-1. Load BLS key pair from files
-   ├── tf5_tesla_load_privkey(tesla_privkey_file, private_key)
-   └── tf5_tesla_load_pubkey(tesla_pubkey_file, public_key)
+1. Load IBS secret key (sk_ID) from file
+   └── tf5_tesla_load_privkey(tesla_privkey_file, private_key)
 
-2. Allocate and initialize TESLA state
+2. Extract Cell ID from gNB configuration
+   └── cellID (36 bits) -> gnb_cell_id[5]
+
+3. Allocate and initialize TESLA state
    └── tf5_tesla_gnb_init()
        ├── Generate random seed K_N
        ├── Compute key chain K_{N-1}, ..., K_0
        ├── Store static params (T_int, d, K_0, T_0, N)
+       ├── Store Cell ID for signature binding
        └── Initialize HFN tracking
 
-3. Store original SIB1 (without extension)
+4. Store original SIB1 (without extension)
    └── cc->sib1_original[], cc->sib1_original_length
 
-4. Log loaded key paths and public key
-   └── LOG_I() with file paths and hex-encoded public key
+5. Log loaded key path
+   └── LOG_I() with file path
 ```
 
 **Command-line parameters**:
-- `--tesla-privkey <path>` - Private key file (default: `./tesla_keys/gnb_tesla_privkey.bin`)
-- `--tesla-pubkey <path>` - Public key file (default: `./tesla_keys/gnb_tesla_pubkey.bin`)
+- `--tesla-privkey <path>` - IBS secret key file (sk_ID issued by Core PKG)
 
-**Key generation**: Run `./scripts/tf5_generate_bls_keys.sh` before starting gNB.
+**Key generation**: Use the Core PKG to issue gNB keys:
+```bash
+cd tf5-core-pkg/build
+./tf5_ibs_issue pkg_keys/msk.bin <cell_id_hex> gnb_keys/sk_gnb.bin
+```
+
+**Cell ID binding**: The gNB's secret key is cryptographically bound to its Cell ID.
+The `cellID` in your gNB config must match the Cell ID used during key issuance.
 
 ---
 
@@ -51,7 +60,7 @@ Called from scheduler before each SIB1 transmission:
    └── tf5_tesla_gnb_prepare_extension()
        ├── Set dynamic params (i, ti_sfn, ti_slot, K_{i-d})
        ├── Build auth_input = SIB1 || static || dynamic
-       ├── Sign auth_input with BLS
+       ├── Sign auth_input with IBS (uses sk_ID)
        └── Compute TESLA tag with K_i
 
 3. Pack extension to binary

@@ -214,4 +214,140 @@ int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
     return 0;
 }
 
+/*
+ * =============================================================================
+ * IBS (Identity-Based Signature) Functions
+ * =============================================================================
+ */
+
+/* IBS Domain Separation Tag for H_s (identity-to-scalar hash) */
+static const uint8_t TF5_IBS_DST_HS[] = "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1";
+static const size_t TF5_IBS_DST_HS_LEN = sizeof(TF5_IBS_DST_HS) - 1;
+
+int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
+                                  size_t cell_id_len,
+                                  uint8_t scalar_out[TF5_BLS_SECRET_KEY_LEN])
+{
+    if (!cell_id || !scalar_out || cell_id_len == 0) {
+        return -1;
+    }
+
+    /*
+     * Create expanded IKM by concatenating DST and cell_id.
+     * This ensures IKM >= 32 bytes (40 bytes: 35 DST + 5 cell_id)
+     * which is required for blst_keygen to produce non-zero output.
+     */
+    uint8_t ikm[TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN];
+    memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
+    memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, cell_id_len);
+
+    blst_scalar pk_id;
+
+    /*
+     * blst_keygen performs HKDF-based derivation with proper mod r reduction.
+     * Using empty info since domain separation is embedded in IKM.
+     */
+    blst_keygen(&pk_id, ikm, sizeof(ikm), NULL, 0);
+
+    /* Serialize as big-endian */
+    blst_bendian_from_scalar(scalar_out, &pk_id);
+
+    /* Clear sensitive data */
+    memset(&pk_id, 0, sizeof(pk_id));
+    memset(ikm, 0, sizeof(ikm));
+
+    return 0;
+}
+
+int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBLIC_KEY_LEN],
+                          const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                          const uint8_t *data,
+                          size_t data_len,
+                          const uint8_t signature[TF5_BLS_SIGNATURE_LEN])
+{
+    if (!mpk || !cell_id || !data || !signature || data_len == 0) {
+        return -1;
+    }
+
+    blst_scalar pk_id;
+    blst_p2_affine mpk_affine;
+    blst_p2 derived_pk;
+    blst_p2_affine pk_final;
+    blst_p1_affine sig_affine;
+    uint8_t pk_id_bytes[32];
+    BLST_ERROR err;
+
+    /* Step 1: Compute pk_ID = H_s(cell_id) using expanded IKM */
+    uint8_t ikm[TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN];
+    memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
+    memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, TF5_IBS_CELL_ID_LEN);
+    blst_keygen(&pk_id, ikm, sizeof(ikm), NULL, 0);
+    memset(ikm, 0, sizeof(ikm));
+
+    /* Step 2: Deserialize MPK (Master Public Key) */
+    err = blst_p2_uncompress(&mpk_affine, mpk);
+    if (err != BLST_SUCCESS) {
+        LOG_E(NR_RRC, "TESLA IBS: Failed to deserialize MPK: %d\n", err);
+        memset(&pk_id, 0, sizeof(pk_id));
+        return -3;
+    }
+
+    /* Validate MPK is in G2 */
+    if (!blst_p2_affine_in_g2(&mpk_affine)) {
+        LOG_E(NR_RRC, "TESLA IBS: MPK not in G2\n");
+        memset(&pk_id, 0, sizeof(pk_id));
+        return -3;
+    }
+
+    /* Step 3: Compute derived_pk = pk_ID * MPK */
+    blst_p2_from_affine(&derived_pk, &mpk_affine);
+
+    /* Serialize pk_id as big-endian bytes for scalar multiplication */
+    blst_bendian_from_scalar(pk_id_bytes, &pk_id);
+
+    /* Scalar multiplication: derived_pk = pk_ID * MPK */
+    blst_p2_mult(&derived_pk, &derived_pk, pk_id_bytes, 255);
+
+    /* Clear sensitive pk_id_bytes */
+    memset(pk_id_bytes, 0, sizeof(pk_id_bytes));
+    memset(&pk_id, 0, sizeof(pk_id));
+
+    /* Step 4: Convert to affine for verification */
+    blst_p2_to_affine(&pk_final, &derived_pk);
+
+    /* Check derived key is valid (not point at infinity) */
+    if (blst_p2_affine_is_inf(&pk_final)) {
+        LOG_E(NR_RRC, "TESLA IBS: Derived public key is infinity\n");
+        return -3;
+    }
+
+    /* Step 5: Deserialize signature */
+    err = blst_p1_uncompress(&sig_affine, signature);
+    if (err != BLST_SUCCESS) {
+        LOG_E(NR_RRC, "TESLA IBS: Failed to deserialize signature: %d\n", err);
+        return -4;
+    }
+
+    /* Validate signature is in G1 */
+    if (!blst_p1_affine_in_g1(&sig_affine)) {
+        LOG_E(NR_RRC, "TESLA IBS: Signature not in G1\n");
+        return -4;
+    }
+
+    /* Step 6: Verify e(Σ, Q) = e(H_m(m), pk_ID * MPK) */
+    err = blst_core_verify_pk_in_g2(&pk_final, &sig_affine,
+                                     1,  /* hash_or_encode = true */
+                                     data, data_len,
+                                     TF5_BLS_DST, TF5_BLS_DST_LEN,
+                                     NULL, 0);  /* No augmentation */
+
+    if (err != BLST_SUCCESS) {
+        LOG_W(NR_RRC, "TESLA IBS: Signature verification failed: %d\n", err);
+        return -5;
+    }
+
+    LOG_D(NR_RRC, "TESLA IBS: Signature verified successfully\n");
+    return 0;
+}
+
 #endif /* TF5_ENABLE_TESLA */

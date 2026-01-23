@@ -35,45 +35,70 @@ cd cmake_targets
 
 ---
 
-## Key Management
+## Key Management (IBS Mode)
 
-### Key Persistence
+TF5 uses **Identity-Based Signatures (IBS)** where the 5G Core acts as a Private Key Generator (PKG).
+See [ibs-overview.md](ibs-overview.md) for the full cryptographic specification.
 
-The key generation script stores keys in the **project root** directory (`${PROJECT_ROOT}/tesla_keys/`).
-This ensures keys persist across build directory cleans (`ninja clean`, `make clean`, or build directory deletion).
+### Key Hierarchy
 
-### Generate TESLA Keys
+```
+Core PKG (tf5-core-pkg/)
+    │
+    └──> Master Keypair (one-time generation)
+         ├── msk.bin (32B) - Master Secret Key (SECURE!)
+         └── mpk.bin (96B) - Master Public Key (distribute to UEs)
 
-Before running gNB and UE with TESLA enabled, generate the BLS key pair:
-
-```bash
-./scripts/tf5_generate_bls_keys.sh
+gNB-specific Keys (issued per Cell ID)
+    │
+    └──> sk_gnb.bin (32B) - gNB Secret Key (issued by Core)
 ```
 
-This creates the following files in `${PROJECT_ROOT}/tesla_keys/`:
-- `gnb_tesla_privkey.bin` - BLS secret key (32 bytes raw binary, gNB only)
-- `gnb_tesla_pubkey.bin` - BLS public key (96 bytes raw binary, gNB and UE)
+### Step 1: Build Core PKG
 
-You can also specify a custom output directory:
 ```bash
-./scripts/tf5_generate_bls_keys.sh /path/to/custom/keydir
+cd ../tf5-core-pkg
+mkdir build && cd build
+cmake ..
+make
 ```
 
-The key generation utility (`tf5_bls_keygen`) is automatically built when TESLA is enabled.
+This produces two utilities:
+- `tf5_ibs_pkg_keygen` - Master keypair generation
+- `tf5_ibs_issue` - gNB secret key issuance
+
+### Step 2: Generate Master Keypair (One-time)
+
+```bash
+./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
+```
+
+**Output:**
+- `msk.bin` (32 bytes) - Master secret key. **KEEP SECURE!**
+- `mpk.bin` (96 bytes) - Master public key. Distribute to all UEs.
+
+### Step 3: Issue gNB Secret Key
+
+For each gNB, issue a secret key based on its NR Cell ID (36 bits):
+
+```bash
+# Cell ID 0x123456789 (match your gNB config's cellID)
+./tf5_ibs_issue pkg_keys/msk.bin 123456789 gnb_keys/sk_gnb.bin
+```
 
 ### Key File Format
 
-Keys are stored as raw binary files (no PEM encoding):
-
 | Key Type | Size | Description |
 |----------|------|-------------|
-| Secret key | 32 bytes | Fr element (scalar field) |
-| Public key | 96 bytes | G2 point (compressed) |
+| Master secret (msk) | 32 bytes | Scalar (big-endian) |
+| Master public (mpk) | 96 bytes | G2 point (compressed) |
+| gNB secret (sk_ID) | 32 bytes | Scalar (big-endian) |
 
 Inspect generated keys with:
 ```bash
-xxd tesla_keys/gnb_tesla_privkey.bin  # Should show 32 bytes
-xxd tesla_keys/gnb_tesla_pubkey.bin   # Should show 96 bytes
+xxd pkg_keys/msk.bin   # Should show 32 bytes
+xxd pkg_keys/mpk.bin   # Should show 96 bytes
+xxd gnb_keys/sk_gnb.bin  # Should show 32 bytes
 ```
 
 ### Required Parameters
@@ -82,9 +107,10 @@ Key paths **must** be specified explicitly on the command line (no defaults):
 
 | Component | Parameter | Description |
 |-----------|-----------|-------------|
-| gNB | `--tesla-privkey` | Path to BLS secret key file (REQUIRED) |
-| gNB | `--tesla-pubkey` | Path to BLS public key file (REQUIRED) |
-| UE | `--tesla-gnb-pubkey` | Path to gNB's BLS public key file (REQUIRED) |
+| gNB | `--tesla-privkey` | Path to gNB's secret key (sk_ID) from PKG |
+| UE | `--tesla-gnb-pubkey` | Path to Core's Master Public Key (MPK) |
+
+**Note**: gNB no longer needs `--tesla-pubkey` in IBS mode.
 
 ### Running with TESLA
 
@@ -97,22 +123,25 @@ the SIB1 BWP to 48 PRBs, insufficient for TESLA.
 # From project root
 cd /path/to/oai-tf5
 
-# Generate keys (one-time, stored in project root)
-./scripts/tf5_generate_bls_keys.sh
-
-# Run gNB with explicit key paths
+# Run gNB with IBS secret key
 cd cmake_targets/ran_build/build
 sudo ./nr-softmodem \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
     --rfsim \
-    --tesla-privkey ../../../tesla_keys/gnb_tesla_privkey.bin \
-    --tesla-pubkey ../../../tesla_keys/gnb_tesla_pubkey.bin
+    --tesla-privkey /path/to/gnb_keys/sk_gnb.bin
 
-# Run UE with explicit key path (in another terminal)
+# Run UE with Core's MPK (in another terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi 001010000000001 --rfsim \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.conf \
-    --tesla-gnb-pubkey ../../../tesla_keys/gnb_tesla_pubkey.bin
+    --tesla-gnb-pubkey /path/to/pkg_keys/mpk.bin
 ```
+
+### Cell ID Binding
+
+The gNB's secret key is cryptographically bound to its Cell ID:
+- The `cellID` parameter in your gNB config must match the Cell ID used during key issuance
+- UE extracts Cell ID from SIB1's `cellAccessRelatedInfo` and uses it for verification
+- Mismatch causes verification failure
 
 ---
 
@@ -121,24 +150,23 @@ sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi
 | Dependency | Purpose |
 |------------|---------|
 | OpenSSL | SHA-256 for key derivation, HMAC-SHA256 for MAC computation |
-| blst | BLS12-381 signatures (pk-in-G2 mode) |
+| blst | BLS12-381 IBS signatures (pk-in-G2 mode) |
 
 The blst library (Supranational) is included as a submodule at `cmake_targets/third_party/blst/`.
 
-### Key Migration Note
+### Migration from Legacy BLS Mode
 
-**Key Location Change**: The key generation script now defaults to storing keys in the
-**project root** (`${PROJECT_ROOT}/tesla_keys/`) rather than the current directory.
-This ensures keys persist across build cleans.
+If upgrading from a previous version that used standard BLS signatures:
 
-If you have existing keys in the build directory:
+1. **Regenerate keys** - IBS uses a different key hierarchy (Core PKG issues gNB keys)
+2. **Update UE parameters** - UE now loads Core's MPK instead of gNB public key
+3. **Update gNB parameters** - gNB no longer needs `--tesla-pubkey`
+
 ```bash
-# Move keys to project root (one-time migration)
-mv cmake_targets/ran_build/build/tesla_keys/* tesla_keys/
+# Build Core PKG
+cd tf5-core-pkg && mkdir build && cd build && cmake .. && make
+
+# Generate new IBS keys
+./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
+./tf5_ibs_issue pkg_keys/msk.bin <your_cell_id_hex> gnb_keys/sk_gnb.bin
 ```
-
-**herumi-bls Migration**: If upgrading from a previous version that used herumi-bls,
-existing keys must be regenerated. The blst implementation uses big-endian scalar
-serialization, which is incompatible with herumi-bls's little-endian format.
-
-Run `./scripts/tf5_generate_bls_keys.sh` to generate new keys after upgrading.

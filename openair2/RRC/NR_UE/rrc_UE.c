@@ -490,6 +490,22 @@ static void get_sib19_schedinfo(NR_UE_RRC_SI_INFO *SI_info, NR_SI_SchedulingInfo
 /* Forward declarations for TESLA parallel authentication */
 static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const uint8_t Transaction_id);
 static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index);
+
+/*
+ * Extract NR Cell ID (36 bits) from SIB1's cellAccessRelatedInfo.
+ * Per TS 38.331, cellIdentity is a BIT STRING of 36 bits stored in 5 bytes.
+ * The first PLMN in the list is used for cell identity extraction.
+ */
+static void tf5_extract_cell_id_from_sib1(const NR_SIB1_t *sib1, uint8_t cell_id[TF5_IBS_CELL_ID_LEN])
+{
+    /* Access cellIdentity from first PLMN_IdentityInfo in the list */
+    const NR_PLMN_IdentityInfo_t *plmn_info =
+        sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[0];
+    const BIT_STRING_t *cid = &plmn_info->cellIdentity;
+
+    /* Copy 5 bytes (36 bits + 4 padding bits) directly */
+    memcpy(cell_id, cid->buf, TF5_IBS_CELL_ID_LEN);
+}
 #endif
 
 static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, NR_SIB1_t *sib1, int gNB_index,
@@ -538,10 +554,10 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
         /* Parallel authentication: First-time vs Returning UE */
         if (!SI_info->tesla_state->k0_trusted) {
-          /* === FIRST-TIME UE: Ed25519 signature verification === */
-          AssertFatal(SI_info->tesla_state->has_gnb_public_key,
-                      "TESLA: gNB public key not configured - required for K_0 authentication. "
-                      "Configure it with --tesla-gnb-pubkey or generate keys via ./scripts/tf5_generate_bls_keys.sh");
+          /* === FIRST-TIME UE: IBS signature verification === */
+          AssertFatal(SI_info->tesla_state->has_mpk,
+                      "TESLA IBS: Core MPK not configured - required for K_0 authentication. "
+                      "Configure it with --tesla-gnb-pubkey (path to Core's MPK file).");
 
           /* Validate wall-clock timestamp (fail fast before expensive Ed25519) */
           uint64_t ue_time_ms = tf5_tesla_get_wallclock_ms();
@@ -575,8 +591,13 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                           ext.disclosed_key,
                                           ext.timestamp_ms);
 
+          /* Extract Cell ID from SIB1 for IBS verification */
+          uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
+          tf5_extract_cell_id_from_sib1(sib1, cell_id);
+
           SI_info->tesla_state->auth_in_progress = true;
-          int sig_rc = tf5_tesla_bls_verify(SI_info->tesla_state->gnb_public_key,
+          int sig_rc = tf5_tesla_ibs_verify(SI_info->tesla_state->mpk,
+                                             cell_id,
                                              sig_auth_input, sig_auth_len,
                                              ext.gnb_signature);
           SI_info->tesla_state->auth_in_progress = false;
@@ -596,7 +617,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             SI_info->tesla_state->last_verified_key_idx = disclosed_interval;
             SI_info->tesla_state->last_verified_key_valid = true;
 
-            LOG_I(NR_RRC, "TESLA: First-time UE - K_0 authenticated via BLS, K_%u accepted as anchor (interval %u)\n",
+            LOG_I(NR_RRC, "TESLA IBS: First-time UE - K_0 authenticated, K_%u accepted as anchor (interval %u)\n",
                   disclosed_interval, ext.interval_index);
 
             /* Verify initial time synchronization (essential TESLA assumption per RFC 4082 Section 2.2) */
@@ -637,8 +658,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           /* Check if time sync was previously verified */
           if (!SI_info->tesla_state->timesync_verified) {
             /* Time sync failed during initial verification - stay in signature-only mode */
-            /* Verify BLS signature for each SIB1 instead of using TESLA MAC */
-            LOG_D(NR_RRC, "TESLA: Signature-only mode (time sync not verified) - verifying BLS\n");
+            /* Verify IBS signature for each SIB1 instead of using TESLA MAC */
+            LOG_D(NR_RRC, "TESLA IBS: Signature-only mode (time sync not verified) - verifying IBS\n");
 
             /* Build signature auth input for verification */
             uint8_t sig_auth_input_fallback[TF5_TESLA_MAX_AUTH_INPUT];
@@ -651,14 +672,19 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                             ext.disclosed_key,
                                             ext.timestamp_ms);
 
+            /* Extract Cell ID from SIB1 for IBS verification */
+            uint8_t cell_id_fallback[TF5_IBS_CELL_ID_LEN];
+            tf5_extract_cell_id_from_sib1(sib1, cell_id_fallback);
+
             int sig_rc = tf5_tesla_ue_verify_signature(SI_info->tesla_state,
+                                                       cell_id_fallback,
                                                        sig_auth_input_fallback, sig_auth_len_fallback,
                                                        ext.gnb_signature);
             if (sig_rc == 0) {
               SI_info->tesla_state->sib1_authenticated = true;
-              LOG_I(NR_RRC, "TESLA: Signature-only mode - SIB1 verified via BLS\n");
+              LOG_I(NR_RRC, "TESLA IBS: Signature-only mode - SIB1 verified via IBS\n");
             } else {
-              LOG_E(NR_RRC, "TESLA: Signature-only mode - BLS verification FAILED\n");
+              LOG_E(NR_RRC, "TESLA IBS: Signature-only mode - IBS verification FAILED\n");
               SI_info->tesla_state->auth_failed = true;
               nr_rrc_abort_connection(rrc, gNB_index);
               return;
@@ -1653,37 +1679,38 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
     if (ptr->SInfo.tesla_state) {
       nrUE_params_t *params = get_nrUE_params();
 
-      // Check that key path is provided (no default - must be explicit)
+      // Check that MPK path is provided (no default - must be explicit)
+      // Note: --tesla-gnb-pubkey now contains the Core's Master Public Key (MPK) for IBS mode
       if (params->tesla_gnb_pubkey_file == NULL || params->tesla_gnb_pubkey_file[0] == '\0') {
-        LOG_E(NR_RRC, "TESLA: --tesla-gnb-pubkey is required. Specify path to gNB BLS public key file.\n");
-        LOG_E(NR_RRC, "TESLA: Generate keys with: ./scripts/tf5_generate_bls_keys.sh\n");
+        LOG_E(NR_RRC, "TESLA IBS: --tesla-gnb-pubkey is required. Specify path to Core's MPK file.\n");
+        LOG_E(NR_RRC, "TESLA IBS: Obtain MPK from Core PKG: tf5_ibs_pkg_keygen <msk_path> <mpk_path>\n");
         free(ptr->SInfo.tesla_state);
         ptr->SInfo.tesla_state = NULL;
       } else {
         // Initialize BLS library
         int rc = tf5_tesla_bls_init();
         if (rc != 0) {
-          LOG_E(NR_RRC, "TESLA: Failed to initialize BLS library (rc=%d)\n", rc);
+          LOG_E(NR_RRC, "TESLA IBS: Failed to initialize BLS library (rc=%d)\n", rc);
           free(ptr->SInfo.tesla_state);
           ptr->SInfo.tesla_state = NULL;
         } else {
-          uint8_t gnb_pubkey[TF5_TESLA_PUBKEY_LEN];
-          rc = tf5_tesla_load_pubkey(params->tesla_gnb_pubkey_file, gnb_pubkey);
+          uint8_t mpk[TF5_TESLA_PUBKEY_LEN];
+          rc = tf5_tesla_load_pubkey(params->tesla_gnb_pubkey_file, mpk);
           if (rc == 0) {
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info
             uint16_t slots_per_frame = 20;
-            tf5_tesla_ue_init(ptr->SInfo.tesla_state, gnb_pubkey, slots_per_frame);
-            LOG_I(NR_RRC, "TESLA: Loaded gNB public key from %s\n", params->tesla_gnb_pubkey_file);
-            // Log public key for verification (first 32 bytes)
+            tf5_tesla_ue_init(ptr->SInfo.tesla_state, mpk, slots_per_frame);
+            LOG_I(NR_RRC, "TESLA IBS: Loaded Core MPK from %s\n", params->tesla_gnb_pubkey_file);
+            // Log MPK for verification (first 32 bytes)
             char hex_buf[65];
             for (int j = 0; j < 32; j++) {
-              sprintf(&hex_buf[j*2], "%02x", gnb_pubkey[j]);
+              sprintf(&hex_buf[j*2], "%02x", mpk[j]);
             }
-            LOG_I(NR_RRC, "TESLA: gNB public key (first 32 bytes hex): %s...\n", hex_buf);
+            LOG_I(NR_RRC, "TESLA IBS: MPK (first 32 bytes hex): %s...\n", hex_buf);
           } else {
-            LOG_E(NR_RRC, "TESLA: Failed to load gNB public key from %s (rc=%d)\n",
+            LOG_E(NR_RRC, "TESLA IBS: Failed to load MPK from %s (rc=%d)\n",
                   params->tesla_gnb_pubkey_file, rc);
-            LOG_E(NR_RRC, "TESLA: Run ./scripts/tf5_generate_bls_keys.sh to generate keys\n");
+            LOG_E(NR_RRC, "TESLA IBS: Obtain MPK from Core PKG\n");
             // Free state and set to NULL to disable TESLA
             free(ptr->SInfo.tesla_state);
             ptr->SInfo.tesla_state = NULL;

@@ -414,14 +414,11 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
 
     memset(state, 0, sizeof(*state));
 
-    // Store BLS secret key
+    // Store IBS secret key (sk_ID issued by Core PKG)
     memcpy(state->gnb_private_key, private_key, TF5_BLS_SECRET_KEY_LEN);
 
-    // Derive public key from secret key
-    if (tf5_tesla_bls_derive_public(private_key, state->gnb_public_key) != 0) {
-        LOG_E(NR_RRC, "TESLA: Failed to derive BLS public key\n");
-        return -2;
-    }
+    // Note: In IBS mode, Cell ID is set by the caller (config.c) after init
+    // Public key is derived from Cell ID and Core's MPK by the verifier (UE)
 
     // Allocate key chain
     state->key_chain = calloc(chain_len, TF5_TESLA_KEY_LEN);
@@ -448,7 +445,7 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
 
     // Set static parameters
     state->params.te_version = TF5_TESLA_VERSION;
-    state->params.crypto_suite_id = TF5_CRYPTO_SUITE_HMAC_SHA256_BLS;
+    state->params.crypto_suite_id = TF5_CRYPTO_SUITE_HMAC_SHA256_IBS;  // IBS mode
     state->params.t_int_ms = t_int_ms;
     state->params.disclosure_delay = d;
     state->params.key_len = TF5_TESLA_KEY_LEN;
@@ -463,7 +460,7 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
     state->current_interval = 0;
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA: gNB initialized - T_int=%ums, d=%u, T_0=HFN%u.SFN%u.%u\n",
+    LOG_I(NR_RRC, "TESLA IBS: gNB initialized - T_int=%ums, d=%u, T_0=HFN%u.SFN%u.%u\n",
           t_int_ms, d, t0->hfn, t0->sfn, t0->slot);
 
     return 0;
@@ -610,23 +607,24 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
  */
 
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
-                      const uint8_t gnb_public_key[TF5_TESLA_PUBKEY_LEN],
+                      const uint8_t mpk[TF5_TESLA_PUBKEY_LEN],
                       uint16_t slots_per_frame)
 {
-    if (!state || !gnb_public_key) {
+    if (!state || !mpk) {
         return -1;
     }
 
     memset(state, 0, sizeof(*state));
 
-    memcpy(state->gnb_public_key, gnb_public_key, TF5_TESLA_PUBKEY_LEN);
-    state->has_gnb_public_key = true;
+    // Store Core's Master Public Key (IBS mode)
+    memcpy(state->mpk, mpk, TF5_TESLA_PUBKEY_LEN);
+    state->has_mpk = true;
     state->slots_per_frame = slots_per_frame;
     state->params_received = false;
     state->buffer_queue_count = 0;  // All queue entries initialized to 0/false by memset
 
     // Parallel authentication state (initialized by memset to 0/false)
-    // k0_trusted = false (first-time UE, needs BLS signature verification)
+    // k0_trusted = false (first-time UE, needs IBS signature verification)
     // sib1_authenticated = false
     // auth_in_progress = false
     // auth_failed = false
@@ -650,7 +648,7 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
 
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA: UE initialized (D=%u us, E_sync=%u us, first-time UE)\n",
+    LOG_I(NR_RRC, "TESLA IBS: UE initialized (D=%u us, E_sync=%u us, first-time UE)\n",
           state->d_bound_us, state->d_params.e_sync_us);
 
     return 0;
@@ -753,15 +751,18 @@ int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
 }
 
 int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
+                                  const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                   const uint8_t *auth_input,
                                   size_t auth_input_len,
                                   const uint8_t signature[TF5_TESLA_SIG_LEN])
 {
-    if (!state || !state->initialized || !auth_input || !signature) {
+    if (!state || !state->initialized || !cell_id || !auth_input || !signature) {
         return -1;
     }
 
-    return tf5_tesla_bls_verify(state->gnb_public_key,
+    // IBS verification: e(Σ, Q) = e(H_m(m), H_s(cell_id) * MPK)
+    return tf5_tesla_ibs_verify(state->mpk,
+                                cell_id,
                                 auth_input, auth_input_len,
                                 signature);
 }

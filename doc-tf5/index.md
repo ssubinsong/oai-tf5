@@ -27,7 +27,8 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 | Feature | Description |
 |---------|-------------|
 | Delayed key disclosure | Keys revealed one interval after use |
-| Dual authentication | BLS signature + TESLA MAC |
+| Dual authentication | IBS signature + TESLA MAC |
+| Identity-Based Signatures | UE needs only Core's MPK to verify any gNB |
 | HFN tracking | Handles SFN wraparound for long key chains |
 | Conditional compilation | Enabled via `TF5_ENABLE_TESLA` flag |
 
@@ -38,6 +39,7 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 ### Core Protocol
 - [Protocol Design](protocol.md) - Key chains, time intervals, disclosure delay, dual authentication
 - [Cryptographic Primitives](cryptography.md) - Algorithms, key derivation, MAC computation
+- [Identity-Based Signatures](ibs-overview.md) - IBS scheme, Core PKG, key issuance workflow
 
 ### Data Structures
 - [Data Structures](data-structures.md) - Static/dynamic parameters, extension format, state structures

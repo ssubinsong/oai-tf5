@@ -1245,61 +1245,54 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   int numerology = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing;
   uint16_t slots_per_frame = 10 * (1 << numerology);
 
-  // Load key pair from files (command-line parameters or defaults)
+  // Load IBS secret key from file (issued by Core PKG)
   extern char *tesla_privkey_file;
-  extern char *tesla_pubkey_file;
   extern unsigned int tesla_chain_len;
 
   uint8_t private_key[TF5_BLS_SECRET_KEY_LEN];
-  uint8_t public_key[TF5_TESLA_PUBKEY_LEN];
   int rc;
 
-  // Check that key paths are provided (no defaults - must be explicit)
+  // Check that key path is provided (no defaults - must be explicit)
   if (tesla_privkey_file == NULL || tesla_privkey_file[0] == '\0') {
-    LOG_E(NR_MAC, "TESLA: --tesla-privkey is required. Specify path to BLS secret key file.\n");
-    LOG_E(NR_MAC, "TESLA: Generate keys with: ./scripts/tf5_generate_bls_keys.sh\n");
-    goto tesla_disabled;
-  }
-  if (tesla_pubkey_file == NULL || tesla_pubkey_file[0] == '\0') {
-    LOG_E(NR_MAC, "TESLA: --tesla-pubkey is required. Specify path to BLS public key file.\n");
-    LOG_E(NR_MAC, "TESLA: Generate keys with: ./scripts/tf5_generate_bls_keys.sh\n");
+    LOG_E(NR_MAC, "TESLA IBS: --tesla-privkey is required. Specify path to sk_ID file (issued by Core PKG).\n");
+    LOG_E(NR_MAC, "TESLA IBS: Generate with: tf5_ibs_issue <msk_path> <cell_id_hex> <sk_path>\n");
     goto tesla_disabled;
   }
 
   // Initialize BLS library
   rc = tf5_tesla_bls_init();
   if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to initialize BLS library (rc=%d)\n", rc);
+    LOG_E(NR_MAC, "TESLA IBS: Failed to initialize BLS library (rc=%d)\n", rc);
     goto tesla_disabled;
   }
 
-  // Load secret key
+  // Load IBS secret key (sk_ID = s * H_s(cell_id) issued by Core PKG)
   rc = tf5_tesla_load_privkey(tesla_privkey_file, private_key);
   if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to load secret key from %s (rc=%d)\n", tesla_privkey_file, rc);
-    LOG_E(NR_MAC, "TESLA: Run ./scripts/tf5_generate_bls_keys.sh to generate keys\n");
+    LOG_E(NR_MAC, "TESLA IBS: Failed to load sk_ID from %s (rc=%d)\n", tesla_privkey_file, rc);
+    LOG_E(NR_MAC, "TESLA IBS: Use tf5_ibs_issue to generate key for this gNB\n");
     goto tesla_disabled;
   }
 
-  // Load public key
-  rc = tf5_tesla_load_pubkey(tesla_pubkey_file, public_key);
-  if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to load public key from %s (rc=%d)\n", tesla_pubkey_file, rc);
-    LOG_E(NR_MAC, "TESLA: Run ./scripts/tf5_generate_bls_keys.sh to generate keys\n");
-    goto tesla_disabled;
-  }
+  // Extract NR Cell ID (36 bits) from gNB configuration
+  // cellID is passed as uint64_t parameter to nr_mac_configure_sib1()
+  uint8_t gnb_cell_id[TF5_IBS_CELL_ID_LEN];
+  gnb_cell_id[0] = (cellID >> 28) & 0xFF;
+  gnb_cell_id[1] = (cellID >> 20) & 0xFF;
+  gnb_cell_id[2] = (cellID >> 12) & 0xFF;
+  gnb_cell_id[3] = (cellID >> 4) & 0xFF;
+  gnb_cell_id[4] = (cellID << 4) & 0xF0;  // 4 padding bits in lower nibble
 
-  LOG_I(NR_MAC, "TESLA: Loaded BLS key pair from files:\n");
-  LOG_I(NR_MAC, "TESLA:   Secret key: %s\n", tesla_privkey_file);
-  LOG_I(NR_MAC, "TESLA:   Public key: %s\n", tesla_pubkey_file);
+  LOG_I(NR_MAC, "TESLA IBS: Loaded sk_ID from: %s\n", tesla_privkey_file);
+  LOG_I(NR_MAC, "TESLA IBS: Cell ID: 0x%09llx (36 bits)\n", (unsigned long long)cellID);
 
-  // Log public key for verification (first 32 bytes in hex)
+  // Log sk_ID for verification (first 16 bytes in hex)
   {
-    char hex_buf[65];
-    for (int i = 0; i < 32; i++) {
-      sprintf(&hex_buf[i*2], "%02x", public_key[i]);
+    char hex_buf[33];
+    for (int i = 0; i < 16; i++) {
+      sprintf(&hex_buf[i*2], "%02x", private_key[i]);
     }
-    LOG_I(NR_MAC, "TESLA: Public key (first 32 bytes hex): %s...\n", hex_buf);
+    LOG_I(NR_MAC, "TESLA IBS: sk_ID (first 16 bytes hex): %s...\n", hex_buf);
   }
 
   // Calculate T_int based on SIB1 repetition period (3GPP TS 38.331)
@@ -1315,9 +1308,9 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   // Default: 65536 keys (~21.8 min with T_int=20ms, ~36.4 min with T_int=SSB period)
   uint32_t chain_len = (uint32_t)tesla_chain_len;
 
-  LOG_I(NR_MAC, "TESLA: T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
-  LOG_I(NR_MAC, "TESLA: T_0=(SFN=%u, slot=%u) (first SIB1 TX occasion)\n", t0_sfn, t0_slot);
-  LOG_I(NR_MAC, "TESLA: chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
+  LOG_I(NR_MAC, "TESLA IBS: T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
+  LOG_I(NR_MAC, "TESLA IBS: T_0=(SFN=%u, slot=%u) (first SIB1 TX occasion)\n", t0_sfn, t0_slot);
+  LOG_I(NR_MAC, "TESLA IBS: chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
 
   // Initialize TESLA with computed parameters
   tf5_tesla_slot_time_t t0 = tf5_slot_time_make(0, t0_sfn, t0_slot);  // HFN=0 at init
@@ -1329,15 +1322,21 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
                           &t0,         // T_0 timing (HFN/SFN/slot)
                           slots_per_frame);
   if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to initialize (rc=%d)\n", rc);
+    LOG_E(NR_MAC, "TESLA IBS: Failed to initialize (rc=%d)\n", rc);
     goto tesla_disabled;
   }
 
-  LOG_I(NR_MAC, "TESLA: gNB initialization successful\n");
+  // Store Cell ID in TESLA state (for IBS mode)
+  memcpy(cc->tesla_state->gnb_cell_id, gnb_cell_id, TF5_IBS_CELL_ID_LEN);
+
+  // Set crypto suite to IBS
+  cc->tesla_state->params.crypto_suite_id = TF5_CRYPTO_SUITE_HMAC_SHA256_IBS;
+
+  LOG_I(NR_MAC, "TESLA IBS: gNB initialization successful\n");
   goto tesla_init_done;
 
 tesla_disabled:
-  LOG_W(NR_MAC, "TESLA: Disabled due to missing or invalid key files\n");
+  LOG_W(NR_MAC, "TESLA IBS: Disabled due to missing or invalid sk_ID file\n");
   free(cc->tesla_state);
   cc->tesla_state = NULL;
 
