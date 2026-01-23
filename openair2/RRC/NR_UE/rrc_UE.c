@@ -2310,7 +2310,15 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
   /* NAS Gating: Check TESLA authentication status before sending NAS (SUCI protection)
    * Security: NAS Registration Request must NOT be sent until SIB1 is authenticated */
   {
-    const int gNB_index = 0;  /* Initial access is always to gNB 0 */
+    /* During initial RRC setup (CCCH/SRB0), UE connects to exactly one gNB.
+     * By convention, perNB[0] is always used for the initial/serving cell.
+     * Multi-gNB scenarios (DC, handover) only occur after RRC_CONNECTED. */
+    const int gNB_index = 0;
+    
+    /* Sanity check: RRCSetup should only be received before entering CONNECTED state */
+    AssertFatal(rrc->nrRrcState != RRC_STATE_CONNECTED_NR,
+                "RRCSetup received in CONNECTED state - invalid state transition\n");
+    
     NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
 
     if (SI_info->tesla_state) {
