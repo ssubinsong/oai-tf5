@@ -51,6 +51,7 @@
 #include "openair3/SECU/tf5_tesla.h"
 #include "common/ran_context.h"
 #include "openair2/RRC/NR/nr_rrc_defs.h"
+#include "NR_SIB1.h"  // For asn_DEF_NR_SIB1 in TESLA signature computation
 #endif
 
 #define NR_MAX_SUPPORTED_DL_LAYERS 4
@@ -4443,6 +4444,29 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
 
   NR_SIB1_t *sib1 = cc->sib1->message.choice.c1->choice.systemInformationBlockType1;
 
+  // CRITICAL: Update hyperSFN-r17 BEFORE capturing original SIB1 for signing.
+  // The UE will re-encode SIB1 (without extension) to verify the signature,
+  // so the hyperSFN in the signed data must match the transmitted value.
+  update_hypersfn_r17(sib1, hfn);
+
+  // Re-capture original SIB1 (without extension) for signature computation.
+  // CRITICAL: Must encode NR_SIB1 (not NR_BCCH_DL_SCH_Message) to match UE-side
+  // verification which also encodes just NR_SIB1 using asn_DEF_NR_SIB1.
+  OCTET_STRING_t *saved_ext = sib1->lateNonCriticalExtension;
+  sib1->lateNonCriticalExtension = NULL;
+  asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_SIB1,
+                                                   NULL,
+                                                   sib1,
+                                                   cc->sib1_original,
+                                                   sizeof(cc->sib1_original));
+  sib1->lateNonCriticalExtension = saved_ext;
+
+  if (enc_rval.encoded <= 0) {
+    LOG_E(NR_MAC, "TESLA: Failed to encode SIB1 for signing (rc=%zd)\n", enc_rval.encoded);
+    return;
+  }
+  cc->sib1_original_length = (enc_rval.encoded + 7) / 8;  // bits to bytes
+
   // Prepare TESLA extension for current HFN/frame/slot
   tf5_tesla_extension_t ext;
   int rc = tf5_tesla_gnb_prepare_extension(cc->tesla_state,
@@ -4482,8 +4506,7 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
   memcpy(sib1->lateNonCriticalExtension->buf, ext_buf, ext_len);
   sib1->lateNonCriticalExtension->size = ext_len;
 
-  // Update hyperSFN-r17 with current HFN from RRC (single source of truth)
-  update_hypersfn_r17(sib1, hfn);
+  // Note: hyperSFN-r17 was already updated above before signature computation
 
   // Re-encode SIB1 with TESLA extension
   cc->sib1_bcch_length = encode_SIB_NR(cc->sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
