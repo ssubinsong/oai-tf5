@@ -242,6 +242,7 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
                                    const tf5_tesla_static_params_t *static_params,
+                                   uint32_t validity_end,
                                    const tf5_tesla_timesync_info_t *timesync_info)
 {
     if (!out || !out_len || !original_sib1 || !static_params || !timesync_info) {
@@ -257,7 +258,11 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
     // 2. Static params (30 bytes)
     offset += tf5_encode_static_params(out + offset, static_params);
 
-    // 3. Timesync info (6 bytes) - per RFC 4082, MAC does NOT include interval_index/disclosed_key
+    // 3. Validity end (3 bytes) - key expiration (minutes since 2024-01-01)
+    tf5_encode_validity_end(out + offset, validity_end);
+    offset += TF5_IBS_VALIDITY_LEN;
+
+    // 4. Timesync info (4 bytes) - per RFC 4082, MAC does NOT include interval_index/disclosed_key
     offset += tf5_encode_timesync_info(out + offset, timesync_info);
 
     *out_len = offset;
@@ -269,6 +274,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
                                    const tf5_tesla_static_params_t *static_params,
+                                   uint32_t validity_end,
                                    const tf5_tesla_timesync_info_t *timesync_info,
                                    uint32_t interval_index,
                                    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
@@ -278,10 +284,10 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
         return -1;
     }
 
-    // Build MAC auth input first (SIB1 + static_params + timesync_info)
+    // Build MAC auth input first (SIB1 + static_params + validity_end + timesync_info)
     size_t mac_len = 0;
     int rc = tf5_tesla_build_mac_auth_input(out, &mac_len, original_sib1, sib1_len,
-                                            static_params, timesync_info);
+                                            static_params, validity_end, timesync_info);
     if (rc < 0) {
         return rc;
     }
@@ -312,9 +318,9 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
         return -1;
     }
 
-    // Total size: 30 + 4 + 4 + 16 + 8 + 48 + 16 = 126 bytes (with BLS signatures)
-    // Note: timesync_info is now 4 bytes (HFN removed - now from hyperSFN-r17)
-    const size_t required_len = 126;
+    // Total size: 30 + 3 + 4 + 4 + 16 + 8 + 48 + 16 = 129 bytes (with BLS signatures)
+    // Note: timesync_info is 4 bytes (HFN removed - now from hyperSFN-r17)
+    const size_t required_len = 129;
     if (buf_len < required_len) {
         return -2;
     }
@@ -324,7 +330,11 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     // Static params (30 bytes)
     offset += tf5_encode_static_params(buf + offset, &ext->static_params);
 
-    // Timesync info (6 bytes)
+    // Validity end (3 bytes) - key expiration (minutes since 2024-01-01)
+    tf5_encode_validity_end(buf + offset, ext->validity_end);
+    offset += TF5_IBS_VALIDITY_LEN;
+
+    // Timesync info (4 bytes)
     offset += tf5_encode_timesync_info(buf + offset, &ext->timesync_info);
 
     // Interval index (4 bytes)
@@ -358,7 +368,7 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
         return -1;
     }
 
-    const size_t required_len = 126;  // 30 + 4 + 4 + 16 + 8 + 48 + 16 bytes
+    const size_t required_len = 129;  // 30 + 3 + 4 + 4 + 16 + 8 + 48 + 16 bytes
     if (buf_len < required_len) {
         return -2;
     }
@@ -368,7 +378,11 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     // Static params (30 bytes)
     offset += tf5_decode_static_params(buf + offset, &ext->static_params);
 
-    // Timesync info (6 bytes)
+    // Validity end (3 bytes) - key expiration (minutes since 2024-01-01)
+    ext->validity_end = tf5_decode_validity_end(buf + offset);
+    offset += TF5_IBS_VALIDITY_LEN;
+
+    // Timesync info (4 bytes)
     offset += tf5_decode_timesync_info(buf + offset, &ext->timesync_info);
 
     // Interval index (4 bytes)
@@ -520,6 +534,9 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
     // Copy static params
     memcpy(&ext->static_params, &state->params, sizeof(state->params));
 
+    // Set key validity period (minutes since 2024-01-01)
+    ext->validity_end = state->validity_end;
+
     // Set timesync info (HFN is now transmitted via hyperSFN-r17 in SIB1-v1700-IEs)
     ext->timesync_info.sfn = sfn;
     ext->timesync_info.slot = slot;
@@ -547,12 +564,13 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
         return -7;
     }
 
-    // Build signature auth input (SIB1 + static + timesync + interval + key + timestamp)
+    // Build signature auth input (SIB1 + static + validity_end + timesync + interval + key + timestamp)
     uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
     size_t sig_auth_input_len;
     int rc = tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_input_len,
                                             original_sib1, sib1_len,
                                             &ext->static_params,
+                                            ext->validity_end,
                                             &ext->timesync_info,
                                             ext->interval_index,
                                             ext->disclosed_key,
@@ -571,12 +589,13 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
         return -4;
     }
 
-    // Build MAC auth input (SIB1 + static + timesync, excludes interval/key per RFC 4082)
+    // Build MAC auth input (SIB1 + static + validity_end + timesync, excludes interval/key per RFC 4082)
     uint8_t mac_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
     size_t mac_auth_input_len;
     rc = tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                         original_sib1, sib1_len,
                                         &ext->static_params,
+                                        ext->validity_end,
                                         &ext->timesync_info);
     if (rc != 0) {
         LOG_E(NR_RRC, "TESLA: Failed to build MAC auth input\n");
@@ -752,6 +771,7 @@ int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
 
 int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
                                   const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                                  uint32_t validity_end,
                                   const uint8_t *auth_input,
                                   size_t auth_input_len,
                                   const uint8_t signature[TF5_TESLA_SIG_LEN])
@@ -760,9 +780,10 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
         return -1;
     }
 
-    // IBS verification: e(Σ, Q) = e(H_m(m), H_s(cell_id) * MPK)
+    // IBS verification: e(Σ, Q) = e(H_m(m), H_s(cell_id || validity_end) * MPK)
     return tf5_tesla_ibs_verify(state->mpk,
                                 cell_id,
+                                validity_end,
                                 auth_input, auth_input_len,
                                 signature);
 }

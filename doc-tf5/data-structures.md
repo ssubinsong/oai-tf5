@@ -95,13 +95,14 @@ Field access: `.sfn`, `.slot` (HFN obtained separately from hyperSFN-r17)
 
 ---
 
-## TESLA Extension (126 bytes)
+## TESLA Extension (129 bytes)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
 ```c
 typedef struct {
     tf5_tesla_static_params_t   static_params;   // 30B
+    uint32_t                    validity_end;    // 3B (wire) - Key expiration (minutes since 2024-01-01)
     tf5_tesla_timesync_info_t   timesync_info;   // 4B (sfn + slot only)
     uint32_t                    interval_index;  // 4B - Current interval i
     uint8_t                     disclosed_key[16]; // 16B - K_{i-d}
@@ -111,11 +112,29 @@ typedef struct {
 } tf5_tesla_extension_t;
 ```
 
-**Authentication Coverage**:
-- **Signature**: SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
-- **MAC**: SIB1 || static_params || timesync_info (per RFC 4082, excludes timestamp)
+### Key Validity Period
 
-**Binary Wire Format** (126 bytes, big-endian):
+The `validity_end` field enables key expiration:
+- **Format**: 24 bits (3 bytes), minutes since 2024-01-01 00:00:00 UTC
+- **Range**: 0 to 16,777,215 minutes (~31.9 years, covers until ~2056)
+- **Identity Hash**: pk_ID = H_s(Cell_ID || validity_end)
+
+Conversion utilities:
+```c
+#define TF5_VALIDITY_EPOCH  1704067200UL  // 2024-01-01 00:00:00 UTC
+
+// Unix seconds to validity_end
+uint32_t tf5_ibs_unix_to_validity(uint64_t unix_sec);
+
+// validity_end to Unix seconds
+uint64_t tf5_ibs_validity_to_unix(uint32_t validity_end);
+```
+
+**Authentication Coverage**:
+- **Signature**: SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
+- **MAC**: SIB1 || static_params || validity_end || timesync_info (per RFC 4082, excludes timestamp)
+
+**Binary Wire Format** (129 bytes, big-endian):
 ```
 Offset  Size  Field
 ------  ----  -----
@@ -129,15 +148,16 @@ Offset  Size  Field
 24      2     t0.sfn
 26      2     t0.slot
 28      4     chain_len
-32      2     timesync_info.sfn
-34      2     timesync_info.slot
-36      4     interval_index
-40      16    disclosed_key
-56      8     timestamp_ms
-64      48    gnb_signature (BLS)
-112     16    tesla_tag
+32      3     validity_end           (NEW: minutes since 2024-01-01)
+35      2     timesync_info.sfn
+37      2     timesync_info.slot
+39      4     interval_index
+43      16    disclosed_key
+59      8     timestamp_ms
+67      48    gnb_signature (BLS)
+115     16    tesla_tag
 ------
-126 bytes total (with BLS signatures)
+129 bytes total (with BLS signatures)
 
 Note: HFN removed from timesync_info - now obtained from hyperSFN-r17 in SIB1-v1700-IEs
 ```
@@ -160,9 +180,10 @@ typedef struct {
     // HFN tracking is in gNB_RRC_INST (rrc->current_hfn)
     // MAC sends NRRRC_SFN_WRAP ITTI to RRC on SFN wraparound
 
-    // BLS keys
-    uint8_t  gnb_private_key[32];
-    uint8_t  gnb_public_key[96];  // BLS public key (G2)
+    // IBS keys
+    uint8_t  gnb_private_key[32];   // sk_ID (issued by Core PKG)
+    uint8_t  gnb_cell_id[5];        // NR Cell ID (36 bits)
+    uint32_t validity_end;          // Key expiration (minutes since 2024-01-01)
 
     // Timing
     uint16_t slots_per_frame;

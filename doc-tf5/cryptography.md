@@ -40,7 +40,15 @@ Sign:   Σ = sk_ID * H_m(message)
 Verify: e(Σ, Q) = e(H_m(message), pk_ID * MPK)
 ```
 
-Where `pk_ID = H_s(Cell_ID)` is the identity-derived scalar.
+Where `pk_ID = H_s(Cell_ID || validity_end)` is the identity-derived scalar.
+
+**Identity IKM Construction:**
+```
+IKM = DST (35 bytes) || Cell_ID (5 bytes) || validity_end (3 bytes, big-endian)
+pk_ID = blst_keygen(IKM) mod r
+```
+
+The `validity_end` is encoded as minutes since 2024-01-01 00:00:00 UTC (epoch 1704067200).
 
 ### Domain Separation Tags
 
@@ -70,10 +78,14 @@ int tf5_tesla_bls_sign(const uint8_t secret_key[32],  // sk_ID
 ```c
 int tf5_tesla_ibs_verify(const uint8_t mpk[96],           // Core's MPK
                           const uint8_t cell_id[5],        // gNB's Cell ID
+                          uint32_t validity_end,           // Key expiration (minutes since 2024-01-01)
                           const uint8_t *data,
                           size_t data_len,
                           const uint8_t signature[48]);
 ```
+
+The verification derives `pk_ID = H_s(cell_id || validity_end)` and computes
+`derived_pk = pk_ID * MPK` for pairing verification.
 
 ---
 
@@ -139,12 +151,13 @@ The signature and MAC use different authentication inputs per RFC 4082:
 **Source**: [tf5_tesla.c:196](../openair3/SECU/tf5_tesla.c#L196) `tf5_tesla_build_sig_auth_input()`
 
 ```
-sig_auth_input = original_SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
+sig_auth_input = original_SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
 ```
 
 - **original_SIB1**: SIB1 content without TESLA extension
 - **static_params**: 30 bytes of static TESLA parameters
-- **timesync_info**: 6 bytes of timing information
+- **validity_end**: 3 bytes key expiration (minutes since 2024-01-01, big-endian)
+- **timesync_info**: 4 bytes of timing information
 - **interval_index**: 4 bytes current interval
 - **disclosed_key**: 16 bytes K_{i-d}
 - **timestamp_ms**: 8 bytes Unix epoch timestamp (milliseconds) for replay protection
@@ -155,9 +168,10 @@ sig_auth_input = original_SIB1 || static_params || timesync_info || interval_ind
 
 Per RFC 4082, the MAC does NOT include the interval index, disclosed key, or timestamp:
 ```
-mac_auth_input = original_SIB1 || static_params || timesync_info
+mac_auth_input = original_SIB1 || static_params || validity_end || timesync_info
 ```
 
 - **original_SIB1**: SIB1 content without TESLA extension
 - **static_params**: 30 bytes of static TESLA parameters
-- **timesync_info**: 6 bytes of timing information
+- **validity_end**: 3 bytes key expiration (minutes since 2024-01-01, big-endian)
+- **timesync_info**: 4 bytes of timing information

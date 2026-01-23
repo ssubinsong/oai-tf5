@@ -77,10 +77,20 @@
  * IBS (Identity-Based Signature) Constants
  *
  * NR Cell ID is used as the gNB identity for IBS key derivation.
- * UE derives gNB's verification key from Cell ID and Core's MPK.
+ * UE derives gNB's verification key from Cell ID, validity period, and Core's MPK.
  */
 #define TF5_IBS_CELL_ID_LEN   5    // 36 bits = 5 bytes (per 3GPP TS 38.331)
 #define TF5_IBS_CELL_ID_BITS  36
+
+/*
+ * Key validity period: 24 bits = 3 bytes
+ * Encodes minutes since 2024-01-01 00:00:00 UTC
+ * Range: 0 to 16,777,215 minutes (~31.9 years, covers until ~2056)
+ *
+ * Identity hash: pk_ID = H_s(Cell_ID || validity_end)
+ */
+#define TF5_IBS_VALIDITY_LEN   3     // 24-bit minutes since epoch
+#define TF5_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
 
 // Domain Separation Tag for H_s (identity-to-scalar hash)
 #define TF5_IBS_DST_HS        "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"
@@ -194,14 +204,15 @@ typedef struct {
  * This structure represents the complete TESLA data appended to SIB1
  * via lateNonCriticalExtension.
  *
- * Signature authenticates: SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
- * MAC authenticates:       SIB1 || static_params || timesync_info (per RFC 4082)
+ * Signature authenticates: SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
+ * MAC authenticates:       SIB1 || static_params || validity_end || timesync_info (per RFC 4082)
  *
- * Total size: 126 bytes (with BLS signatures)
+ * Total size: 129 bytes (with BLS signatures)
  * Note: HFN removed from timesync_info - now obtained from hyperSFN-r17
  */
 typedef struct {
     tf5_tesla_static_params_t  static_params;                 // 30B
+    uint32_t                   validity_end;                  // 3B (wire) - Key expiration (minutes since 2024-01-01)
     tf5_tesla_timesync_info_t  timesync_info;                 // 4B (sfn + slot only)
     uint32_t                   interval_index;                // 4B - Current interval i
     uint8_t                    disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
@@ -231,6 +242,7 @@ typedef struct {
     // IBS keys
     uint8_t  gnb_private_key[TF5_BLS_SECRET_KEY_LEN];   // 32B - sk_ID (issued by Core PKG)
     uint8_t  gnb_cell_id[TF5_IBS_CELL_ID_LEN];          // 5B - NR Cell ID (36 bits)
+    uint32_t validity_end;                              // Key expiration (minutes since 2024-01-01)
 
     // Slots per frame (depends on numerology)
     uint16_t slots_per_frame;
@@ -346,7 +358,7 @@ uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
  * Build MAC authentication input buffer
  *
  * Constructs the data to be MAC'd (per RFC 4082):
- * original_SIB1 || static_params || timesync_info
+ * original_SIB1 || static_params || validity_end || timesync_info
  *
  * Note: interval_index and disclosed_key are NOT included in MAC input.
  *
@@ -355,6 +367,7 @@ uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
  * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
  * @param sib1_len      Length of original SIB1 data
  * @param static_params Static TESLA parameters
+ * @param validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @param timesync_info Time synchronization info
  * @return 0 on success, negative on error
  */
@@ -363,19 +376,21 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
                                    const tf5_tesla_static_params_t *static_params,
+                                   uint32_t validity_end,
                                    const tf5_tesla_timesync_info_t *timesync_info);
 
 /**
  * Build signature authentication input buffer
  *
  * Constructs the data to be signed:
- * original_SIB1 || static_params || timesync_info || interval_index || disclosed_key || timestamp_ms
+ * original_SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
  * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
  * @param sib1_len      Length of original SIB1 data
  * @param static_params Static TESLA parameters
+ * @param validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @param timesync_info Time synchronization info
  * @param interval_index Current interval index
  * @param disclosed_key Disclosed key K_{i-d}
@@ -387,6 +402,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
                                    const tf5_tesla_static_params_t *static_params,
+                                   uint32_t validity_end,
                                    const tf5_tesla_timesync_info_t *timesync_info,
                                    uint32_t interval_index,
                                    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
@@ -499,10 +515,11 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
  * Verify IBS signature
  *
  * Verifies signature using Identity-Based Signature scheme:
- *   e(Σ, Q) = e(H_m(auth_input), H_s(cell_id) * MPK)
+ *   e(Σ, Q) = e(H_m(auth_input), H_s(cell_id || validity_end) * MPK)
  *
  * @param state         Pointer to UE TESLA state structure (contains MPK)
  * @param cell_id       gNB's NR Cell ID (5 bytes, 36 bits) from SIB1
+ * @param validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @param auth_input    Authentication input (SIB1 + static + dynamic)
  * @param auth_input_len Length of auth input
  * @param signature     Signature to verify (48 bytes)
@@ -510,6 +527,7 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
  */
 int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
                                   const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                                  uint32_t validity_end,
                                   const uint8_t *auth_input,
                                   size_t auth_input_len,
                                   const uint8_t signature[TF5_TESLA_SIG_LEN]);
@@ -829,6 +847,47 @@ static inline uint64_t tf5_decode_u64_be(const uint8_t *buf) {
            ((uint64_t)buf[5] << 16) |
            ((uint64_t)buf[6] << 8) |
            (uint64_t)buf[7];
+}
+
+/* Encode 24-bit validity_end as 3 bytes big-endian */
+static inline void tf5_encode_validity_end(uint8_t *buf, uint32_t validity_end) {
+    buf[0] = (validity_end >> 16) & 0xFF;
+    buf[1] = (validity_end >> 8) & 0xFF;
+    buf[2] = validity_end & 0xFF;
+}
+
+/* Decode 24-bit validity_end from 3 bytes big-endian */
+static inline uint32_t tf5_decode_validity_end(const uint8_t *buf) {
+    return ((uint32_t)buf[0] << 16) | ((uint32_t)buf[1] << 8) | buf[2];
+}
+
+/*
+ * =============================================================================
+ * Validity Period Conversion Utilities
+ * =============================================================================
+ */
+
+/**
+ * Convert Unix timestamp to validity_end format
+ *
+ * @param unix_sec  Unix timestamp (seconds since 1970-01-01)
+ * @return Minutes since 2024-01-01 00:00:00 UTC (24-bit value)
+ */
+static inline uint32_t tf5_ibs_unix_to_validity(uint64_t unix_sec) {
+    if (unix_sec <= TF5_VALIDITY_EPOCH) {
+        return 0;
+    }
+    return (uint32_t)((unix_sec - TF5_VALIDITY_EPOCH) / 60);
+}
+
+/**
+ * Convert validity_end format to Unix timestamp
+ *
+ * @param validity_end  Minutes since 2024-01-01 00:00:00 UTC
+ * @return Unix timestamp (seconds since 1970-01-01)
+ */
+static inline uint64_t tf5_ibs_validity_to_unix(uint32_t validity_end) {
+    return TF5_VALIDITY_EPOCH + (uint64_t)validity_end * 60;
 }
 
 /*

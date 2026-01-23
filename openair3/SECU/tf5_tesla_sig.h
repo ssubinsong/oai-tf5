@@ -108,19 +108,25 @@ int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
 #define TF5_IBS_CELL_ID_LEN   5    /* 36 bits = 5 bytes */
 #endif
 
+/* IBS Key validity period: 24 bits = 3 bytes (minutes since 2024-01-01) */
+#ifndef TF5_IBS_VALIDITY_LEN
+#define TF5_IBS_VALIDITY_LEN  3
+#endif
+
 /**
  * Verify IBS signature
  *
  * Verifies a BLS signature using Identity-Based Signature scheme:
- *   1. Compute pk_ID = H_s(cell_id) (scalar)
+ *   1. Compute pk_ID = H_s(cell_id || validity_end) (scalar)
  *   2. Compute derived_pk = pk_ID * MPK (G2 point)
  *   3. Verify: e(signature, Q) = e(H_m(data), derived_pk)
  *
- * @param mpk         Core's Master Public Key (96 bytes, G2 point)
- * @param cell_id     gNB's NR Cell ID (5 bytes, 36 bits)
- * @param data        Signed data
- * @param data_len    Length of data
- * @param signature   Signature to verify (48 bytes, G1 point)
+ * @param mpk          Core's Master Public Key (96 bytes, G2 point)
+ * @param cell_id      gNB's NR Cell ID (5 bytes, 36 bits)
+ * @param validity_end Key expiration (minutes since 2024-01-01 00:00 UTC)
+ * @param data         Signed data
+ * @param data_len     Length of data
+ * @param signature    Signature to verify (48 bytes, G1 point)
  * @return 0 on success (signature valid), negative on error
  *
  * Error codes:
@@ -131,23 +137,27 @@ int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
  */
 int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBLIC_KEY_LEN],
                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                          uint32_t validity_end,
                           const uint8_t *data,
                           size_t data_len,
                           const uint8_t signature[TF5_BLS_SIGNATURE_LEN]);
 
 /**
- * Hash Cell ID to scalar (H_s function)
+ * Hash Cell ID and validity to scalar (H_s function)
  *
  * Implements H_s: {0,1}* -> Z_r for IBS key derivation.
+ * Identity = Cell_ID || validity_end
  * Used by both Core PKG (for key issuance) and UE (for verification).
  *
  * @param cell_id       NR Cell ID (5 bytes)
  * @param cell_id_len   Length of cell_id
+ * @param validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @param scalar_out    Output scalar (32 bytes, big-endian)
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
                                   size_t cell_id_len,
+                                  uint32_t validity_end,
                                   uint8_t scalar_out[TF5_BLS_SECRET_KEY_LEN]);
 
 #endif /* TF5_ENABLE_TESLA */

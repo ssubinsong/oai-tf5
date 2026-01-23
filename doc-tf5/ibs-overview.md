@@ -10,8 +10,9 @@ TF5 uses an **Identity-Based Signature (IBS)** scheme for authenticating the ini
 
 1. **Core's Master Public Key (MPK)** - Pre-provisioned in UE (e.g., SIM card)
 2. **gNB's Cell ID** - Extracted from SIB1's `cellIdentity` field
+3. **Key Validity Period** - Included in TESLA extension (expiration time)
 
-This eliminates the need to distribute individual gNB public keys to UEs.
+This eliminates the need to distribute individual gNB public keys to UEs and enables key expiration.
 
 ---
 
@@ -23,10 +24,20 @@ This eliminates the need to distribute individual gNB public keys to UEs.
 |-----------|-------------|------|
 | `s` | Core master secret (scalar in Z_r) | 32 bytes |
 | `MPK = s*Q` | Core master public key (G2 point) | 96 bytes |
-| `ID` | gNB's NR Cell ID | 5 bytes (36 bits) |
-| `pk_ID = H_s(ID)` | Identity-derived scalar | 32 bytes |
+| `Cell_ID` | gNB's NR Cell ID | 5 bytes (36 bits) |
+| `validity_end` | Key expiration (minutes since 2024-01-01 UTC) | 3 bytes (24 bits) |
+| `pk_ID = H_s(Cell_ID ‖ validity_end)` | Identity-derived scalar | 32 bytes |
 | `sk_ID = s * pk_ID mod r` | gNB's secret key (issued by Core) | 32 bytes |
 | `Σ = sk_ID * H_m(m)` | Signature (G1 point) | 48 bytes |
+
+**Key Identity Construction:**
+```
+Identity = Cell_ID (5 bytes) || validity_end (3 bytes, big-endian)
+pk_ID = H_s(Identity)
+```
+
+The validity_end is encoded as minutes since the epoch 2024-01-01 00:00:00 UTC (Unix timestamp 1704067200).
+Maximum value 0xFFFFFF = 16,777,215 minutes ≈ 31.9 years (until ~2056).
 
 ### Verification Equation
 
@@ -60,10 +71,10 @@ Core PKG
          ├── msk.bin (32B) - Master Secret Key (SECURE!)
          └── mpk.bin (96B) - Master Public Key (distribute to UEs)
 
-gNB-specific Keys (issued per Cell ID)
+gNB-specific Keys (issued per Cell ID + validity)
     │
-    └──> sk_ID = s * H_s(Cell_ID) mod r
-         └── sk_gnb.bin (32B) - gNB Secret Key
+    └──> sk_ID = s * H_s(Cell_ID || validity_end) mod r
+         └── sk_gnb.bin (32B) - gNB Secret Key (valid until expiration)
 ```
 
 ---
@@ -80,15 +91,17 @@ gNB-specific Keys (issued per Cell ID)
 ### 2. gNB Key Issuance
 
 ```bash
-# Issue key for gNB with Cell ID 0x123456789 (36 bits)
-./tf5_ibs_issue pkg_keys/msk.bin 123456789 gnb_keys/sk_gnb1.bin
+# Issue key for gNB with Cell ID 0x123456789, valid for 2 years (1051200 minutes)
+./tf5_ibs_issue pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_gnb1.bin
 ```
 
 ### 3. Deployment
 
-**gNB** (loads secret key):
+**gNB** (loads secret key and specifies validity):
 ```bash
-./nr-softmodem -O gnb.conf --tesla-privkey /path/to/sk_gnb.bin
+./nr-softmodem -O gnb.conf \
+    --tesla-privkey /path/to/sk_gnb.bin \
+    --tesla-validity-end 1051200
 ```
 
 **UE** (loads Core's MPK):
@@ -98,11 +111,13 @@ gNB-specific Keys (issued per Cell ID)
 
 ### 4. Runtime Verification
 
-1. UE receives SIB1 with TESLA extension (includes signature Σ)
+1. UE receives SIB1 with TESLA extension (includes signature Σ and validity_end)
 2. UE extracts `Cell_ID` from SIB1's `cellAccessRelatedInfo`
-3. UE computes `pk_ID = H_s(Cell_ID)`
-4. UE computes `derived_pk = pk_ID * MPK`
-5. UE verifies: `e(Σ, Q) = e(H_m(auth_input), derived_pk)`
+3. UE extracts `validity_end` from TESLA extension
+4. **UE checks expiration**: if current_time >= validity_end, reject
+5. UE computes `pk_ID = H_s(Cell_ID || validity_end)`
+6. UE computes `derived_pk = pk_ID * MPK`
+7. UE verifies: `e(Σ, Q) = e(H_m(auth_input), derived_pk)`
 
 ---
 
@@ -119,14 +134,21 @@ gNB-specific Keys (issued per Cell ID)
 
 ## Security Properties
 
-### Identity Binding
-The gNB's secret key is cryptographically bound to its Cell ID:
-- `sk_ID = s * H_s(Cell_ID)`
-- Changing Cell ID invalidates the key
-- UE derives verification key from Cell ID in SIB1
+### Identity and Validity Binding
+The gNB's secret key is cryptographically bound to both its Cell ID and validity period:
+- `sk_ID = s * H_s(Cell_ID || validity_end)`
+- Changing Cell ID or validity_end invalidates the key
+- UE derives verification key from Cell ID (in SIB1) and validity_end (in extension)
+
+### Key Expiration
+- Keys have a finite validity period set at issuance time
+- gNB refuses to start if its key has expired
+- UE rejects SIB1 if the embedded validity_end has passed
+- Compromised keys become unusable after expiration
 
 ### Forward Security (Limited)
 - Compromising one gNB's `sk_ID` doesn't expose other gNBs' keys
+- Compromised keys are time-limited due to validity binding
 - Compromising master secret `s` allows forging all gNB keys
 
 ### Man-in-the-Middle Resistance
@@ -134,6 +156,7 @@ An attacker cannot:
 - Sign SIB1 without knowing `sk_ID`
 - Forge `sk_ID` without knowing master secret `s`
 - Use another gNB's key (Cell ID mismatch detected)
+- Extend key validity (validity_end bound into key derivation)
 
 ---
 

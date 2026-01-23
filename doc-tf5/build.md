@@ -79,12 +79,33 @@ This produces two utilities:
 
 ### Step 3: Issue gNB Secret Key
 
-For each gNB, issue a secret key based on its NR Cell ID (36 bits):
+For each gNB, issue a secret key based on its NR Cell ID (36 bits) and a validity period:
 
 ```bash
-# Cell ID 0x123456789 (match your gNB config's cellID)
-./tf5_ibs_issue pkg_keys/msk.bin 123456789 gnb_keys/sk_gnb.bin
+# Cell ID 0x123456789, valid for 2 years (1051200 minutes from 2024-01-01)
+./tf5_ibs_issue pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_gnb.bin
 ```
+
+**Usage:**
+```
+tf5_ibs_issue <msk_path> <cell_id_hex> <validity_end> <sk_path>
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `msk_path` | Path to Core's master secret key |
+| `cell_id_hex` | NR Cell ID in hex (36 bits, e.g., `123456789`) |
+| `validity_end` | Key expiration: minutes since 2024-01-01 00:00 UTC (max 16777215) |
+| `sk_path` | Output path for gNB's secret key |
+
+**Validity Period Examples:**
+| Duration | Minutes | Expiration Date |
+|----------|---------|-----------------|
+| 1 year | 525600 | 2025-01-01 |
+| 2 years | 1051200 | 2026-01-01 |
+| 5 years | 2628000 | 2029-01-01 |
+| 10 years | 5256000 | 2034-01-01 |
 
 ### Key File Format
 
@@ -103,14 +124,18 @@ xxd gnb_keys/sk_gnb.bin  # Should show 32 bytes
 
 ### Required Parameters
 
-Key paths **must** be specified explicitly on the command line (no defaults):
+Key paths and validity **must** be specified explicitly on the command line (no defaults):
 
 | Component | Parameter | Description |
 |-----------|-----------|-------------|
 | gNB | `--tesla-privkey` | Path to gNB's secret key (sk_ID) from PKG |
+| gNB | `--tesla-validity-end` | Key validity end (minutes since 2024-01-01 00:00 UTC). **REQUIRED.** |
 | UE | `--tesla-gnb-pubkey` | Path to Core's Master Public Key (MPK) |
 
 **Note**: gNB no longer needs `--tesla-pubkey` in IBS mode.
+
+**Important**: The `--tesla-validity-end` value on the gNB command line **must match** the validity_end
+used when the key was issued via `tf5_ibs_issue`. Mismatched values cause signature verification failure.
 
 ### Running with TESLA
 
@@ -123,12 +148,13 @@ the SIB1 BWP to 48 PRBs, insufficient for TESLA.
 # From project root
 cd /path/to/oai-tf5
 
-# Run gNB with IBS secret key
+# Run gNB with IBS secret key and validity
 cd cmake_targets/ran_build/build
 sudo ./nr-softmodem \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
     --rfsim \
-    --tesla-privkey /path/to/gnb_keys/sk_gnb.bin
+    --tesla-privkey /path/to/gnb_keys/sk_gnb.bin \
+    --tesla-validity-end 1051200
 
 # Run UE with Core's MPK (in another terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi 001010000000001 --rfsim \
@@ -136,12 +162,24 @@ sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi
     --tesla-gnb-pubkey /path/to/pkg_keys/mpk.bin
 ```
 
-### Cell ID Binding
+**Key Validity Checks:**
+- **gNB startup**: Refuses to start if the key has expired (current time >= validity_end)
+- **UE verification**: Rejects SIB1 if the embedded validity_end has passed
 
-The gNB's secret key is cryptographically bound to its Cell ID:
+### Cell ID and Validity Binding
+
+The gNB's secret key is cryptographically bound to both its Cell ID and validity period:
+
+**Cell ID binding:**
 - The `cellID` parameter in your gNB config must match the Cell ID used during key issuance
 - UE extracts Cell ID from SIB1's `cellAccessRelatedInfo` and uses it for verification
-- Mismatch causes verification failure
+- Mismatch causes signature verification failure
+
+**Validity binding:**
+- The `--tesla-validity-end` parameter must match the validity_end used during key issuance
+- Both Cell ID and validity_end are hashed together: `pk_ID = H_s(Cell_ID || validity_end)`
+- If validity_end is mismatched, the derived public key differs and verification fails
+- UE also checks if the key has expired before attempting verification
 
 ---
 
@@ -168,5 +206,8 @@ cd tf5-core-pkg && mkdir build && cd build && cmake .. && make
 
 # Generate new IBS keys
 ./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
-./tf5_ibs_issue pkg_keys/msk.bin <your_cell_id_hex> gnb_keys/sk_gnb.bin
+./tf5_ibs_issue pkg_keys/msk.bin <your_cell_id_hex> <validity_end> gnb_keys/sk_gnb.bin
+
+# Example: Cell ID 123456789, valid for 2 years
+./tf5_ibs_issue pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_gnb.bin
 ```
