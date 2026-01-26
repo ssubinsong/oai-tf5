@@ -61,7 +61,7 @@ typedef struct {
 
 ---
 
-## Static Parameters (30 bytes)
+## Static Parameters (14 bytes)
 
 Parameters constant for the lifetime of a key chain:
 
@@ -72,7 +72,7 @@ typedef struct {
     uint16_t t_int_ms;             // 2B - Interval duration (20ms)
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay (1)
     uint8_t  key_len;              // 1B - TESLA key length (16)
-    uint8_t  root_key[16];         // 16B - K_0 chain commitment
+    // root_key removed: disclosed_key serves as anchor (every SIB1 is signed)
     tf5_tesla_slot_time_t t0;      // 6B - T_0: interval 0 start (HFN/SFN/slot)
     uint32_t chain_len;            // 4B - Number of intervals N
 } tf5_tesla_static_params_t;
@@ -95,17 +95,17 @@ Field access: `.sfn`, `.slot` (HFN obtained separately from hyperSFN-r17)
 
 ---
 
-## TESLA Extension (129 bytes)
+## TESLA Extension (113 bytes)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
 ```c
 typedef struct {
-    tf5_tesla_static_params_t   static_params;   // 30B
+    tf5_tesla_static_params_t   static_params;   // 14B (root_key removed)
     uint32_t                    validity_end;    // 3B (wire) - Key expiration (minutes since 2024-01-01)
     tf5_tesla_timesync_info_t   timesync_info;   // 4B (sfn + slot only)
     uint32_t                    interval_index;  // 4B - Current interval i
-    uint8_t                     disclosed_key[16]; // 16B - K_{i-d}
+    uint8_t                     disclosed_key[16]; // 16B - K_{i-d} (serves as trusted anchor)
     uint64_t                    timestamp_ms;    // 8B - Unix epoch (ms) for replay protection
     uint8_t  gnb_signature[48];                  // 48B - BLS signature
     uint8_t  tesla_tag[16];                      // 16B - HMAC tag
@@ -134,7 +134,7 @@ uint64_t tf5_ibs_validity_to_unix(uint32_t validity_end);
 - **Signature**: SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
 - **MAC**: SIB1 || static_params || validity_end || timesync_info (per RFC 4082, excludes timestamp)
 
-**Binary Wire Format** (129 bytes, big-endian):
+**Binary Wire Format** (113 bytes, big-endian):
 ```
 Offset  Size  Field
 ------  ----  -----
@@ -143,23 +143,24 @@ Offset  Size  Field
 2       2     t_int_ms
 4       1     disclosure_delay
 5       1     key_len
-6       16    root_key
-22      2     t0.hfn
-24      2     t0.sfn
-26      2     t0.slot
-28      4     chain_len
-32      3     validity_end           (NEW: minutes since 2024-01-01)
-35      2     timesync_info.sfn
-37      2     timesync_info.slot
-39      4     interval_index
-43      16    disclosed_key
-59      8     timestamp_ms
-67      48    gnb_signature (BLS)
-115     16    tesla_tag
+(root_key removed - disclosed_key serves as trusted anchor)
+6       2     t0.hfn
+8       2     t0.sfn
+10      2     t0.slot
+12      4     chain_len
+16      3     validity_end           (minutes since 2024-01-01)
+19      2     timesync_info.sfn
+21      2     timesync_info.slot
+23      4     interval_index
+27      16    disclosed_key
+43      8     timestamp_ms
+51      48    gnb_signature (BLS)
+99      16    tesla_tag
 ------
-129 bytes total (with BLS signatures)
+113 bytes total (with BLS signatures)
 
 Note: HFN removed from timesync_info - now obtained from hyperSFN-r17 in SIB1-v1700-IEs
+Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
 ```
 
 ---

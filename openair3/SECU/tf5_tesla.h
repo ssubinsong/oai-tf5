@@ -174,7 +174,10 @@ static inline tf5_tesla_d_params_t tf5_d_params_default(void)
  * TESLA Static Parameters
  *
  * These parameters are constant for the lifetime of a key chain.
- * Total size: 30 bytes
+ * Total size: 14 bytes
+ *
+ * Note: root_key (K_0) is not included here. Since every SIB1 is signed,
+ * the disclosed_key serves as a trusted anchor for key chain verification.
  */
 typedef struct {
     uint8_t  te_version;           // 1B - Protocol version
@@ -182,7 +185,6 @@ typedef struct {
     uint16_t t_int_ms;             // 2B - Interval duration in ms (e.g., 20ms)
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay d (e.g., 1)
     uint8_t  key_len;              // 1B - TESLA key length (16)
-    uint8_t  root_key[TF5_TESLA_KEY_LEN]; // 16B - K_0 chain commitment
     tf5_tesla_slot_time_t t0;      // 6B - T_0: interval 0 start (HFN/SFN/slot)
     uint32_t chain_len;            // 4B - Number of intervals N
 } tf5_tesla_static_params_t;
@@ -207,11 +209,12 @@ typedef struct {
  * Signature authenticates: SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
  * MAC authenticates:       SIB1 || static_params || validity_end || timesync_info (per RFC 4082)
  *
- * Total size: 129 bytes (with BLS signatures)
+ * Total size: 113 bytes (with BLS signatures)
  * Note: HFN removed from timesync_info - now obtained from hyperSFN-r17
+ * Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
  */
 typedef struct {
-    tf5_tesla_static_params_t  static_params;                 // 30B
+    tf5_tesla_static_params_t  static_params;                 // 14B
     uint32_t                   validity_end;                  // 3B (wire) - Key expiration (minutes since 2024-01-01)
     tf5_tesla_timesync_info_t  timesync_info;                 // 4B (sfn + slot only)
     uint32_t                   interval_index;                // 4B - Current interval i

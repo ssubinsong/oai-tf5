@@ -181,7 +181,8 @@ int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
  * These consolidate duplicated serialization logic.
  */
 
-/* Encode static params (30 bytes) to buffer */
+/* Encode static params (14 bytes) to buffer
+ * Note: root_key removed - disclosed_key serves as trusted anchor */
 static size_t tf5_encode_static_params(uint8_t *buf,
                                         const tf5_tesla_static_params_t *p)
 {
@@ -191,15 +192,15 @@ static size_t tf5_encode_static_params(uint8_t *buf,
     tf5_encode_u16_be(buf + offset, p->t_int_ms); offset += 2;
     buf[offset++] = p->disclosure_delay;
     buf[offset++] = p->key_len;
-    memcpy(buf + offset, p->root_key, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
     tf5_encode_u16_be(buf + offset, p->t0.hfn); offset += 2;
     tf5_encode_u16_be(buf + offset, p->t0.sfn); offset += 2;
     tf5_encode_u16_be(buf + offset, p->t0.slot); offset += 2;
     tf5_encode_u32_be(buf + offset, p->chain_len); offset += 4;
-    return offset;  /* Always 30 */
+    return offset;  /* Always 14 */
 }
 
-/* Decode static params (30 bytes) from buffer */
+/* Decode static params (14 bytes) from buffer
+ * Note: root_key removed - disclosed_key serves as trusted anchor */
 static size_t tf5_decode_static_params(const uint8_t *buf,
                                         tf5_tesla_static_params_t *p)
 {
@@ -209,12 +210,11 @@ static size_t tf5_decode_static_params(const uint8_t *buf,
     p->t_int_ms = tf5_decode_u16_be(buf + offset); offset += 2;
     p->disclosure_delay = buf[offset++];
     p->key_len = buf[offset++];
-    memcpy(p->root_key, buf + offset, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
     p->t0.hfn = tf5_decode_u16_be(buf + offset); offset += 2;
     p->t0.sfn = tf5_decode_u16_be(buf + offset); offset += 2;
     p->t0.slot = tf5_decode_u16_be(buf + offset); offset += 2;
     p->chain_len = tf5_decode_u32_be(buf + offset); offset += 4;
-    return offset;  /* Always 30 */
+    return offset;  /* Always 14 */
 }
 
 /* Encode timesync info (4 bytes) to buffer - HFN now from hyperSFN-r17 */
@@ -454,7 +454,8 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
         tf5_tesla_chain_key(state->key_chain[i + 1], state->key_chain[i]);
     }
 
-    // K_0 is the root commitment
+    // K_0 is the root commitment (stored in key_chain[0], not in static params)
+    // Note: root_key removed from static_params - disclosed_key serves as anchor
     LOG_I(NR_RRC, "TESLA: Key chain generated with %u intervals\n", chain_len);
 
     // Set static parameters
@@ -463,7 +464,6 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
     state->params.t_int_ms = t_int_ms;
     state->params.disclosure_delay = d;
     state->params.key_len = TF5_TESLA_KEY_LEN;
-    memcpy(state->params.root_key, state->key_chain[0], TF5_TESLA_KEY_LEN);
     state->params.t0 = *t0;
     state->params.chain_len = chain_len;
 
