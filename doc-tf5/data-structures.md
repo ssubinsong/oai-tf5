@@ -61,9 +61,12 @@ typedef struct {
 
 ---
 
-## Static Parameters (14 bytes)
+## Static Parameters (10 bytes wire format)
 
-Parameters constant for the lifetime of a key chain:
+Parameters constant for the lifetime of a key chain.
+
+**Wire format**: 10 bytes (T_0 not transmitted, derived by UE from signed fields)
+**In-memory**: Includes T_0 for internal use (derived after IBS verification)
 
 ```c
 typedef struct {
@@ -72,11 +75,22 @@ typedef struct {
     uint16_t t_int_ms;             // 2B - Interval duration (20ms)
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay (1)
     uint8_t  key_len;              // 1B - TESLA key length (16)
-    // root_key removed: disclosed_key serves as anchor (every SIB1 is signed)
-    tf5_tesla_slot_time_t t0;      // 6B - T_0: interval 0 start (HFN/SFN/slot)
+    // T_0 NOT in wire format - derived by UE: T_0 = timesync - (i × T_int)
+    tf5_tesla_slot_time_t t0;      // 6B - T_0: interval 0 start (NOT in wire, derived by UE)
     uint32_t chain_len;            // 4B - Number of intervals N
 } tf5_tesla_static_params_t;
 ```
+
+### T_0 Derivation
+
+Since T_0 is not transmitted in the wire format, the UE derives it from signed fields:
+
+```
+T_0 = timesync_info - (interval_index × T_int)
+```
+
+This derivation is performed via `tf5_tesla_derive_t0()` after IBS signature verification.
+All components needed for derivation (timesync_info, interval_index, T_int) are authenticated by the signature.
 
 ---
 
@@ -95,13 +109,13 @@ Field access: `.sfn`, `.slot` (HFN obtained separately from hyperSFN-r17)
 
 ---
 
-## TESLA Extension (113 bytes)
+## TESLA Extension (109 bytes)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
 ```c
 typedef struct {
-    tf5_tesla_static_params_t   static_params;   // 14B (root_key removed)
+    tf5_tesla_static_params_t   static_params;   // 10B (wire) - T_0 derived by UE
     uint32_t                    validity_end;    // 3B (wire) - Key expiration (minutes since 2024-01-01)
     tf5_tesla_timesync_info_t   timesync_info;   // 4B (sfn + slot only)
     uint32_t                    interval_index;  // 4B - Current interval i
@@ -134,7 +148,7 @@ uint64_t tf5_ibs_validity_to_unix(uint32_t validity_end);
 - **Signature**: SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
 - **MAC**: SIB1 || static_params || validity_end || timesync_info (per RFC 4082, excludes timestamp)
 
-**Binary Wire Format** (113 bytes, big-endian):
+**Binary Wire Format** (109 bytes, big-endian):
 ```
 Offset  Size  Field
 ------  ----  -----
@@ -143,22 +157,19 @@ Offset  Size  Field
 2       2     t_int_ms
 4       1     disclosure_delay
 5       1     key_len
-(root_key removed - disclosed_key serves as trusted anchor)
-6       2     t0.hfn
-8       2     t0.sfn
-10      2     t0.slot
-12      4     chain_len
-16      3     validity_end           (minutes since 2024-01-01)
-19      2     timesync_info.sfn
-21      2     timesync_info.slot
-23      4     interval_index
-27      16    disclosed_key
-43      8     timestamp_ms
-51      48    gnb_signature (BLS)
-99      16    tesla_tag
+6       4     chain_len              (T_0 REMOVED - derived by UE)
+10      3     validity_end           (minutes since 2024-01-01)
+13      2     timesync_info.sfn
+15      2     timesync_info.slot
+17      4     interval_index
+21      16    disclosed_key
+37      8     timestamp_ms
+45      48    gnb_signature (BLS)
+93      16    tesla_tag
 ------
-113 bytes total (with BLS signatures)
+109 bytes total (with BLS signatures)
 
+Note: T_0 not in wire format - UE derives from signed fields: T_0 = timesync - (i × T_int)
 Note: HFN removed from timesync_info - now obtained from hyperSFN-r17 in SIB1-v1700-IEs
 Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
 ```

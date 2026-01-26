@@ -618,6 +618,26 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
           if (sig_rc == 0) {
             /* Success: Accept K_0 and mark authenticated */
+
+            /* Derive T_0 from signed fields (T_0 not in wire format)
+             * Formula: T_0 = timesync_info - (interval_index × T_int) */
+            tf5_tesla_slot_time_t derived_t0;
+            int derive_rc = tf5_tesla_derive_t0(&ext.timesync_info,
+                                                 rrc->current_hfn,
+                                                 ext.interval_index,
+                                                 ext.static_params.t_int_ms,
+                                                 SI_info->tesla_state->slots_per_frame,
+                                                 &derived_t0);
+            if (derive_rc != 0) {
+              LOG_E(NR_RRC, "TESLA: Failed to derive T_0 from signed fields\n");
+              SI_info->tesla_state->auth_failed = true;
+              nr_rrc_abort_connection(rrc, gNB_index);
+              return;
+            }
+            ext.static_params.t0 = derived_t0;
+            LOG_I(NR_RRC, "TESLA IBS: Derived T_0: HFN=%u SFN=%u slot=%u\n",
+                  derived_t0.hfn, derived_t0.sfn, derived_t0.slot);
+
             memcpy(&SI_info->tesla_state->static_params, &ext.static_params, sizeof(tf5_tesla_static_params_t));
             SI_info->tesla_state->k0_trusted = true;
             SI_info->tesla_state->sib1_authenticated = true;

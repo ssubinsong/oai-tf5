@@ -174,8 +174,10 @@ static inline tf5_tesla_d_params_t tf5_d_params_default(void)
  * TESLA Static Parameters
  *
  * These parameters are constant for the lifetime of a key chain.
- * Total size: 14 bytes
+ * Wire format size: 10 bytes (T_0 not transmitted, derived by UE)
+ * In-memory size: includes T_0 for internal use (derived after IBS verification)
  *
+ * Note: T_0 is derived by UE from signed fields: T_0 = timesync - (i × T_int)
  * Note: root_key (K_0) is not included here. Since every SIB1 is signed,
  * the disclosed_key serves as a trusted anchor for key chain verification.
  */
@@ -185,7 +187,7 @@ typedef struct {
     uint16_t t_int_ms;             // 2B - Interval duration in ms (e.g., 20ms)
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay d (e.g., 1)
     uint8_t  key_len;              // 1B - TESLA key length (16)
-    tf5_tesla_slot_time_t t0;      // 6B - T_0: interval 0 start (HFN/SFN/slot)
+    tf5_tesla_slot_time_t t0;      // 6B - T_0: interval 0 start (NOT in wire format, derived by UE)
     uint32_t chain_len;            // 4B - Number of intervals N
 } tf5_tesla_static_params_t;
 
@@ -209,12 +211,16 @@ typedef struct {
  * Signature authenticates: SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
  * MAC authenticates:       SIB1 || static_params || validity_end || timesync_info (per RFC 4082)
  *
- * Total size: 113 bytes (with BLS signatures)
+ * Wire format size: 109 bytes (with BLS signatures)
+ *   static_params(10) + validity_end(3) + timesync_info(4) + interval_index(4) +
+ *   disclosed_key(16) + timestamp_ms(8) + gnb_signature(48) + tesla_tag(16)
+ *
+ * Note: T_0 not in wire format - UE derives from signed fields
  * Note: HFN removed from timesync_info - now obtained from hyperSFN-r17
  * Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
  */
 typedef struct {
-    tf5_tesla_static_params_t  static_params;                 // 14B
+    tf5_tesla_static_params_t  static_params;                 // 10B (wire) - T_0 derived by UE
     uint32_t                   validity_end;                  // 3B (wire) - Key expiration (minutes since 2024-01-01)
     tf5_tesla_timesync_info_t  timesync_info;                 // 4B (sfn + slot only)
     uint32_t                   interval_index;                // 4B - Current interval i
@@ -800,6 +806,56 @@ static inline uint64_t tf5_tesla_absolute_slots(const tf5_tesla_slot_time_t *tim
 
 // Note: HFN update logic is now directly in gNB_scheduler_bch.c (cc->hfn tracking)
 // UE receives HFN from hyperSFN-r17 in SIB1
+
+/**
+ * Alias for tf5_tesla_absolute_slots (consistency with inverse function name)
+ */
+static inline uint64_t tf5_slot_time_to_slots(const tf5_tesla_slot_time_t *time,
+                                               uint16_t slots_per_frame)
+{
+    return tf5_tesla_absolute_slots(time, slots_per_frame);
+}
+
+/**
+ * Convert absolute slot count back to timing struct
+ *
+ * Inverse of tf5_tesla_absolute_slots / tf5_slot_time_to_slots.
+ *
+ * @param abs_slots      Absolute slot count
+ * @param slots_per_frame Number of slots per frame
+ * @return Timing struct (HFN/SFN/slot)
+ */
+static inline tf5_tesla_slot_time_t tf5_slots_to_slot_time(uint64_t abs_slots,
+                                                            uint16_t slots_per_frame)
+{
+    // abs_slots = (hfn * 1024 + sfn) * slots_per_frame + slot
+    uint64_t total_frames = abs_slots / slots_per_frame;
+    uint16_t slot = abs_slots % slots_per_frame;
+    uint16_t hfn = (uint16_t)(total_frames / 1024);
+    uint16_t sfn = (uint16_t)(total_frames % 1024);
+    return tf5_slot_time_make(hfn, sfn, slot);
+}
+
+/**
+ * Derive T_0 from signed fields (UE use after IBS verification)
+ *
+ * Since T_0 is not broadcast in the SIB1 TESLA extension, the UE must derive it
+ * from other signed fields. Formula: T_0 = current_time - (interval_index × T_int)
+ *
+ * @param timesync_info   Current time (SFN/slot) from signed SIB1 extension
+ * @param hfn             Current HFN (from hyperSFN-r17 or tracking)
+ * @param interval_index  Current interval index i
+ * @param t_int_ms        Interval duration in milliseconds
+ * @param slots_per_frame Number of slots per frame (SCS-dependent)
+ * @param out_t0          Output: derived T_0
+ * @return 0 on success, -1 on error (e.g., underflow)
+ */
+int tf5_tesla_derive_t0(const tf5_tesla_timesync_info_t *timesync_info,
+                        uint16_t hfn,
+                        uint32_t interval_index,
+                        uint16_t t_int_ms,
+                        uint16_t slots_per_frame,
+                        tf5_tesla_slot_time_t *out_t0);
 
 /*
  * =============================================================================

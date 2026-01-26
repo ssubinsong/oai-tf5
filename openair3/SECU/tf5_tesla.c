@@ -137,6 +137,50 @@ uint32_t tf5_tesla_get_interval_index(const tf5_tesla_slot_time_t *current,
     return (uint32_t)(time_ms / t_int_ms);
 }
 
+int tf5_tesla_derive_t0(const tf5_tesla_timesync_info_t *timesync_info,
+                        uint16_t hfn,
+                        uint32_t interval_index,
+                        uint16_t t_int_ms,
+                        uint16_t slots_per_frame,
+                        tf5_tesla_slot_time_t *out_t0)
+{
+    if (!timesync_info || !out_t0 || slots_per_frame == 0 || t_int_ms == 0) {
+        return -1;
+    }
+
+    // Convert current time (from timesync_info + hfn) to absolute slots
+    tf5_tesla_slot_time_t current_time = tf5_slot_time_make(hfn,
+                                                             timesync_info->sfn,
+                                                             timesync_info->slot);
+    uint64_t current_abs_slots = tf5_tesla_absolute_slots(&current_time, slots_per_frame);
+
+    // Calculate slots per interval
+    // Each frame = 10ms, so slots_per_ms = slots_per_frame / 10
+    // slots_per_interval = t_int_ms * slots_per_ms = t_int_ms * slots_per_frame / 10
+    uint64_t slots_per_interval = ((uint64_t)t_int_ms * slots_per_frame) / 10;
+
+    // T_0 = current_time - (interval_index × T_int)
+    uint64_t offset_slots = (uint64_t)interval_index * slots_per_interval;
+
+    if (current_abs_slots < offset_slots) {
+        // Underflow: invalid parameters (interval_index too large for current time)
+        LOG_E(NR_RRC, "[TF5] T_0 derivation underflow: current_slots=%lu, offset=%lu (i=%u, T_int=%u)\n",
+              (unsigned long)current_abs_slots, (unsigned long)offset_slots,
+              interval_index, t_int_ms);
+        return -1;
+    }
+
+    uint64_t t0_abs_slots = current_abs_slots - offset_slots;
+
+    // Convert back to HFN/SFN/slot
+    *out_t0 = tf5_slots_to_slot_time(t0_abs_slots, slots_per_frame);
+
+    LOG_D(NR_RRC, "[TF5] Derived T_0: HFN=%u SFN=%u slot=%u (from i=%u, T_int=%u)\n",
+          out_t0->hfn, out_t0->sfn, out_t0->slot, interval_index, t_int_ms);
+
+    return 0;
+}
+
 /*
  * =============================================================================
  * Timestamp Functions for Replay Protection
@@ -181,7 +225,8 @@ int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
  * These consolidate duplicated serialization logic.
  */
 
-/* Encode static params (14 bytes) to buffer
+/* Encode static params (10 bytes) to buffer
+ * Note: T_0 removed from wire format - UE derives it from signed fields
  * Note: root_key removed - disclosed_key serves as trusted anchor */
 static size_t tf5_encode_static_params(uint8_t *buf,
                                         const tf5_tesla_static_params_t *p)
@@ -192,14 +237,13 @@ static size_t tf5_encode_static_params(uint8_t *buf,
     tf5_encode_u16_be(buf + offset, p->t_int_ms); offset += 2;
     buf[offset++] = p->disclosure_delay;
     buf[offset++] = p->key_len;
-    tf5_encode_u16_be(buf + offset, p->t0.hfn); offset += 2;
-    tf5_encode_u16_be(buf + offset, p->t0.sfn); offset += 2;
-    tf5_encode_u16_be(buf + offset, p->t0.slot); offset += 2;
+    /* T_0 removed: UE derives from timesync_info - (interval_index × T_int) */
     tf5_encode_u32_be(buf + offset, p->chain_len); offset += 4;
-    return offset;  /* Always 14 */
+    return offset;  /* Always 10 */
 }
 
-/* Decode static params (14 bytes) from buffer
+/* Decode static params (10 bytes) from buffer
+ * Note: T_0 not in wire format - UE must derive it separately via tf5_tesla_derive_t0()
  * Note: root_key removed - disclosed_key serves as trusted anchor */
 static size_t tf5_decode_static_params(const uint8_t *buf,
                                         tf5_tesla_static_params_t *p)
@@ -210,11 +254,12 @@ static size_t tf5_decode_static_params(const uint8_t *buf,
     p->t_int_ms = tf5_decode_u16_be(buf + offset); offset += 2;
     p->disclosure_delay = buf[offset++];
     p->key_len = buf[offset++];
-    p->t0.hfn = tf5_decode_u16_be(buf + offset); offset += 2;
-    p->t0.sfn = tf5_decode_u16_be(buf + offset); offset += 2;
-    p->t0.slot = tf5_decode_u16_be(buf + offset); offset += 2;
+    /* T_0 not in wire: UE derives from timesync_info - (interval_index × T_int) */
+    p->t0.hfn = 0;   /* Placeholder - derived later by UE */
+    p->t0.sfn = 0;
+    p->t0.slot = 0;
     p->chain_len = tf5_decode_u32_be(buf + offset); offset += 4;
-    return offset;  /* Always 14 */
+    return offset;  /* Always 10 */
 }
 
 /* Encode timesync info (4 bytes) to buffer - HFN now from hyperSFN-r17 */
@@ -318,16 +363,17 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
         return -1;
     }
 
-    // Total size: 30 + 3 + 4 + 4 + 16 + 8 + 48 + 16 = 129 bytes (with BLS signatures)
+    // Total size: 10 + 3 + 4 + 4 + 16 + 8 + 48 + 16 = 109 bytes (with BLS signatures)
+    // Note: T_0 not in wire format - UE derives from signed fields
     // Note: timesync_info is 4 bytes (HFN removed - now from hyperSFN-r17)
-    const size_t required_len = 129;
+    const size_t required_len = 109;
     if (buf_len < required_len) {
         return -2;
     }
 
     size_t offset = 0;
 
-    // Static params (30 bytes)
+    // Static params (10 bytes) - T_0 not transmitted, derived by UE
     offset += tf5_encode_static_params(buf + offset, &ext->static_params);
 
     // Validity end (3 bytes) - key expiration (minutes since 2024-01-01)
@@ -368,14 +414,16 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
         return -1;
     }
 
-    const size_t required_len = 129;  // 30 + 3 + 4 + 4 + 16 + 8 + 48 + 16 bytes
+    // Total size: 10 + 3 + 4 + 4 + 16 + 8 + 48 + 16 = 109 bytes (with BLS signatures)
+    // Note: T_0 not in wire format - UE must derive via tf5_tesla_derive_t0()
+    const size_t required_len = 109;
     if (buf_len < required_len) {
         return -2;
     }
 
     size_t offset = 0;
 
-    // Static params (30 bytes)
+    // Static params (10 bytes) - T_0 set to zero, caller must derive
     offset += tf5_decode_static_params(buf + offset, &ext->static_params);
 
     // Validity end (3 bytes) - key expiration (minutes since 2024-01-01)
