@@ -221,17 +221,11 @@ static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
 The safe packet test determines if a message could have been forged by an attacker who saw a key disclosure:
 
 ```c
-bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot, rx_hfn) {
-    // Precondition: HFN must already be initialized (by first authenticated SIB1)
-    DevAssert(state->hfn_initialized);
-
-    // Update HFN based on SFN wraparound detection
-    update_hfn(&state->current_hfn, &state->last_sfn, rx_sfn);
-
-    // Compute current interval using rx_hfn (recorded at reception time)
+bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
+    // Compute current interval using rx_sfn/rx_slot (recorded at reception time)
     // and CACHED static parameters (authenticated during first-time UE verification via BLS signature)
-    uint32_t x = compute_interval(rx_hfn, rx_sfn, rx_slot,
-                                  state->static_params.t0_*,
+    uint32_t x = compute_interval(rx_sfn, rx_slot,
+                                  state->static_params.t0,
                                   state->static_params.t_int_ms);
     uint32_t i = ext->interval_index;  // claimed interval from sender
     uint8_t d = state->static_params.disclosure_delay;  // cached, authenticated

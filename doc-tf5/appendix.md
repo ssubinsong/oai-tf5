@@ -45,5 +45,4 @@ LOG_E(NR_RRC, "TESLA: ...")  // Error
 **Key log messages**:
 - gNB initialization: Public key logged for UE provisioning
 - Signature verification: Success/failure logged
-- HFN tracking: Initialization and mismatch warnings
 - Buffered verification: Success/failure of delayed verification

@@ -516,10 +516,6 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef TF5_ENABLE_TESLA
-  // Track k0_trusted state before processing (for HFN reconciliation security gate)
-  // Only first-time UE (signature path) transitions k0_trusted from false to true
-  bool was_k0_trusted = (SI_info->tesla_state && SI_info->tesla_state->k0_trusted);
-
   // Skip TESLA verification for dedicated SIB1 delivery (rx_frame < 0)
   // Dedicated delivery is already protected by RRC integrity/ciphering
   if (rx_frame < 0) {
@@ -623,7 +619,6 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
              * Formula: T_0 = timesync_info - (interval_index × T_int) */
             tf5_tesla_slot_time_t derived_t0;
             int derive_rc = tf5_tesla_derive_t0(&ext.timesync_info,
-                                                 rrc->current_hfn,
                                                  ext.interval_index,
                                                  ext.static_params.t_int_ms,
                                                  SI_info->tesla_state->slots_per_frame,
@@ -635,8 +630,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
               return;
             }
             ext.static_params.t0 = derived_t0;
-            LOG_I(NR_RRC, "TESLA IBS: Derived T_0: HFN=%u SFN=%u slot=%u\n",
-                  derived_t0.hfn, derived_t0.sfn, derived_t0.slot);
+            LOG_I(NR_RRC, "TESLA IBS: Derived T_0: SFN=%u slot=%u\n",
+                  derived_t0.sfn, derived_t0.slot);
 
             memcpy(&SI_info->tesla_state->static_params, &ext.static_params, sizeof(tf5_tesla_static_params_t));
             SI_info->tesla_state->k0_trusted = true;
@@ -738,12 +733,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             /* Step 1 (RFC 4082): Safe packet test FIRST - reject if message could have been forged */
           /* CRITICAL: Must use actual RX timing, not TX timing from signed extension */
           /* Using TX timing would allow replay attacks with old signed messages */
-          /* Use RRC-tracked HFN at reception time (authoritative local value) */
-          uint16_t rx_hfn = rrc->current_hfn;
           if (!tf5_tesla_ue_safe_packet_test(SI_info->tesla_state, &ext,
                                               rx_frame,
-                                              rx_slot,
-                                              rx_hfn)) {
+                                              rx_slot)) {
             LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
             /* Skip this SIB1 entirely - do not buffer, do not process further */
           } else {
@@ -758,9 +750,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                             &ext.timesync_info);
 
             /* Step 2: Buffer current SIB1 for future TESLA verification */
-            /* Use RRC-tracked HFN (authoritative local value) */
-            tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(
-                rrc->current_hfn, rx_frame, rx_slot);
+            tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);
 
             /* Determine if this SIB1 should trigger RRC setup:
              * Only the first SIB1 when no RRC session is pending triggers setup */
@@ -848,48 +838,6 @@ skip_tesla:
     sib1_v1700 = sib1->nonCriticalExtension->nonCriticalExtension->nonCriticalExtension;
     si_SchedInfo_v1700 = sib1_v1700->si_SchedulingInfo_v1700;
   }
-
-#ifdef TF5_ENABLE_TESLA
-  // Extract hyperSFN-r17 for TESLA HFN synchronization
-  // SECURITY: Only accept hyperSFN-r17 from signature-authenticated SIB1
-  // - First-time UE: k0_trusted transitioned false→true via signature verification
-  // - Returning UE (TESLA): Current SIB1 not yet authenticated (delayed d intervals)
-  //   → rely on local ITTI-based HFN tracking
-  if (sib1_v1700 && sib1_v1700->hyperSFN_r17 && SI_info->tesla_state) {
-    tf5_tesla_ue_state_t *ts = SI_info->tesla_state;
-
-    // Only reconcile if k0_trusted just became true (signature verification path)
-    bool signature_just_verified = !was_k0_trusted && ts->k0_trusted;
-
-    if (!signature_just_verified) {
-      // TESLA path or auth failed: skip reconciliation, use local ITTI tracking
-      LOG_D(NR_RRC, "TESLA: Skipping hyperSFN reconciliation (current SIB1 not signature-verified)\n");
-    } else if (sib1_v1700->hyperSFN_r17->size >= 2 && sib1_v1700->hyperSFN_r17->buf) {
-      // Signature path: current SIB1 was just authenticated, safe to reconcile
-      uint16_t network_hfn = ((uint16_t)sib1_v1700->hyperSFN_r17->buf[0] << 2) |
-                             ((uint16_t)sib1_v1700->hyperSFN_r17->buf[1] >> 6);
-
-      if (!rrc->hfn_initialized) {
-        rrc->current_hfn = network_hfn;
-        rrc->hfn_initialized = true;
-        LOG_I(NR_RRC, "TESLA: HFN initialized from signature-verified SIB1: %u\n", network_hfn);
-      } else {
-        // Reconciliation after signature verification (rare: UE had local tracking already)
-        int16_t diff = (int16_t)network_hfn - (int16_t)rrc->current_hfn;
-        if (diff > 512) diff -= 1024;
-        if (diff < -512) diff += 1024;
-
-        if (diff == 0) {
-          LOG_D(NR_RRC, "TESLA: HFN in sync (HFN=%u)\n", network_hfn);
-        } else {
-          LOG_W(NR_RRC, "TESLA: HFN drift corrected: local=%u, network=%u, diff=%d\n",
-                rrc->current_hfn, network_hfn, diff);
-          rrc->current_hfn = network_hfn;
-        }
-      }
-    }
-  }
-#endif
 
   AssertFatal(sib1->servingCellConfigCommon, "configuration issue in SIB1\n");
   SI_info->scs = sib1->servingCellConfigCommon->downlinkConfigCommon.initialDownlinkBWP.genericParameters.subcarrierSpacing;
@@ -3177,14 +3125,6 @@ void *rrc_nrue(void *notUsed)
       rrc->process_target_ntncfg = false;
     }
     break;
-
-#ifdef TF5_ENABLE_TESLA
-  case NRRRC_SFN_WRAP:
-    // SFN wrapped from 1023 to 0 - increment HFN
-    rrc->current_hfn = (rrc->current_hfn + 1) & 0x3FF;  // 10-bit wrap
-    LOG_D(NR_RRC, "SFN wrap detected, HFN incremented to %u\n", rrc->current_hfn);
-    break;
-#endif
 
   case NR_RRC_MAC_INAC_IND:
     LOG_D(NR_RRC, "Received data inactivity indication from lower layers\n");

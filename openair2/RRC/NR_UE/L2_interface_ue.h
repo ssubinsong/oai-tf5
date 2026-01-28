@@ -48,8 +48,5 @@ void nr_mac_rrc_msg3_ind(const module_id_t mod_id, const int rnti, bool prepare_
 void nr_ue_rrc_timer_trigger(int instance, int frame, int gnb_id);
 void nr_mac_rrc_ra_ind(const module_id_t mod_id, bool success);
 void process_msg_rcc_to_mac(nr_mac_rrc_message_t *msg, int instance_id);
-#ifdef TF5_ENABLE_TESLA
-void nr_ue_rrc_sfn_wrap_notify(int instance);
-#endif
 #endif
 

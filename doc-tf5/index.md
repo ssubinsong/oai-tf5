@@ -29,7 +29,6 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 | Delayed key disclosure | Keys revealed one interval after use |
 | Dual authentication | IBS signature + TESLA MAC |
 | Identity-Based Signatures | UE needs only Core's MPK to verify any gNB |
-| HFN tracking | Handles SFN wraparound for long key chains |
 | Conditional compilation | Enabled via `TF5_ENABLE_TESLA` flag |
 
 ---
@@ -47,7 +46,6 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 ### Implementation
 - [gNB Implementation](gnb-implementation.md) - gNB-side initialization and transmission flow
 - [UE Implementation](ue-implementation.md) - UE-side verification and reception flow
-- [HFN Tracking](hfn-tracking.md) - Hyper-Frame Number tracking for SFN wraparound
 - [Time Synchronization](time-sync.md) - Time sync model, D calculation, and safe packet test
 
 ### Integration

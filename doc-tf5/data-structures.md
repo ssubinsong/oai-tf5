@@ -8,42 +8,18 @@
 
 ## Common Timing Structures
 
-### Slot Time (6 bytes)
+### Slot Time (4 bytes)
 
 Generic PHY timing representing a point in 5G NR time:
 
 ```c
 typedef struct {
-    uint16_t hfn;   // 2B - Hyper-Frame Number (for SFN wraparound)
     uint16_t sfn;   // 2B - System Frame Number (0-1023)
     uint16_t slot;  // 2B - Slot within frame
 } tf5_tesla_slot_time_t;
 ```
 
 Used for T_0 reference, TX timing, and RX timing throughout the TESLA module.
-
-### HFN Tracking (RRC Layer via ITTI)
-
-HFN tracking uses symmetric ITTI-based architecture for both gNB and UE:
-
-```c
-// In gNB_RRC_INST (nr_rrc_defs.h)
-#ifdef TF5_ENABLE_TESLA
-uint16_t current_hfn;  // HFN tracked by RRC, incremented on SFN wrap
-#endif
-
-// In NR_UE_RRC_INST_t (rrc_defs.h)
-#ifdef TF5_ENABLE_TESLA
-uint16_t current_hfn;   // HFN tracked by RRC, incremented on SFN wrap
-bool hfn_initialized;   // Has HFN been initialized from hyperSFN-r17?
-#endif
-```
-
-- **gNB**: MAC detects SFN wrap → sends `NRRRC_SFN_WRAP` ITTI → RRC increments `current_hfn`
-- **UE**: PHY detects SFN wrap → sends `NRRRC_SFN_WRAP` ITTI → RRC increments `current_hfn`
-- **UE**: Also reconciles with hyperSFN-r17 from authenticated SIB1
-
-See [hfn-tracking.md](hfn-tracking.md) for detailed architecture.
 
 ### D-Bound Parameters (20 bytes)
 
@@ -105,7 +81,7 @@ typedef struct {
 } tf5_tesla_timesync_info_t;
 ```
 
-Field access: `.sfn`, `.slot` (HFN obtained separately from hyperSFN-r17)
+Field access: `.sfn`, `.slot`
 
 ---
 
@@ -170,7 +146,6 @@ Offset  Size  Field
 109 bytes total (with BLS signatures)
 
 Note: T_0 not in wire format - UE derives from signed fields: T_0 = timesync - (i × T_int)
-Note: HFN removed from timesync_info - now obtained from hyperSFN-r17 in SIB1-v1700-IEs
 Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
 ```
 
@@ -188,9 +163,6 @@ typedef struct {
 
     // Current state
     uint32_t current_interval;
-
-    // HFN tracking is in gNB_RRC_INST (rrc->current_hfn)
-    // MAC sends NRRRC_SFN_WRAP ITTI to RRC on SFN wraparound
 
     // IBS keys
     uint8_t  gnb_private_key[32];   // sk_ID (issued by Core PKG)
@@ -228,7 +200,7 @@ typedef struct {
         size_t   auth_input_len;
         uint32_t interval_index;
         uint8_t  tag[16];
-        tf5_tesla_slot_time_t rx_time;  // RX timing (HFN/SFN/slot)
+        tf5_tesla_slot_time_t rx_time;  // RX timing (SFN/slot)
         bool     pending;
     } buffer;
 

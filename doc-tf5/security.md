@@ -12,7 +12,6 @@
 | Message tampering | Yes | Signature + MAC verification |
 | Signature replay attack | Yes | Wall-clock timestamp validation (±60s window) |
 | Replay attack (recent) | Yes | Interval check in safe packet test |
-| Replay attack (old HFN cycle) | Yes | HFN mismatch detection |
 | Key compromise | Partial | Delayed disclosure limits exposure |
 
 ---
@@ -61,15 +60,14 @@
 ### Fake Base Station Attack
 - Attacker cannot forge BLS signatures without private key
 - Attacker cannot predict future TESLA keys (one-way function)
-- Attacker cannot replay old messages (HFN/interval check)
+- Attacker cannot replay old messages (interval check)
 
 ### Replay Attack
 - **Signature replay**: Wall-clock timestamp in extension (signed by BLS)
   - UE validates timestamp against local system time (GNSS/NTP synced)
   - Default window: ±60 seconds (configurable via `timestamp_window_ms`)
   - Attacker capturing and replaying old signed SIB1 is detected
-- **Same SFN cycle**: Interval check detects stale messages
-- **Different HFN cycle**: HFN mismatch detection (±1 tolerance)
+- **Interval check**: Safe packet test detects stale messages
 
 ### Key Disclosure Attack
 - Attacker learns K_{i-d} at interval i

@@ -15,15 +15,13 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
                        uint8_t d,              // Disclosure delay (1)
                        uint32_t chain_len,     // Number of intervals (65536)
                        const uint8_t private_key[32],
-                       uint16_t hfn,           // Initial HFN (0)
-                       uint16_t sfn,           // T_0 SFN
-                       uint16_t slot,          // T_0 slot
+                       const tf5_tesla_slot_time_t *t0,  // T_0 timing
                        uint16_t slots_per_frame);
 
 // Free resources
 void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state);
 
-// Get current interval (updates HFN tracking)
+// Get current interval
 uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
                                     uint16_t sfn,
                                     uint16_t slot);
@@ -76,14 +74,13 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
                                   size_t auth_input_len,
                                   const uint8_t signature[48]);
 
-// Safe packet test (also initializes HFN tracking)
+// Safe packet test
 // Note: Uses state->static_params (cached from first authenticated SIB1)
 //       Only ext->interval_index is used from the extension parameter
 bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
                                    uint16_t rx_sfn,
-                                   uint16_t rx_slot,
-                                   uint16_t rx_hfn);
+                                   uint16_t rx_slot);
 
 // Buffer SIB1 for delayed verification
 int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
@@ -91,9 +88,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
                              size_t auth_input_len,
                              uint32_t interval_index,
                              const uint8_t tag[16],
-                             uint16_t ti_hfn,
-                             uint16_t rx_sfn,
-                             uint16_t rx_slot);
+                             const tf5_tesla_slot_time_t *rx_time);
 
 // Verify buffered SIB1 with disclosed key
 int tf5_tesla_ue_verify_buffered(tf5_tesla_ue_state_t *state,
@@ -183,22 +178,14 @@ int tf5_tesla_compute_tag(const uint8_t key[16],
                           size_t auth_input_len,
                           uint8_t tag_out[16]);
 
-// Get slots since T_0 (with HFN)
-uint64_t tf5_tesla_slots_since_t0(uint16_t current_hfn,
-                                  uint16_t current_sfn,
-                                  uint16_t current_slot,
-                                  uint16_t t0_hfn,
-                                  uint16_t t0_sfn,
-                                  uint16_t t0_slot,
+// Get slots since T_0
+uint64_t tf5_tesla_slots_since_t0(const tf5_tesla_slot_time_t *current,
+                                  const tf5_tesla_slot_time_t *t0,
                                   uint16_t slots_per_frame);
 
 // Get interval index
-uint32_t tf5_tesla_get_interval_index(uint16_t hfn,
-                                      uint16_t sfn,
-                                      uint16_t slot,
-                                      uint16_t t0_hfn,
-                                      uint16_t t0_sfn,
-                                      uint16_t t0_slot,
+uint32_t tf5_tesla_get_interval_index(const tf5_tesla_slot_time_t *current,
+                                      const tf5_tesla_slot_time_t *t0,
                                       uint16_t t_int_ms,
                                       uint16_t slots_per_frame);
 ```

@@ -103,21 +103,16 @@
  */
 
 /**
- * Generic PHY Timing (HFN/SFN/slot)
+ * Generic PHY Timing (SFN/slot)
  *
  * Represents a point in 5G NR time. Used for T_0 reference, TX timing,
  * and RX timing throughout the TESLA module.
- * Total size: 6 bytes
+ * Total size: 4 bytes
  */
 typedef struct {
-    uint16_t hfn;   // 2B - Hyper-Frame Number (for SFN wraparound)
     uint16_t sfn;   // 2B - System Frame Number (0-1023)
     uint16_t slot;  // 2B - Slot within frame
 } tf5_tesla_slot_time_t;
-
-// Note: HFN tracking is now handled by the gNB MAC layer (NR_COMMON_channels_t)
-// gNB: cc->hfn, cc->last_sfn (updated in gNB_scheduler_bch.c)
-// UE: receives HFN from hyperSFN-r17 in SIB1
 
 /**
  * D-Bound Calculation Parameters
@@ -145,17 +140,16 @@ typedef struct {
     size_t   auth_input_len;
     uint32_t interval_index;
     uint8_t  tag[TF5_TESLA_TAG_LEN];
-    tf5_tesla_slot_time_t rx_time;   // RX timing (HFN/SFN/slot when received)
+    tf5_tesla_slot_time_t rx_time;   // RX timing (SFN/slot when received)
     bool     valid;                  // Entry contains valid data
     bool     triggered_rrc_setup;    // This SIB1 triggered the current RRC session
 } tf5_tesla_buffer_entry_t;
 
 /* Helper to construct slot_time_t inline */
-static inline tf5_tesla_slot_time_t tf5_slot_time_make(uint16_t hfn,
-                                                        uint16_t sfn,
+static inline tf5_tesla_slot_time_t tf5_slot_time_make(uint16_t sfn,
                                                         uint16_t slot)
 {
-    return (tf5_tesla_slot_time_t){.hfn = hfn, .sfn = sfn, .slot = slot};
+    return (tf5_tesla_slot_time_t){.sfn = sfn, .slot = slot};
 }
 
 /* Helper to construct default D params */
@@ -353,13 +347,11 @@ void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state);
  * Get current interval index from HFN/SFN/slot
  *
  * @param state         Pointer to gNB TESLA state structure
- * @param hfn           Current HFN (from cc->hfn)
  * @param sfn           Current SFN
  * @param slot          Current slot
  * @return Current interval index
  */
 uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
-                                    uint16_t hfn,
                                     uint16_t sfn,
                                     uint16_t slot);
 
@@ -423,7 +415,6 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
  * This should be called before each SIB1 transmission.
  *
  * @param state         Pointer to gNB TESLA state structure
- * @param hfn           Current HFN (from cc->hfn)
  * @param sfn           Current SFN
  * @param slot          Current slot
  * @param original_sib1 Original SIB1 encoded data
@@ -432,7 +423,6 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
  * @return 0 on success, negative on error
  */
 int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
-                                    uint16_t hfn,
                                     uint16_t sfn,
                                     uint16_t slot,
                                     const uint8_t *original_sib1,
@@ -553,21 +543,18 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
  * know gNB's HFN during initial SSB synchronization. The Ed25519 signature
  * guarantees ti_hfn hasn't been tampered.
  *
- * On first call, initializes UE's HFN tracking from the extension. On subsequent
- * calls, compares received ti_hfn against UE's tracked HFN to detect replays.
+ * Checks that the packet arrived within a safe time window.
  *
- * @param state         Pointer to UE TESLA state structure (updated for HFN tracking)
+ * @param state         Pointer to UE TESLA state structure
  * @param ext           TESLA extension from received SIB1
  * @param rx_sfn        SFN when packet was received
  * @param rx_slot       Slot when packet was received
- * @param rx_hfn        HFN when packet was received (UE's tracked HFN at reception time)
  * @return true if packet is safe, false otherwise
  */
 bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
                                    uint16_t rx_sfn,
-                                   uint16_t rx_slot,
-                                   uint16_t rx_hfn);
+                                   uint16_t rx_slot);
 
 /**
  * Buffer SIB1 for delayed TESLA verification
@@ -793,19 +780,14 @@ uint32_t tf5_tesla_get_interval_index(const tf5_tesla_slot_time_t *current,
  *
  * @param time           Timing struct (HFN/SFN/slot)
  * @param slots_per_frame Number of slots per frame
- * @return Absolute slot count since HFN=0, SFN=0, slot=0
+ * @return Absolute slot count since SFN=0, slot=0
  */
 static inline uint64_t tf5_tesla_absolute_slots(const tf5_tesla_slot_time_t *time,
                                                  uint16_t slots_per_frame)
 {
-    // Total frames = HFN * 1024 + SFN
-    // Total slots = total_frames * slots_per_frame + slot
-    uint64_t total_frames = (uint64_t)time->hfn * 1024 + time->sfn;
-    return total_frames * slots_per_frame + time->slot;
+    // Total slots = SFN * slots_per_frame + slot
+    return (uint64_t)time->sfn * slots_per_frame + time->slot;
 }
-
-// Note: HFN update logic is now directly in gNB_scheduler_bch.c (cc->hfn tracking)
-// UE receives HFN from hyperSFN-r17 in SIB1
 
 /**
  * Alias for tf5_tesla_absolute_slots (consistency with inverse function name)
@@ -823,17 +805,15 @@ static inline uint64_t tf5_slot_time_to_slots(const tf5_tesla_slot_time_t *time,
  *
  * @param abs_slots      Absolute slot count
  * @param slots_per_frame Number of slots per frame
- * @return Timing struct (HFN/SFN/slot)
+ * @return Timing struct (SFN/slot)
  */
 static inline tf5_tesla_slot_time_t tf5_slots_to_slot_time(uint64_t abs_slots,
                                                             uint16_t slots_per_frame)
 {
-    // abs_slots = (hfn * 1024 + sfn) * slots_per_frame + slot
-    uint64_t total_frames = abs_slots / slots_per_frame;
+    // abs_slots = sfn * slots_per_frame + slot
+    uint16_t sfn = (uint16_t)((abs_slots / slots_per_frame) % 1024);
     uint16_t slot = abs_slots % slots_per_frame;
-    uint16_t hfn = (uint16_t)(total_frames / 1024);
-    uint16_t sfn = (uint16_t)(total_frames % 1024);
-    return tf5_slot_time_make(hfn, sfn, slot);
+    return tf5_slot_time_make(sfn, slot);
 }
 
 /**
@@ -843,7 +823,6 @@ static inline tf5_tesla_slot_time_t tf5_slots_to_slot_time(uint64_t abs_slots,
  * from other signed fields. Formula: T_0 = current_time - (interval_index × T_int)
  *
  * @param timesync_info   Current time (SFN/slot) from signed SIB1 extension
- * @param hfn             Current HFN (from hyperSFN-r17 or tracking)
  * @param interval_index  Current interval index i
  * @param t_int_ms        Interval duration in milliseconds
  * @param slots_per_frame Number of slots per frame (SCS-dependent)
@@ -851,7 +830,6 @@ static inline tf5_tesla_slot_time_t tf5_slots_to_slot_time(uint64_t abs_slots,
  * @return 0 on success, -1 on error (e.g., underflow)
  */
 int tf5_tesla_derive_t0(const tf5_tesla_timesync_info_t *timesync_info,
-                        uint16_t hfn,
                         uint32_t interval_index,
                         uint16_t t_int_ms,
                         uint16_t slots_per_frame,

@@ -270,11 +270,6 @@ typedef struct NR_UE_RRC_INST_s {
   uint64_t fiveG_S_TMSI;
   // Frame timing received from MAC
   int current_frame;
-#ifdef TF5_ENABLE_TESLA
-  // HFN (Hyper-Frame Number) tracked by RRC, incremented on SFN wrap notification
-  uint16_t current_hfn;
-  bool hfn_initialized;  // Has HFN been initialized from hyperSFN-r17?
-#endif
 
   //Sidelink params
   NR_SL_PreconfigurationNR_r16_t *sl_preconfig;

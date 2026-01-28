@@ -199,12 +199,3 @@ void nr_mac_rrc_ra_ind(const module_id_t mod_id, bool success)
   NR_RRC_MAC_RA_IND (message_p).RA_succeeded = success;
   itti_send_msg_to_task(TASK_RRC_NRUE, GNB_MODULE_ID_TO_INSTANCE(mod_id), message_p);
 }
-
-#ifdef TF5_ENABLE_TESLA
-void nr_ue_rrc_sfn_wrap_notify(int instance)
-{
-  MessageDef *message_p = itti_alloc_new_message(TASK_PHY_UE, 0, NRRRC_SFN_WRAP);
-  itti_send_msg_to_task(TASK_RRC_NRUE, instance, message_p);
-  LOG_D(NR_RRC, "Sent NRRRC_SFN_WRAP notification\n");
-}
-#endif

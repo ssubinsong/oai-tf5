@@ -969,16 +969,6 @@ void *UE_thread(void *arg)
     curMsg.proc.frame_rx    = (absolute_slot / nb_slot_frame) % MAX_FRAME_NUMBER;
     curMsg.proc.frame_tx    = ((absolute_slot + duration_rx_to_tx) / nb_slot_frame) % MAX_FRAME_NUMBER;
 
-#ifdef TF5_ENABLE_TESLA
-    // Detect SFN wrap: when frame transitions from 1023 to 0
-    static int last_frame_rx = -1;
-    if (last_frame_rx == MAX_FRAME_NUMBER - 1 && curMsg.proc.frame_rx == 0) {
-      // SFN wrapped - notify RRC
-      nr_ue_rrc_sfn_wrap_notify(UE->Mod_id);
-    }
-    last_frame_rx = curMsg.proc.frame_rx;
-#endif
-
     if (UE->received_config_request) {
       if (UE->sl_mode) {
         curMsg.proc.rx_slot_type = sl_nr_ue_slot_select(sl_cfg, curMsg.proc.nr_slot_rx, TDD);

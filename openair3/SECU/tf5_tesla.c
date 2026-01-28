@@ -138,7 +138,6 @@ uint32_t tf5_tesla_get_interval_index(const tf5_tesla_slot_time_t *current,
 }
 
 int tf5_tesla_derive_t0(const tf5_tesla_timesync_info_t *timesync_info,
-                        uint16_t hfn,
                         uint32_t interval_index,
                         uint16_t t_int_ms,
                         uint16_t slots_per_frame,
@@ -148,9 +147,8 @@ int tf5_tesla_derive_t0(const tf5_tesla_timesync_info_t *timesync_info,
         return -1;
     }
 
-    // Convert current time (from timesync_info + hfn) to absolute slots
-    tf5_tesla_slot_time_t current_time = tf5_slot_time_make(hfn,
-                                                             timesync_info->sfn,
+    // Convert current time (from timesync_info) to absolute slots
+    tf5_tesla_slot_time_t current_time = tf5_slot_time_make(timesync_info->sfn,
                                                              timesync_info->slot);
     uint64_t current_abs_slots = tf5_tesla_absolute_slots(&current_time, slots_per_frame);
 
@@ -172,11 +170,11 @@ int tf5_tesla_derive_t0(const tf5_tesla_timesync_info_t *timesync_info,
 
     uint64_t t0_abs_slots = current_abs_slots - offset_slots;
 
-    // Convert back to HFN/SFN/slot
+    // Convert back to SFN/slot
     *out_t0 = tf5_slots_to_slot_time(t0_abs_slots, slots_per_frame);
 
-    LOG_D(NR_RRC, "[TF5] Derived T_0: HFN=%u SFN=%u slot=%u (from i=%u, T_int=%u)\n",
-          out_t0->hfn, out_t0->sfn, out_t0->slot, interval_index, t_int_ms);
+    LOG_D(NR_RRC, "[TF5] Derived T_0: SFN=%u slot=%u (from i=%u, T_int=%u)\n",
+          out_t0->sfn, out_t0->slot, interval_index, t_int_ms);
 
     return 0;
 }
@@ -255,8 +253,7 @@ static size_t tf5_decode_static_params(const uint8_t *buf,
     p->disclosure_delay = buf[offset++];
     p->key_len = buf[offset++];
     /* T_0 not in wire: UE derives from timesync_info - (interval_index × T_int) */
-    p->t0.hfn = 0;   /* Placeholder - derived later by UE */
-    p->t0.sfn = 0;
+    p->t0.sfn = 0;   /* Placeholder - derived later by UE */
     p->t0.slot = 0;
     p->chain_len = tf5_decode_u32_be(buf + offset); offset += 4;
     return offset;  /* Always 10 */
@@ -515,15 +512,12 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
     state->params.t0 = *t0;
     state->params.chain_len = chain_len;
 
-    // HFN tracking is now in NR_COMMON_channels_t (cc->hfn)
-    // gNB tracks HFN as a core feature, not TESLA-specific
-
     state->slots_per_frame = slots_per_frame;
     state->current_interval = 0;
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA IBS: gNB initialized - T_int=%ums, d=%u, T_0=HFN%u.SFN%u.%u\n",
-          t_int_ms, d, t0->hfn, t0->sfn, t0->slot);
+    LOG_I(NR_RRC, "TESLA IBS: gNB initialized - T_int=%ums, d=%u, T_0=SFN%u.%u\n",
+          t_int_ms, d, t0->sfn, t0->slot);
 
     return 0;
 }
@@ -542,7 +536,6 @@ void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state)
 }
 
 uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
-                                    uint16_t hfn,
                                     uint16_t sfn,
                                     uint16_t slot)
 {
@@ -550,15 +543,13 @@ uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
         return 0;
     }
 
-    // HFN is now tracked by gNB core (NR_COMMON_channels_t) and passed in
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(hfn, sfn, slot);
+    tf5_tesla_slot_time_t current = tf5_slot_time_make(sfn, slot);
     return tf5_tesla_get_interval_index(&current, &state->params.t0,
                                         state->params.t_int_ms,
                                         state->slots_per_frame);
 }
 
 int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
-                                    uint16_t hfn,
                                     uint16_t sfn,
                                     uint16_t slot,
                                     const uint8_t *original_sib1,
@@ -569,8 +560,8 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
         return -1;
     }
 
-    // Get current interval (HFN from cc->hfn passed by caller)
-    uint32_t interval = tf5_tesla_gnb_get_interval(state, hfn, sfn, slot);
+    // Get current interval
+    uint32_t interval = tf5_tesla_gnb_get_interval(state, sfn, slot);
 
     // Check if interval is within chain bounds
     if (interval >= state->key_chain_len) {
@@ -839,18 +830,15 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
 bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
                                    uint16_t rx_sfn,
-                                   uint16_t rx_slot,
-                                   uint16_t rx_hfn)
+                                   uint16_t rx_slot)
 {
     if (!state || !state->initialized || !ext) {
         return false;
     }
 
-    // HFN is received via hyperSFN-r17 in rx_hfn parameter - no local tracking needed
-
     // RFC 4082 Section 3.5: Safe packet test
     // Step 1: Record local time T (in absolute slots)
-    tf5_tesla_slot_time_t local_time = tf5_slot_time_make(rx_hfn, rx_sfn, rx_slot);
+    tf5_tesla_slot_time_t local_time = tf5_slot_time_make(rx_sfn, rx_slot);
     uint64_t t_abs_slots = tf5_tesla_absolute_slots(&local_time, state->slots_per_frame);
 
     // Step 2: Compute upper bound on sender's clock: t_j = T + D_t

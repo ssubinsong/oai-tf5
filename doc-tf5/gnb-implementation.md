@@ -20,8 +20,7 @@
        ├── Generate random seed K_N
        ├── Compute key chain K_{N-1}, ..., K_0
        ├── Store static params (T_int, d, K_0, T_0, N)
-       ├── Store Cell ID for signature binding
-       └── Initialize HFN tracking
+       └── Store Cell ID for signature binding
 
 4. Store original SIB1 (without extension)
    └── cc->sib1_original[], cc->sib1_original_length
@@ -53,7 +52,6 @@ Called from scheduler before each SIB1 transmission:
 ```
 1. Get current interval from SFN/slot
    └── tf5_tesla_gnb_get_interval()
-       ├── Update HFN if SFN wrapped
        └── Calculate interval index
 
 2. Prepare TESLA extension

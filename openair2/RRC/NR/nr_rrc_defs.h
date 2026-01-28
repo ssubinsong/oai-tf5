@@ -392,11 +392,6 @@ typedef struct gNB_RRC_INST_s {
   // PDCP configuration parameters loaded during startup
   nr_pdcp_configuration_t pdcp_config;
   nr_rlc_configuration_t rlc_config;
-
-#ifdef TF5_ENABLE_TESLA
-  // HFN (Hyper-Frame Number) tracked by RRC, incremented on SFN wrap notification
-  uint16_t current_hfn;
-#endif
 } gNB_RRC_INST;
 
 #define UE_LOG_FMT "(cellID %lx, UE ID %d RNTI %04x)"

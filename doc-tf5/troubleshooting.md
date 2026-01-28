@@ -17,7 +17,7 @@ Look for these messages in gNB logs:
 ```
 [NR_RRC] TESLA: BLST library ready (BLS12-381, pk-in-G2 mode)
 [NR_RRC] TESLA: Key chain generated with N intervals
-[NR_RRC] TESLA: gNB initialized - T_int=160ms, d=2, T_0=HFN0.SFN0.0
+[NR_RRC] TESLA IBS: gNB initialized - T_int=160ms, d=2, T_0=SFN0.0
 ```
 
 These indicate the gNB has:
