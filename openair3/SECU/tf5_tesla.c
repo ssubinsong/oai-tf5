@@ -46,7 +46,6 @@
  * but the wire format is 8 bytes (serialization is packed).
  */
 _Static_assert(sizeof(tf5_tesla_slot_time_t) == 4, "slot_time_t must be 4 bytes");
-_Static_assert(sizeof(tf5_tesla_d_params_t) == 20, "d_params_t must be 20 bytes");
 _Static_assert(sizeof(tf5_tesla_timesync_info_t) == sizeof(tf5_tesla_slot_time_t), "timesync_info_t must match slot_time_t");
 
 /*
@@ -660,7 +659,9 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
 
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
                       const uint8_t mpk[TF5_TESLA_PUBKEY_LEN],
-                      uint16_t slots_per_frame)
+                      uint16_t slots_per_frame,
+                      uint32_t d_bound_us,
+                      uint32_t initial_sync_bound_us)
 {
     if (!state || !mpk) {
         return -1;
@@ -691,17 +692,15 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     // Time sync state
     state->timesync_verified = false;
 
-    // D calculation parameters (use defaults, can be overridden via config)
-    // Per RFC 4082 Section 2.2 and doc-tf5/time-sync.md Section 4
-    state->d_params = tf5_d_params_default();
-
-    // Calculate D: upper bound on (sender_time - receiver_time)
-    state->d_bound_us = tf5_tesla_calculate_d_bound(&state->d_params);
+    // D parameters (CLI-configured)
+    // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
+    state->d_bound_us = d_bound_us;
+    state->initial_sync_bound_us = initial_sync_bound_us;
 
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA IBS: UE initialized (D=%u us, E_sync=%u us, first-time UE)\n",
-          state->d_bound_us, state->d_params.e_sync_us);
+    LOG_I(NR_RRC, "TESLA IBS: UE initialized (D=%u us, initial_sync=%u us, first-time UE)\n",
+          state->d_bound_us, state->initial_sync_bound_us);
 
     return 0;
 }
@@ -713,32 +712,6 @@ void tf5_tesla_ue_free(tf5_tesla_ue_state_t *state)
     }
 }
 
-uint32_t tf5_tesla_calculate_d_bound(const tf5_tesla_d_params_t *params)
-{
-    /*
-     * Calculate D: upper bound on (sender_time - receiver_time)
-     *
-     * Per RFC 4082 Section 2.2 and doc-tf5/time-sync.md Section 4.3-4.4:
-     * D = E_sync + (E_s + E_r) * ΔT_max + M_impl
-     */
-
-    if (!params) {
-        return 0;
-    }
-
-    // Convert ΔT_max from ms to μs for consistent units
-    uint64_t delta_t_max_us = (uint64_t)params->delta_t_max_ms * 1000;
-
-    // Drift term: (E_s + E_r) * ΔT_max
-    // E_s, E_r in ppb = parts per 10^9
-    // drift_us = (e_s_ppb + e_r_ppb) * delta_t_max_us / 10^9
-    uint64_t drift_ppb = (uint64_t)params->e_s_ppb + params->e_r_ppb;
-    uint64_t drift_us = (drift_ppb * delta_t_max_us) / 1000000000ULL;
-
-    // D = E_sync + drift + M_impl
-    return (uint32_t)(params->e_sync_us + drift_us + params->m_impl_us);
-}
-
 int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
                                       const tf5_tesla_slot_time_t *tx,
                                       const tf5_tesla_slot_time_t *rx)
@@ -746,8 +719,8 @@ int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
     /*
      * Verify initial time synchronization after BLS signature verification
      *
-     * For initial sync verification, use only E_sync as the bound since
-     * no clock drift has accumulated yet.
+     * For initial sync verification, use initial_sync_bound_us as the bound
+     * since no clock drift has accumulated yet.
      *
      * Per RFC 4082 Section 2.2, this verifies the "loose time synchronization"
      * assumption required for TESLA protocol operation.
@@ -757,8 +730,8 @@ int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
         return -1;
     }
 
-    // For initial sync, use E_sync only (no drift has accumulated yet)
-    uint32_t initial_bound_us = state->d_params.e_sync_us;
+    // For initial sync, use initial_sync_bound_us (no drift has accumulated yet)
+    uint32_t initial_bound_us = state->initial_sync_bound_us;
 
     // Convert bound from μs to slots
     // slot_duration_us = 10ms / slots_per_frame = 10000 / slots_per_frame
@@ -791,14 +764,14 @@ int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
     if ((uint64_t)slot_diff > max_error_slots) {
         // Too large - SSB sync may have failed or timing is wrong
         LOG_W(NR_RRC, "TESLA: Initial timesync FAILED - diff too large "
-              "(tx=%u:%u, rx=%u:%u, diff=%ld slots, max=%u slots, E_sync=%u us)\n",
+              "(tx=%u:%u, rx=%u:%u, diff=%ld slots, max=%u slots, initial_sync_bound=%u us)\n",
               tx->sfn, tx->slot, rx->sfn, rx->slot, (long)slot_diff,
-              max_error_slots, state->d_params.e_sync_us);
+              max_error_slots, state->initial_sync_bound_us);
         return -2;
     }
 
-    LOG_I(NR_RRC, "TESLA: Initial timesync OK (diff=%ld slots, max=%u, E_sync=%u us)\n",
-          (long)slot_diff, max_error_slots, state->d_params.e_sync_us);
+    LOG_I(NR_RRC, "TESLA: Initial timesync OK (diff=%ld slots, max=%u, initial_sync_bound=%u us)\n",
+          (long)slot_diff, max_error_slots, state->initial_sync_bound_us);
     return 0;
 }
 

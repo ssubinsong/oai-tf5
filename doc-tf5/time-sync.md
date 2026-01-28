@@ -225,21 +225,19 @@ TESLA’s safety check uses the UE’s recorded arrival time in its radio-time c
 
 ## 10. Implementation
 
-### 10.1 D Calculation Function
+### 10.1 CLI Parameters
 
-**File:** `openair3/SECU/tf5_tesla.c`
+D and initial sync bounds are now configured via CLI parameters rather than calculated at runtime.
 
-```c
-uint32_t tf5_tesla_calculate_d_bound(uint32_t e_sync_us,
-                                     uint32_t e_s_ppb,
-                                     uint32_t e_r_ppb,
-                                     uint32_t delta_t_max_ms,
-                                     uint32_t m_impl_us);
-```
+| CLI Option | Default | Description |
+|------------|---------|-------------|
+| `--tesla-d-bound` | 1604 μs | Upper bound on (sender_time - receiver_time) for safe packet test |
+| `--tesla-initial-sync-bound` | 500 μs | Bound for initial time sync verification (no drift yet) |
 
-Calculates $D$ per RFC 4082 Section 2.2: the upper bound on (sender_time - receiver_time).
+The default values were pre-calculated using the formula:
+$$D = E_{\text{sync}} + (E_s + E_r) \times \Delta T_{\max} + M_{\text{impl}}$$
 
-Formula: $D = E_{\text{sync}} + (E_s + E_r) \times \Delta T_{\max} + M_{\text{impl}}$
+With defaults: $E_{\text{sync}}=500\mu s$, $E_s=100ppb$, $E_r=10000ppb$, $\Delta T_{\max}=10.24s$, $M_{\text{impl}}=1000\mu s$ → $D \approx 1604\mu s$
 
 ### 10.2 Initial Time Sync Verification
 
@@ -247,16 +245,16 @@ Formula: $D = E_{\text{sync}} + (E_s + E_r) \times \Delta T_{\max} + M_{\text{im
 
 ```c
 int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
-                                      uint16_t tx_sfn, uint16_t tx_slot,
-                                      uint16_t rx_sfn, uint16_t rx_slot);
+                                      const tf5_tesla_slot_time_t *tx,
+                                      const tf5_tesla_slot_time_t *rx);
 ```
 
-Called after BLS signature verification to validate that SSB-based time synchronization was successful. Uses only $E_{\text{sync}}$ as the bound since no clock drift has accumulated yet.
+Called after BLS signature verification to validate that SSB-based time synchronization was successful. Uses `--tesla-initial-sync-bound` (no clock drift has accumulated yet).
 
 **Return values:**
 - `0`: Time sync OK
 - `-1`: RX before TX (impossible - indicates sync failure)
-- `-2`: Difference exceeds $E_{\text{sync}}$ (sync too loose)
+- `-2`: Difference exceeds initial sync bound (sync too loose)
 
 ### 10.3 Default Parameter Values
 
@@ -264,29 +262,13 @@ Called after BLS signature verification to validate that SSB-based time synchron
 
 | Parameter | Default | Rationale |
 |-----------|---------|-----------|
-| `E_sync` | 500 μs | SSB-based sync typically achieves sub-symbol accuracy; 500 μs is conservative |
-| `E_s` | 0.1 ppm (100 ppb) | gNB with GNSS-disciplined oscillator |
-| `E_r` | 10 ppm (10000 ppb) | 3GPP TS 38.101 worst-case UE conformance bound |
-| $\Delta T_{\max}$ | 10.24 s (10240 ms) | One SFN cycle (conservative re-sync cadence) |
-| `M_impl` | 1 ms (1000 μs) | Absorbs timestamping jitter and modeling uncertainties |
-
-**Calculated D with defaults:**
-
-$$
-\begin{aligned}
-\text{Drift term} &= (E_s + E_r) \times \Delta T_{\max} \\
-&= (100 + 10000) \times 10^{-9} \times 10.24 \text{ s} \\
-&= 10100 \times 10^{-9} \times 10240 \times 10^3 \text{ μs} \\
-&\approx 103.4 \text{ μs}
-\end{aligned}
-$$
-
-$$D = 500 + 103.4 + 1000 \approx 1604 \text{ μs} \approx 1.6 \text{ ms}$$
+| `TF5_DEFAULT_D_BOUND_US` | 1604 μs | Pre-calculated D for typical deployment |
+| `TF5_DEFAULT_INITIAL_SYNC_US` | 500 μs | SSB-based sync accuracy (conservative) |
 
 ### 10.4 Two-Stage Verification
 
-1. **Initial verification** (after BLS): Uses only $E_{\text{sync}}$ since no drift has accumulated
-2. **Safe packet test** (ongoing TESLA): Uses full $D = E_{\text{sync}} + (E_s + E_r) \times \Delta T_{\max} + M_{\text{impl}}$
+1. **Initial verification** (after BLS): Uses `--tesla-initial-sync-bound` since no drift has accumulated
+2. **Safe packet test** (ongoing TESLA): Uses `--tesla-d-bound`
 
 ### 10.5 Graceful Degradation
 
@@ -313,21 +295,21 @@ flowchart TD
 
 | Function | File | Purpose |
 |----------|------|---------|
-| `tf5_tesla_calculate_d_bound()` | `openair3/SECU/tf5_tesla.c` | Calculate D from parameters |
 | `tf5_tesla_verify_initial_timesync()` | `openair3/SECU/tf5_tesla.c` | Verify initial sync after BLS |
-| `tf5_tesla_ue_safe_packet_test()` | `openair3/SECU/tf5_tesla.c` | Safe packet test (uses full D) |
-| `tf5_tesla_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize D parameters |
+| `tf5_tesla_ue_safe_packet_test()` | `openair3/SECU/tf5_tesla.c` | Safe packet test (uses D) |
+| `tf5_tesla_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize UE with D parameters |
 | `nr_rrc_process_sib1()` | `openair2/RRC/NR_UE/rrc_UE.c` | SIB1 processing with time sync |
 
 ### 10.8 Configuration
 
-D calculation parameters are initialized with defaults in `tf5_tesla_ue_init()` but can be configured:
+D parameters are configured via command-line options:
 
-```c
-// Override defaults before tf5_tesla_ue_init() or after
-state->e_sync_us = 1000;        // 1ms for challenging RF environments
-state->delta_t_max_ms = 5120;   // Half SFN cycle for tighter sync
-state->d_bound_us = tf5_tesla_calculate_d_bound(
-    state->e_sync_us, state->e_s_ppb, state->e_r_ppb,
-    state->delta_t_max_ms, state->m_impl_us);
+```bash
+# Using defaults (D=1604us, initial_sync=500us)
+./nr-uesoftmodem --tesla-core-mpk /path/to/mpk.bin
+
+# Custom D values (e.g., for challenging RF environments)
+./nr-uesoftmodem --tesla-core-mpk /path/to/mpk.bin \
+    --tesla-d-bound 3000 \
+    --tesla-initial-sync-bound 1000
 ```

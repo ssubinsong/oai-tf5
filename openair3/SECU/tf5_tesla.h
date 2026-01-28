@@ -55,18 +55,15 @@
 #define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered per RFC 4082 multi-packet
 
 /*
- * Default D calculation parameters (per doc-tf5/time-sync.md Section 4)
+ * Default D parameters (CLI-configurable)
  *
+ * D is the upper bound on (sender_time - receiver_time), per RFC 4082 Section 2.2.
+ * These defaults were pre-calculated from the formula:
  * D = E_sync + (E_s + E_r) * ΔT_max + M_impl
- *
- * D is the upper bound on (sender_time - receiver_time), calculated by
- * the receiver per RFC 4082 Section 2.2.
+ * With: E_sync=500us, E_s=100ppb, E_r=10000ppb, ΔT_max=10.24s, M_impl=1000us => D≈1604us
  */
-#define TF5_DEFAULT_E_SYNC_US        500     // E_sync: 500μs sync accuracy (conservative for SSB)
-#define TF5_DEFAULT_E_S_PPB          100     // E_s: 0.1 ppm gNB drift (GNSS-disciplined oscillator)
-#define TF5_DEFAULT_E_R_PPB          10000   // E_r: 10 ppm UE drift (3GPP TS 38.101 worst-case)
-#define TF5_DEFAULT_DELTA_T_MAX_MS   10240   // ΔT_max: 10.24s operating horizon (1 SFN cycle)
-#define TF5_DEFAULT_M_IMPL_US        1000    // M_impl: 1ms implementation margin
+#define TF5_DEFAULT_D_BOUND_US           1604    // Pre-calculated D bound (microseconds)
+#define TF5_DEFAULT_INITIAL_SYNC_US      500     // E_sync for initial timesync check (microseconds)
 
 // Protocol version
 #define TF5_TESLA_VERSION           0x01
@@ -115,20 +112,6 @@ typedef struct {
     uint16_t slot;  // 2B - Slot within frame
 } tf5_tesla_slot_time_t;
 
-/**
- * D-Bound Calculation Parameters
- *
- * Parameters used to calculate D (upper bound on sender-receiver time offset).
- * Per RFC 4082 Section 2.2 and doc-tf5/time-sync.md Section 4.
- * Total size: 20 bytes
- */
-typedef struct {
-    uint32_t e_sync_us;      // E_sync: Sync accuracy bound (microseconds)
-    uint32_t e_s_ppb;        // E_s: gNB max drift rate (parts per billion)
-    uint32_t e_r_ppb;        // E_r: UE max drift rate (parts per billion)
-    uint32_t delta_t_max_ms; // ΔT_max: Operating horizon (milliseconds)
-    uint32_t m_impl_us;      // M_impl: Implementation margin (microseconds)
-} tf5_tesla_d_params_t;
 
 /**
  * Buffer Entry for Pending TESLA Verification
@@ -153,17 +136,6 @@ static inline tf5_tesla_slot_time_t tf5_slot_time_make(uint16_t sfn,
     return (tf5_tesla_slot_time_t){.sfn = sfn, .slot = slot};
 }
 
-/* Helper to construct default D params */
-static inline tf5_tesla_d_params_t tf5_d_params_default(void)
-{
-    return (tf5_tesla_d_params_t){
-        .e_sync_us = TF5_DEFAULT_E_SYNC_US,
-        .e_s_ppb = TF5_DEFAULT_E_S_PPB,
-        .e_r_ppb = TF5_DEFAULT_E_R_PPB,
-        .delta_t_max_ms = TF5_DEFAULT_DELTA_T_MAX_MS,
-        .m_impl_us = TF5_DEFAULT_M_IMPL_US
-    };
-}
 
 /*
  * TESLA Parameters
@@ -296,12 +268,10 @@ typedef struct {
     // Time sync verification state (per doc-tf5/time-sync.md Section 4)
     bool     timesync_verified;       // Has SSB-based time sync been verified?
 
-    // D calculation parameters (provisioned/configured, used by receiver)
+    // D parameters (CLI-configured, used by receiver)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
-    tf5_tesla_d_params_t d_params;
-
-    // Calculated D value: upper bound on (sender_time - receiver_time)
-    uint32_t d_bound_us;              // Receiver-calculated D in microseconds
+    uint32_t d_bound_us;              // D bound for safe packet test (microseconds)
+    uint32_t initial_sync_bound_us;   // Bound for initial timesync check (microseconds)
 } tf5_tesla_ue_state_t;
 
 /*
@@ -449,11 +419,15 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
  * @param state         Pointer to UE TESLA state structure
  * @param mpk           Pre-provisioned Core Master Public Key (96 bytes)
  * @param slots_per_frame Number of slots per frame
+ * @param d_bound_us    D bound for safe packet test (microseconds)
+ * @param initial_sync_bound_us Bound for initial timesync check (microseconds)
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
                       const uint8_t mpk[TF5_TESLA_PUBKEY_LEN],
-                      uint16_t slots_per_frame);
+                      uint16_t slots_per_frame,
+                      uint32_t d_bound_us,
+                      uint32_t initial_sync_bound_us);
 
 /**
  * Free TESLA state resources on UE
@@ -463,32 +437,18 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
 void tf5_tesla_ue_free(tf5_tesla_ue_state_t *state);
 
 /**
- * Calculate D: upper bound on (sender_time - receiver_time)
- *
- * Per RFC 4082 Section 2.2, D_t bounds how much the sender's clock
- * can be ahead of the receiver's clock.
- *
- * Per doc-tf5/time-sync.md Section 4.3-4.4:
- * D = E_sync + (E_s + E_r) * ΔT_max + M_impl
- *
- * @param params         D calculation parameters (E_sync, E_s, E_r, ΔT_max, M_impl)
- * @return D: upper bound on (sender_time - receiver_time) in microseconds
- */
-uint32_t tf5_tesla_calculate_d_bound(const tf5_tesla_d_params_t *params);
-
-/**
- * Verify initial time synchronization after Ed25519 verification
+ * Verify initial time synchronization after BLS signature verification
  *
  * Checks that UE's RX timing is consistent with gNB's signed TX timing.
- * Uses E_sync as the bound since no drift has accumulated yet.
+ * Uses initial_sync_bound_us as the bound since no drift has accumulated yet.
  *
  * Per RFC 4082 Section 2.2, this verifies the "loose time synchronization"
  * assumption required for TESLA protocol operation.
  *
- * @param state         UE TESLA state (reads d_params.e_sync_us, slots_per_frame)
+ * @param state         UE TESLA state (reads initial_sync_bound_us, slots_per_frame)
  * @param tx            TX timing from signed extension (gNB TX time, only sfn/slot used)
  * @param rx            UE's actual RX timing (from MAC layer, only sfn/slot used)
- * @return 0 if valid, -1 if RX before TX, -2 if diff exceeds E_sync
+ * @return 0 if valid, -1 if RX before TX, -2 if diff exceeds initial_sync_bound
  */
 int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
                                       const tf5_tesla_slot_time_t *tx,
