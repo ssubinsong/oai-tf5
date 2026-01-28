@@ -47,7 +47,7 @@ Parameters constant for the lifetime of a key chain.
 ```c
 typedef struct {
     uint8_t  te_version;           // 1B - Protocol version (0x01)
-    uint8_t  crypto_suite_id;      // 1B - Algorithm suite (0x02 for BLS)
+    uint8_t  crypto_suite_id;      // 1B - Algorithm suite (0x03 for IBS)
     uint16_t t_int_ms;             // 2B - Interval duration (20ms)
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay (1)
     uint8_t  key_len;              // 1B - TESLA key length (16)

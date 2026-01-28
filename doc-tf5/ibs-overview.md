@@ -98,6 +98,7 @@ gNB-specific Keys (issued per Cell ID + validity)
 ### 3. Deployment
 
 **gNB** (loads secret key and specifies validity):
+
 ```bash
 ./nr-softmodem -O gnb.conf \
     --tesla-privkey /path/to/sk_gnb.bin \
@@ -121,17 +122,6 @@ gNB-specific Keys (issued per Cell ID + validity)
 
 ---
 
-## Comparison with Standard BLS
-
-| Aspect | Standard BLS | IBS |
-|--------|--------------|-----|
-| UE pre-provisioning | Per-gNB public key | Single Core MPK |
-| Key management | Distribute each gNB's pk | Distribute one MPK |
-| Adding new gNB | Update all UEs | No UE update needed |
-| gNB identity binding | None | Cell ID bound to key |
-
----
-
 ## Security Properties
 
 ### Identity and Validity Binding
@@ -142,21 +132,8 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 
 ### Key Expiration
 - Keys have a finite validity period set at issuance time
-- gNB refuses to start if its key has expired
 - UE rejects SIB1 if the embedded validity_end has passed
 - Compromised keys become unusable after expiration
-
-### Forward Security (Limited)
-- Compromising one gNB's `sk_ID` doesn't expose other gNBs' keys
-- Compromised keys are time-limited due to validity binding
-- Compromising master secret `s` allows forging all gNB keys
-
-### Man-in-the-Middle Resistance
-An attacker cannot:
-- Sign SIB1 without knowing `sk_ID`
-- Forge `sk_ID` without knowing master secret `s`
-- Use another gNB's key (Cell ID mismatch detected)
-- Extend key validity (validity_end bound into key derivation)
 
 ---
 
@@ -175,18 +152,5 @@ An attacker cannot:
 
 ## Wire Format
 
-The IBS mode uses `crypto_suite_id = 0x03` in the TESLA extension header:
+The `crypto_suite_id` field is set to `0x03`, indicating HMAC-SHA256 + IBS mode.
 
-| Value | Mode |
-|-------|------|
-| 0x01 | Reserved (HMAC-SHA256 only) |
-| 0x02 | Reserved (legacy BLS) |
-| 0x03 | HMAC-SHA256 + IBS |
-
----
-
-## References
-
-- **BLS12-381**: [IETF draft-irtf-cfrg-pairing-friendly-curves](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-pairing-friendly-curves)
-- **IBS**: Boneh-Franklin Identity-Based Encryption (adapted for signatures)
-- **blst Library**: [github.com/supranational/blst](https://github.com/supranational/blst)

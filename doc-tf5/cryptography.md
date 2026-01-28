@@ -98,8 +98,6 @@ Derives the previous key in the chain:
 K_i = F(K_{i+1}) = SHA-256(0x00 || K_{i+1})[0:15]
 ```
 
-Per RFC 4082 Section 3.2: uses constant 0x00 for domain separation.
-
 Implementation:
 ```c
 void tf5_tesla_chain_key(const uint8_t key_next[16], uint8_t key_out[16]) {
@@ -123,7 +121,7 @@ Derives the MAC key from a TESLA key:
 K'_i = F'(K_i) = SHA-256(0x01 || K_i)
 ```
 
-Per RFC 4082 Section 3.4: uses constant 0x01 for domain separation.
+
 
 This separation ensures that F and F' are cryptographically independent functions,
 so revealing K_i doesn't directly expose the MAC key used.
@@ -144,7 +142,7 @@ The tag is truncated to 128 bits (16 bytes) for efficiency.
 
 ## Authentication Input
 
-The signature and MAC use different authentication inputs per RFC 4082:
+The signature and MAC use different authentication inputs:
 
 ### Signature Auth Input
 
@@ -156,17 +154,17 @@ sig_auth_input = original_SIB1 || static_params || validity_end || timesync_info
 
 - **original_SIB1**: SIB1 content without TESLA extension
 - **static_params**: 30 bytes of static TESLA parameters
-- **validity_end**: 3 bytes key expiration (minutes since 2024-01-01, big-endian)
+- **validity_end**: 3 bytes key expiration (minutes since 2024-01-01)
 - **timesync_info**: 4 bytes of timing information
 - **interval_index**: 4 bytes current interval
 - **disclosed_key**: 16 bytes K_{i-d}
-- **timestamp_ms**: 8 bytes Unix epoch timestamp (milliseconds) for replay protection
+- **timestamp_ms**: 8 bytes Unix epoch timestamp (milliseconds) for signature replay protection
 
 ### MAC Auth Input
 
 **Source**: [tf5_tesla.c:149](../openair3/SECU/tf5_tesla.c#L149) `tf5_tesla_build_mac_auth_input()`
 
-Per RFC 4082, the MAC does NOT include the interval index, disclosed key, or timestamp:
+Per RFC 4082, the MAC does NOT include the interval index, disclosed key:
 ```
 mac_auth_input = original_SIB1 || static_params || validity_end || timesync_info
 ```
