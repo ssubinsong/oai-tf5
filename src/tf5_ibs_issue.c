@@ -2,9 +2,9 @@
  * TF5 IBS - gNB Secret Key Issuance Utility
  *
  * Issues a gNB-specific secret key based on its NR Cell ID and validity period.
- * sk_ID = s * H_s(cell_id || validity_end) mod r
+ * sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r
  *
- * Usage: tf5_ibs_issue <msk_path> <cell_id_hex> <validity_end> <sk_path>
+ * Usage: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>
  *
  * Example: tf5_ibs_issue pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_001.bin
  *          (Key valid until 2026-01-01, which is 1051200 minutes from 2024-01-01)
@@ -48,7 +48,7 @@ static int write_key_file(const char *path, const uint8_t *data, size_t len, mod
  */
 int tf5_ibs_issue_gnb_key(const char *msk_path,
                            const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                           uint32_t validity_end,
+                           uint32_t gnb_key_validity_end,
                            const char *sk_path)
 {
     if (!msk_path || !cell_id || !sk_path) {
@@ -67,7 +67,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     }
 
     /* Compute gNB secret key with validity period */
-    rc = tf5_ibs_compute_gnb_secret(msk, cell_id, validity_end, sk_id);
+    rc = tf5_ibs_compute_gnb_secret(msk, cell_id, gnb_key_validity_end, sk_id);
 
     /* Clear master secret from memory */
     memset(msk, 0, TF5_IBS_MASTER_SECRET_LEN);
@@ -91,11 +91,11 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
 }
 
 /*
- * Format validity_end as human-readable string
+ * Format gnb_key_validity_end as human-readable string
  */
-static void format_validity_time(uint32_t validity_end, char *buf, size_t buf_len)
+static void format_gnb_key_validity_time(uint32_t gnb_key_validity_end, char *buf, size_t buf_len)
 {
-    time_t unix_time = (time_t)tf5_ibs_validity_to_unix(validity_end);
+    time_t unix_time = (time_t)tf5_ibs_gnb_key_validity_to_unix(gnb_key_validity_end);
     struct tm *tm = gmtime(&unix_time);
     strftime(buf, buf_len, "%Y-%m-%d %H:%M UTC", tm);
 }
@@ -106,12 +106,12 @@ static void format_validity_time(uint32_t validity_end, char *buf, size_t buf_le
 static void print_usage(const char *prog)
 {
     fprintf(stderr, "TF5 IBS - gNB Secret Key Issuance\n\n");
-    fprintf(stderr, "Usage: %s <msk_path> <cell_id_hex> <validity_end> <sk_path>\n\n", prog);
+    fprintf(stderr, "Usage: %s <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>\n\n", prog);
     fprintf(stderr, "Arguments:\n");
-    fprintf(stderr, "  msk_path      Path to master secret key file\n");
-    fprintf(stderr, "  cell_id_hex   NR Cell ID as 9-character hex string (36 bits)\n");
-    fprintf(stderr, "  validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)\n");
-    fprintf(stderr, "  sk_path       Path to save gNB secret key (32 bytes)\n\n");
+    fprintf(stderr, "  msk_path               Path to master secret key file\n");
+    fprintf(stderr, "  cell_id_hex            NR Cell ID as 9-character hex string (36 bits)\n");
+    fprintf(stderr, "  gnb_key_validity_end   Key expiration (minutes since 2024-01-01 00:00 UTC)\n");
+    fprintf(stderr, "  sk_path                Path to save gNB secret key (32 bytes)\n\n");
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  # Key valid until 2026-01-01 (1051200 minutes from 2024-01-01)\n");
     fprintf(stderr, "  %s pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_001.bin\n\n", prog);
@@ -130,12 +130,12 @@ static void print_usage(const char *prog)
 /*
  * Print computed pk_ID for debugging/verification
  */
-static void print_pk_id(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN], uint32_t validity_end)
+static void print_pk_id(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN], uint32_t gnb_key_validity_end)
 {
     uint8_t pk_id_bytes[32];
-    tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, validity_end, pk_id_bytes);
+    tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, pk_id_bytes);
 
-    printf("  pk_ID (H_s(cell_id || validity)): ");
+    printf("  pk_ID (H_s(cell_id || gnb_key_validity)): ");
     for (int i = 0; i < 32; i++) {
         printf("%02x", pk_id_bytes[i]);
     }
@@ -165,15 +165,15 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* Parse validity_end (minutes since 2024-01-01) */
+    /* Parse gnb_key_validity_end (minutes since 2024-01-01) */
     char *endptr;
     unsigned long validity_val = strtoul(validity_str, &endptr, 10);
     if (*endptr != '\0' || validity_val > 0xFFFFFF) {
-        fprintf(stderr, "Invalid validity_end: \"%s\"\n", validity_str);
+        fprintf(stderr, "Invalid gnb_key_validity_end: \"%s\"\n", validity_str);
         fprintf(stderr, "Expected 0 to 16777215 (minutes since 2024-01-01 00:00 UTC)\n");
         return 1;
     }
-    uint32_t validity_end = (uint32_t)validity_val;
+    uint32_t gnb_key_validity_end = (uint32_t)validity_val;
 
     /* Format back for display */
     char cell_id_str[10];
@@ -181,19 +181,19 @@ int main(int argc, char *argv[])
 
     /* Format validity as human-readable */
     char validity_time_str[64];
-    format_validity_time(validity_end, validity_time_str, sizeof(validity_time_str));
+    format_gnb_key_validity_time(gnb_key_validity_end, validity_time_str, sizeof(validity_time_str));
 
     printf("Issuing gNB secret key...\n");
     printf("  Master secret: %s\n", msk_path);
     printf("  Cell ID: 0x%s (36 bits)\n", cell_id_str);
-    printf("  Validity end: %u (%s)\n", validity_end, validity_time_str);
+    printf("  Validity end: %u (%s)\n", gnb_key_validity_end, validity_time_str);
     printf("  Output: %s\n", sk_path);
 
     /* Show pk_ID for verification */
-    print_pk_id(cell_id, validity_end);
+    print_pk_id(cell_id, gnb_key_validity_end);
 
     /* Issue the key */
-    rc = tf5_ibs_issue_gnb_key(msk_path, cell_id, validity_end, sk_path);
+    rc = tf5_ibs_issue_gnb_key(msk_path, cell_id, gnb_key_validity_end, sk_path);
     if (rc != 0) {
         fprintf(stderr, "Failed to issue gNB key (error %d)\n", rc);
         return 1;
@@ -203,7 +203,7 @@ int main(int argc, char *argv[])
     printf("\n");
     printf("Next steps:\n");
     printf("  1. Securely transfer %s to the gNB\n", sk_path);
-    printf("  2. Configure gNB with: --tesla-privkey %s --tesla-validity-end %u\n", sk_path, validity_end);
+    printf("  2. Configure gNB with: --tesla-privkey %s --tesla-gnb-key-validity-end %u\n", sk_path, gnb_key_validity_end);
     printf("  3. Ensure gNB's Cell ID matches 0x%s\n", cell_id_str);
     printf("  4. Key expires: %s\n", validity_time_str);
 

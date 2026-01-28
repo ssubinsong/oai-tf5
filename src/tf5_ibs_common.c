@@ -13,18 +13,18 @@
 #include <ctype.h>
 
 /*
- * Hash identity (Cell ID || validity_end) to scalar in Z_r
+ * Hash identity (Cell ID || gnb_key_validity_end) to scalar in Z_r
  *
  * Implements H_s: {0,1}* -> Z_r by:
- *   1. Expanding (DST || cell_id || validity_end) to create IKM for blst_keygen
+ *   1. Expanding (DST || cell_id || gnb_key_validity_end) to create IKM for blst_keygen
  *   2. Using blst_keygen to derive scalar with proper mod r reduction
  *
  * Note: blst_keygen requires IKM >= 32 bytes for security.
- * IKM = DST (35 bytes) || cell_id (5 bytes) || validity_end (3 bytes) = 43 bytes
+ * IKM = DST (35 bytes) || cell_id (5 bytes) || gnb_key_validity_end (3 bytes) = 43 bytes
  */
 int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
                             size_t cell_id_len,
-                            uint32_t validity_end,
+                            uint32_t gnb_key_validity_end,
                             uint8_t scalar_out[TF5_IBS_GNB_SECRET_LEN])
 {
     if (!cell_id || !scalar_out || cell_id_len == 0) {
@@ -32,7 +32,7 @@ int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
     }
 
     /*
-     * Create expanded IKM by concatenating DST, cell_id, and validity_end.
+     * Create expanded IKM by concatenating DST, cell_id, and gnb_key_validity_end.
      * This ensures:
      *   - IKM >= 32 bytes (43 bytes: 35 DST + 5 cell_id + 3 validity)
      *   - Domain separation is inherent in the IKM itself
@@ -42,11 +42,11 @@ int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
     memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
     memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, cell_id_len);
 
-    /* Encode validity_end as 3 bytes big-endian */
+    /* Encode gnb_key_validity_end as 3 bytes big-endian */
     size_t off = TF5_IBS_DST_HS_LEN + cell_id_len;
-    ikm[off + 0] = (validity_end >> 16) & 0xFF;
-    ikm[off + 1] = (validity_end >> 8) & 0xFF;
-    ikm[off + 2] = validity_end & 0xFF;
+    ikm[off + 0] = (gnb_key_validity_end >> 16) & 0xFF;
+    ikm[off + 1] = (gnb_key_validity_end >> 8) & 0xFF;
+    ikm[off + 2] = gnb_key_validity_end & 0xFF;
 
     blst_scalar pk_id;
 
@@ -198,11 +198,11 @@ int tf5_ibs_load_master_public(const char *filepath,
 /*
  * Compute gNB secret key from master secret, Cell ID, and validity period
  *
- * sk_ID = s * H_s(cell_id || validity_end) mod r
+ * sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r
  */
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                                uint32_t validity_end,
+                                uint32_t gnb_key_validity_end,
                                 uint8_t sk_out[TF5_IBS_GNB_SECRET_LEN])
 {
     if (!msk || !cell_id || !sk_out) {
@@ -220,16 +220,16 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
         return -2;
     }
 
-    /* Compute pk_ID = H_s(cell_id || validity_end) */
+    /* Compute pk_ID = H_s(cell_id || gnb_key_validity_end) */
     uint8_t ikm[TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_LEN];
     memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
     memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, TF5_IBS_CELL_ID_LEN);
 
-    /* Encode validity_end as 3 bytes big-endian */
+    /* Encode gnb_key_validity_end as 3 bytes big-endian */
     size_t off = TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN;
-    ikm[off + 0] = (validity_end >> 16) & 0xFF;
-    ikm[off + 1] = (validity_end >> 8) & 0xFF;
-    ikm[off + 2] = validity_end & 0xFF;
+    ikm[off + 0] = (gnb_key_validity_end >> 16) & 0xFF;
+    ikm[off + 1] = (gnb_key_validity_end >> 8) & 0xFF;
+    ikm[off + 2] = gnb_key_validity_end & 0xFF;
 
     blst_keygen(&pk_id, ikm, sizeof(ikm), NULL, 0);
     memset(ikm, 0, sizeof(ikm));

@@ -8,8 +8,8 @@
  * IBS Scheme (BLS-based):
  *   - Master secret: s (scalar in Z_r)
  *   - Master public key: MPK = s*Q where Q is G2 generator
- *   - gNB identity: NR Cell ID (36 bits) || validity_end (24 bits)
- *   - gNB public key: pk_ID = H_s(Cell_ID || validity_end) (scalar)
+ *   - gNB identity: NR Cell ID (36 bits) || gnb_key_validity_end (24 bits)
+ *   - gNB public key: pk_ID = H_s(Cell_ID || gnb_key_validity_end) (scalar)
  *   - gNB secret key: sk_ID = s * pk_ID mod r (scalar)
  *   - Signature: Sigma = sk_ID * H_m(m) (G1 point)
  *   - Verification: e(Sigma, Q) = e(H_m(m), pk_ID * MPK)
@@ -48,7 +48,7 @@
 /*
  * Domain Separation Tag for H_s (identity-to-scalar hash)
  * Uses IETF hash-to-field approach via blst_keygen
- * IKM = DST || Cell_ID || validity_end
+ * IKM = DST || Cell_ID || gnb_key_validity_end
  */
 #define TF5_IBS_DST_HS      "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"
 #define TF5_IBS_DST_HS_LEN  35
@@ -87,11 +87,11 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path);
 /**
  * Issue gNB secret key from Cell ID and validity period
  *
- * Computes the gNB's secret key as sk_ID = s * H_s(cell_id || validity_end) mod r
+ * Computes the gNB's secret key as sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r
  *
  * @param msk_path     Path to master secret key file
  * @param cell_id      NR Cell ID (5 bytes, 36 bits with 4 padding bits)
- * @param validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
+ * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
  * @param sk_path      Path to save gNB secret key (32 bytes, binary)
  * @return 0 on success, negative on error
  *
@@ -104,24 +104,24 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path);
  */
 int tf5_ibs_issue_gnb_key(const char *msk_path,
                            const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                           uint32_t validity_end,
+                           uint32_t gnb_key_validity_end,
                            const char *sk_path);
 
 /**
- * Hash identity (Cell ID || validity_end) to scalar in Z_r
+ * Hash identity (Cell ID || gnb_key_validity_end) to scalar in Z_r
  *
  * Implements H_s: {0,1}* -> Z_r using IETF hash-to-field
- * IKM = DST || cell_id || validity_end (3 bytes, big-endian)
+ * IKM = DST || cell_id || gnb_key_validity_end (3 bytes, big-endian)
  *
  * @param cell_id      NR Cell ID (5 bytes)
  * @param cell_id_len  Length of cell_id (should be TF5_IBS_CELL_ID_LEN)
- * @param validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
+ * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
  * @param scalar_out   Output buffer for scalar (32 bytes, big-endian)
  * @return 0 on success, negative on error
  */
 int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
                             size_t cell_id_len,
-                            uint32_t validity_end,
+                            uint32_t gnb_key_validity_end,
                             uint8_t scalar_out[TF5_IBS_GNB_SECRET_LEN]);
 
 /**
@@ -179,17 +179,17 @@ int tf5_ibs_load_master_public(const char *filepath,
 /**
  * Compute gNB secret key from master secret, Cell ID, and validity period
  *
- * sk_ID = s * H_s(cell_id || validity_end) mod r
+ * sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r
  *
  * @param msk          Master secret key (32 bytes)
  * @param cell_id      NR Cell ID (5 bytes)
- * @param validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
+ * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
  * @param sk_out       Output gNB secret key (32 bytes)
  * @return 0 on success, negative on error
  */
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                                uint32_t validity_end,
+                                uint32_t gnb_key_validity_end,
                                 uint8_t sk_out[TF5_IBS_GNB_SECRET_LEN]);
 
 /*
@@ -199,12 +199,12 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
  */
 
 /**
- * Convert Unix timestamp to validity_end format
+ * Convert Unix timestamp to gnb_key_validity_end format
  *
  * @param unix_sec  Unix timestamp (seconds since 1970-01-01)
  * @return Minutes since 2024-01-01 00:00:00 UTC (24-bit value)
  */
-static inline uint32_t tf5_ibs_unix_to_validity(uint64_t unix_sec)
+static inline uint32_t tf5_ibs_unix_to_gnb_key_validity(uint64_t unix_sec)
 {
     if (unix_sec <= TF5_VALIDITY_EPOCH) {
         return 0;
@@ -213,14 +213,14 @@ static inline uint32_t tf5_ibs_unix_to_validity(uint64_t unix_sec)
 }
 
 /**
- * Convert validity_end format to Unix timestamp
+ * Convert gnb_key_validity_end format to Unix timestamp
  *
- * @param validity_end  Minutes since 2024-01-01 00:00:00 UTC
+ * @param gnb_key_validity_end  Minutes since 2024-01-01 00:00:00 UTC
  * @return Unix timestamp (seconds since 1970-01-01)
  */
-static inline uint64_t tf5_ibs_validity_to_unix(uint32_t validity_end)
+static inline uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end)
 {
-    return TF5_VALIDITY_EPOCH + (uint64_t)validity_end * 60;
+    return TF5_VALIDITY_EPOCH + (uint64_t)gnb_key_validity_end * 60;
 }
 
 #endif /* TF5_IBS_PKG_H */
