@@ -130,7 +130,7 @@ Key paths and validity **must** be specified explicitly on the command line (no 
 |-----------|-----------|-------------|
 | gNB | `--tesla-privkey` | Path to gNB's secret key (sk_ID) from PKG |
 | gNB | `--tesla-validity-end` | Key validity end (minutes since 2024-01-01 00:00 UTC). **REQUIRED.** |
-| UE | `--tesla-gnb-pubkey` | Path to Core's Master Public Key (MPK) |
+| UE | `--tesla-core-mpk` | Path to Core's Master Public Key (MPK) |
 
 **Note**: gNB no longer needs `--tesla-pubkey` in IBS mode.
 
@@ -159,7 +159,7 @@ sudo ./nr-softmodem \
 # Run UE with Core's MPK (in another terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi 001010000000001 --rfsim \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.conf \
-    --tesla-gnb-pubkey /path/to/pkg_keys/mpk.bin
+    --tesla-core-mpk /path/to/pkg_keys/mpk.bin
 ```
 
 **Key Validity Checks:**

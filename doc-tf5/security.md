@@ -39,7 +39,7 @@
 - Without signature verification, K_0 is NOT trusted and TESLA is not used
 - Disclosed keys must chain to authenticated K_0 via one-way function F
 
-**Key Provisioning**: The UE loads the gNB public key from a binary file specified via `--tesla-gnb-pubkey` command-line parameter (default: `./tesla_keys/gnb_tesla_pubkey.bin`). See [Build Configuration](build.md) for key generation instructions.
+**Key Provisioning**: The UE loads the Core's Master Public Key (MPK) from a binary file specified via `--tesla-core-mpk` command-line parameter. See [Build Configuration](build.md) for key generation instructions.
 
 ---
 
@@ -47,7 +47,7 @@
 
 | Limitation | Description | Mitigation |
 |------------|-------------|------------|
-| Key distribution | UE needs gNB public key file | Use `--tesla-gnb-pubkey` parameter or default path |
+| Key distribution | UE needs Core's MPK file | Use `--tesla-core-mpk` parameter |
 | Finite chain lifetime | ~21.8 minutes | Future: chain renewal mechanism |
 | Bootstrap trust | First SIB1 must be trusted | BLS signature provides immediate trust |
 | Memory usage | 1MB for key chain (65536 × 16B) | Configurable chain length |

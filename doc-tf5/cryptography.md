@@ -28,9 +28,9 @@ for Identity-Based Signatures:
 
 | Component | Size | Group |
 |-----------|------|-------|
-| Master secret (s) | 32 bytes | Scalar (big-endian) |
+| Master secret (s) | 32 bytes | Scalar |
 | Master public key (MPK) | 96 bytes | G2 point (compressed) |
-| gNB secret key (sk_ID) | 32 bytes | Scalar (big-endian) |
+| gNB secret key (sk_ID) | 32 bytes | Scalar |
 | Signature (Σ) | 48 bytes | G1 point (compressed) |
 
 ### IBS Scheme

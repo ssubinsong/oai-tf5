@@ -106,7 +106,7 @@ gNB-specific Keys (issued per Cell ID + validity)
 
 **UE** (loads Core's MPK):
 ```bash
-./nr-uesoftmodem -O ue.conf --tesla-gnb-pubkey /path/to/mpk.bin
+./nr-uesoftmodem -O ue.conf --tesla-core-mpk /path/to/mpk.bin
 ```
 
 ### 4. Runtime Verification

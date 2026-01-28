@@ -11,7 +11,7 @@
 #
 # Key paths MUST be specified explicitly when running gNB and UE:
 #   gNB: --tesla-privkey <path> --tesla-pubkey <path>
-#   UE:  --tesla-gnb-pubkey <path>
+#   UE:  --tesla-core-mpk <path>
 
 set -e
 
@@ -93,6 +93,6 @@ echo "         --tesla-privkey ${PRIVKEY} \\"
 echo "         --tesla-pubkey ${PUBKEY}"
 echo ""
 echo "  UE:  ./nr-uesoftmodem -O ue.conf \\"
-echo "         --tesla-gnb-pubkey ${PUBKEY}"
+echo "         --tesla-core-mpk ${PUBKEY}"
 echo ""
 echo "=========================================="

@@ -565,7 +565,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           /* === FIRST-TIME UE: IBS signature verification === */
           AssertFatal(SI_info->tesla_state->has_mpk,
                       "TESLA IBS: Core MPK not configured - required for K_0 authentication. "
-                      "Configure it with --tesla-gnb-pubkey (path to Core's MPK file).");
+                      "Configure it with --tesla-core-mpk (path to Core's MPK file).");
 
           /* Validate wall-clock timestamp (fail fast before expensive Ed25519) */
           uint64_t ue_time_ms = tf5_tesla_get_wallclock_ms();
@@ -1664,9 +1664,9 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
       nrUE_params_t *params = get_nrUE_params();
 
       // Check that MPK path is provided (no default - must be explicit)
-      // Note: --tesla-gnb-pubkey now contains the Core's Master Public Key (MPK) for IBS mode
-      if (params->tesla_gnb_pubkey_file == NULL || params->tesla_gnb_pubkey_file[0] == '\0') {
-        LOG_E(NR_RRC, "TESLA IBS: --tesla-gnb-pubkey is required. Specify path to Core's MPK file.\n");
+      // Core's Master Public Key (MPK) for IBS verification
+      if (params->tesla_core_mpk_file == NULL || params->tesla_core_mpk_file[0] == '\0') {
+        LOG_E(NR_RRC, "TESLA IBS: --tesla-core-mpk is required. Specify path to Core's MPK file.\n");
         LOG_E(NR_RRC, "TESLA IBS: Obtain MPK from Core PKG: tf5_ibs_pkg_keygen <msk_path> <mpk_path>\n");
         free(ptr->SInfo.tesla_state);
         ptr->SInfo.tesla_state = NULL;
@@ -1679,12 +1679,12 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
           ptr->SInfo.tesla_state = NULL;
         } else {
           uint8_t mpk[TF5_TESLA_PUBKEY_LEN];
-          rc = tf5_tesla_load_pubkey(params->tesla_gnb_pubkey_file, mpk);
+          rc = tf5_tesla_load_pubkey(params->tesla_core_mpk_file, mpk);
           if (rc == 0) {
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info
             uint16_t slots_per_frame = 20;
             tf5_tesla_ue_init(ptr->SInfo.tesla_state, mpk, slots_per_frame);
-            LOG_I(NR_RRC, "TESLA IBS: Loaded Core MPK from %s\n", params->tesla_gnb_pubkey_file);
+            LOG_I(NR_RRC, "TESLA IBS: Loaded Core MPK from %s\n", params->tesla_core_mpk_file);
             // Log MPK for verification (first 32 bytes)
             char hex_buf[65];
             for (int j = 0; j < 32; j++) {
@@ -1693,7 +1693,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
             LOG_I(NR_RRC, "TESLA IBS: MPK (first 32 bytes hex): %s...\n", hex_buf);
           } else {
             LOG_E(NR_RRC, "TESLA IBS: Failed to load MPK from %s (rc=%d)\n",
-                  params->tesla_gnb_pubkey_file, rc);
+                  params->tesla_core_mpk_file, rc);
             LOG_E(NR_RRC, "TESLA IBS: Obtain MPK from Core PKG\n");
             // Free state and set to NULL to disable TESLA
             free(ptr->SInfo.tesla_state);

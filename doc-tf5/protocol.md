@@ -26,11 +26,12 @@ Time is divided into discrete intervals:
 
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
-| T_int | 20 ms (pattern 1) or SSB period (pattern 2/3) | Interval duration |
+| T_int | 20 ms | Interval duration (fixed) |
 | chain_len | 65536 | Number of intervals (configurable) |
 | Duration | Depends on T_int (e.g., ~21.8 min for T_int=20ms) | Total key chain lifetime |
 
 **Interval Index Calculation**:
+
 ```
 i = floor((current_time - T_0) / T_int)
 ```
@@ -61,10 +62,11 @@ The chain length can be configured by the user if a different lifetime is needed
 The **disclosure delay** (d) determines how many intervals elapse before a key is revealed:
 
 - Default: **d = 1**
-- At interval i, gNB discloses K_{i-d} = K_{i-1}
+- At interval i, gNB discloses `K_{i-d}` = `K_{i-1}`
 - UE can verify messages from interval i-1 using the disclosed key
 
 **Timeline Example** (d=1):
+
 ```
 Interval 5: gNB uses K_5 for MAC, discloses K_4
 Interval 6: gNB uses K_6 for MAC, discloses K_5
@@ -83,7 +85,7 @@ RFC 4082 Section 3.6 states that d=1 "does not work" for packets sent near inter
 
 **Security guarantee**: RFC 4082 Section 3.2 confirms the scheme "remains secure for any values of T_int and d>0"
 
-**Latency benefit**: Using d=1 minimizes authentication delay (1 interval vs 2+ intervals with higher d values)
+**Latency benefit**: Using `d=1` minimizes authentication delay (1 interval vs 2+ intervals with higher `d` values)
 
 ---
 
@@ -93,7 +95,7 @@ TF5 implements **two authentication mechanisms**:
 
 ### 1. BLS Signature (Immediate)
 - gNB signs the authentication input with its BLS private key
-- UE verifies immediately if it has the pre-provisioned BLS public key
+- UE verifies immediately if it has the pre-provisioned BLS public key of the core
 - Provides strong authentication without waiting
 
 ### 2. TESLA MAC (Delayed)
