@@ -117,7 +117,7 @@ flowchart TB
 
 2. Build signature auth_input
    └── Re-encode SIB1 (without lateNonCriticalExtension)
-   └── tf5_tesla_build_sig_auth_input(sib1, static_params, timesync_info, interval_index, disclosed_key)
+   └── tf5_tesla_build_sig_auth_input(sib1, tesla_params, timesync_info, interval_index, disclosed_key)
        (includes full content for signature verification)
 
 3. Extract Cell ID from SIB1's cellAccessRelatedInfo
@@ -146,7 +146,7 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
 
 3. Build MAC auth_input (per RFC 4082, excludes interval_index and disclosed_key)
    └── Re-encode SIB1 (without lateNonCriticalExtension)
-   └── tf5_tesla_build_mac_auth_input(sib1, static_params, timesync_info)
+   └── tf5_tesla_build_mac_auth_input(sib1, tesla_params, timesync_info)
        (excludes interval_index and disclosed_key for MAC verification)
 
 4. Buffer current SIB1 for future TESLA verification
@@ -223,19 +223,19 @@ The safe packet test determines if a message could have been forged by an attack
 ```c
 bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
     // Compute current interval using rx_sfn/rx_slot (recorded at reception time)
-    // and CACHED static parameters (authenticated during first-time UE verification via BLS signature)
+    // and CACHED tesla parameters (authenticated during first-time UE verification via BLS signature)
     uint32_t x = compute_interval(rx_sfn, rx_slot,
-                                  state->static_params.t0,
-                                  state->static_params.t_int_ms);
+                                  state->tesla_params.t0,
+                                  state->tesla_params.t_int_ms);
     uint32_t i = ext->interval_index;  // claimed interval from sender
-    uint8_t d = state->static_params.disclosure_delay;  // cached, authenticated
+    uint8_t d = state->tesla_params.disclosure_delay;  // cached, authenticated
 
     // Safe if: x < i + d
     return (x < i + d);
 }
 ```
 
-**Note**: The safe packet test uses `state->static_params` (cached from first authenticated SIB1) for timing calculations, while `ext->interval_index` is the claimed interval from the sender. This ensures the UE uses authenticated parameters rather than potentially untrusted values from the current extension.
+**Note**: The safe packet test uses `state->tesla_params` (cached from first authenticated SIB1) for timing calculations, while `ext->interval_index` is the claimed interval from the sender. This ensures the UE uses authenticated parameters rather than potentially untrusted values from the current extension.
 
 ---
 

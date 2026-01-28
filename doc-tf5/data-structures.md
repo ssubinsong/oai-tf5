@@ -37,24 +37,22 @@ typedef struct {
 
 ---
 
-## Static Parameters (10 bytes wire format)
+## TESLA Parameters (8 bytes wire format)
 
 Parameters constant for the lifetime of a key chain.
 
-**Wire format**: 10 bytes (T_0 not transmitted, derived by UE from signed fields)
+**Wire format**: 8 bytes (T_0 not transmitted, derived by UE from signed fields)
 **In-memory**: Includes T_0 for internal use (derived after IBS verification)
 
 ```c
 typedef struct {
     uint8_t  te_version;           // 1B - Protocol version (0x01)
-    uint8_t  crypto_suite_id;      // 1B - Algorithm suite (0x03 for IBS)
     uint16_t t_int_ms;             // 2B - Interval duration (20ms)
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay (1)
-    uint8_t  key_len;              // 1B - TESLA key length (16)
     // T_0 NOT in wire format - derived by UE: T_0 = timesync - (i × T_int)
-    tf5_tesla_slot_time_t t0;      // 6B - T_0: interval 0 start (NOT in wire, derived by UE)
+    tf5_tesla_slot_time_t t0;      // 4B - T_0: interval 0 start (NOT in wire, derived by UE)
     uint32_t chain_len;            // 4B - Number of intervals N
-} tf5_tesla_static_params_t;
+} tf5_tesla_params_t;
 ```
 
 ### T_0 Derivation
@@ -85,14 +83,14 @@ Field access: `.sfn`, `.slot`
 
 ---
 
-## TESLA Extension (109 bytes)
+## TESLA Extension (107 bytes)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
 ```c
 typedef struct {
-    tf5_tesla_static_params_t   static_params;   // 10B (wire) - T_0 derived by UE
-    uint32_t                    validity_end;    // 3B (wire) - Key expiration (minutes since 2024-01-01)
+    tf5_tesla_params_t          tesla_params;    // 8B (wire) - T_0 derived by UE
+    uint32_t                    gnb_key_validity_end;  // 3B (wire) - Key expiration (minutes since 2024-01-01)
     tf5_tesla_timesync_info_t   timesync_info;   // 4B (sfn + slot only)
     uint32_t                    interval_index;  // 4B - Current interval i
     uint8_t                     disclosed_key[16]; // 16B - K_{i-d} (serves as trusted anchor)
@@ -104,46 +102,46 @@ typedef struct {
 
 ### Key Validity Period
 
-The `validity_end` field enables key expiration:
+The `gnb_key_validity_end` field enables key expiration:
 - **Format**: 24 bits (3 bytes), minutes since 2024-01-01 00:00:00 UTC
 - **Range**: 0 to 16,777,215 minutes (~31.9 years, covers until ~2056)
-- **Identity Hash**: pk_ID = H_s(Cell_ID || validity_end)
+- **Identity Hash**: pk_ID = H_s(Cell_ID || gnb_key_validity_end)
 
 Conversion utilities:
 ```c
 #define TF5_VALIDITY_EPOCH  1704067200UL  // 2024-01-01 00:00:00 UTC
 
-// Unix seconds to validity_end
-uint32_t tf5_ibs_unix_to_validity(uint64_t unix_sec);
+// Unix seconds to gnb_key_validity_end
+uint32_t tf5_ibs_unix_to_gnb_key_validity(uint64_t unix_sec);
 
-// validity_end to Unix seconds
-uint64_t tf5_ibs_validity_to_unix(uint32_t validity_end);
+// gnb_key_validity_end to Unix seconds
+uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end);
 ```
 
 **Authentication Coverage**:
-- **Signature**: SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
-- **MAC**: SIB1 || static_params || validity_end || timesync_info (per RFC 4082, excludes timestamp)
 
-**Binary Wire Format** (109 bytes, big-endian):
+- **Signature**: SIB1 || tesla_params || gnb_key_validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
+- **MAC**: SIB1 || tesla_params || gnb_key_validity_end || timesync_info
+
+**Binary Wire Format** (107 bytes, big-endian):
+
 ```
 Offset  Size  Field
 ------  ----  -----
 0       1     te_version
-1       1     crypto_suite_id
-2       2     t_int_ms
-4       1     disclosure_delay
-5       1     key_len
-6       4     chain_len              (T_0 REMOVED - derived by UE)
-10      3     validity_end           (minutes since 2024-01-01)
-13      2     timesync_info.sfn
-15      2     timesync_info.slot
-17      4     interval_index
-21      16    disclosed_key
-37      8     timestamp_ms
-45      48    gnb_signature (BLS)
-93      16    tesla_tag
+1       2     t_int_ms
+3       1     disclosure_delay
+4       4     chain_len              (T_0 REMOVED - derived by UE)
+8       3     gnb_key_validity_end   (minutes since 2024-01-01)
+11      2     timesync_info.sfn
+13      2     timesync_info.slot
+15      4     interval_index
+19      16    disclosed_key
+35      8     timestamp_ms
+43      48    gnb_signature (BLS)
+91      16    tesla_tag
 ------
-109 bytes total (with BLS signatures)
+107 bytes total (with BLS signatures)
 
 Note: T_0 not in wire format - UE derives from signed fields: T_0 = timesync - (i × T_int)
 Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
@@ -155,7 +153,7 @@ Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is s
 
 ```c
 typedef struct {
-    tf5_tesla_static_params_t params;
+    tf5_tesla_params_t params;
 
     // Key chain storage (dynamically allocated)
     uint8_t  (*key_chain)[16];    // K_0 ... K_N
@@ -167,7 +165,7 @@ typedef struct {
     // IBS keys
     uint8_t  gnb_private_key[32];   // sk_ID (issued by Core PKG)
     uint8_t  gnb_cell_id[5];        // NR Cell ID (36 bits)
-    uint32_t validity_end;          // Key expiration (minutes since 2024-01-01)
+    uint32_t gnb_key_validity_end;  // Key expiration (minutes since 2024-01-01)
 
     // Timing
     uint16_t slots_per_frame;
@@ -182,11 +180,11 @@ typedef struct {
 
 ```c
 typedef struct {
-    tf5_tesla_static_params_t static_params;
+    tf5_tesla_params_t tesla_params;
 
-    // Pre-provisioned gNB public key
-    uint8_t  gnb_public_key[96];  // BLS public key (G2)
-    bool     has_gnb_public_key;
+    // Pre-provisioned core MPK
+    uint8_t  mpk[96];  // BLS public key (G2)
+    bool     has_mpk;
 
     // Verification state
     bool     params_received;

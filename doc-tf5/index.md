@@ -38,15 +38,7 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 
 ### Integration
 - [Integration Points](integration.md) - File locations and OAI structure modifications
-- [API Reference](api-reference.md) - Complete function reference for gNB and UE
 
 ### Build & Configuration
 - [Build Configuration](build.md) - CMake options, build commands, dependencies
 - [TESLA Configuration](tesla-config.md) - TESLA-optimized gNB config file and parameter rationale
-- [Troubleshooting](troubleshooting.md) - Log verification, common errors, debugging
-
-### Security
-- [Security Analysis](security.md) - Threat model, security properties, attack resistance
-
-### Reference
-- [Appendix](appendix.md) - Configuration parameters, error codes, logging

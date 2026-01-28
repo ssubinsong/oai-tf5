@@ -28,14 +28,9 @@ cd cmake_targets
 ./build_oai --ninja --gNB --nrUE -w SIMU --cmake-opt -DTF5_ENABLE_TESLA=ON
 ```
 
-**Build gNB only**:
-```bash
-./build_oai --ninja --gNB -w SIMU --cmake-opt -DTF5_ENABLE_TESLA=ON
-```
-
 ---
 
-## Key Management (IBS Mode)
+## Key Management (IBS)
 
 TF5 uses **Identity-Based Signatures (IBS)** where the 5G Core acts as a Private Key Generator (PKG).
 See [ibs-overview.md](ibs-overview.md) for the full cryptographic specification.
@@ -129,12 +124,12 @@ Key paths and validity **must** be specified explicitly on the command line (no 
 | Component | Parameter | Description |
 |-----------|-----------|-------------|
 | gNB | `--tesla-privkey` | Path to gNB's secret key (sk_ID) from PKG |
-| gNB | `--tesla-validity-end` | Key validity end (minutes since 2024-01-01 00:00 UTC). **REQUIRED.** |
+| gNB | `--tesla-gnb-key-validity-end` | Key validity end (minutes since 2024-01-01 00:00 UTC). **REQUIRED.** |
 | UE | `--tesla-core-mpk` | Path to Core's Master Public Key (MPK) |
 
 **Note**: gNB no longer needs `--tesla-pubkey` in IBS mode.
 
-**Important**: The `--tesla-validity-end` value on the gNB command line **must match** the validity_end
+**Important**: The `--tesla-gnb-key-validity-end` value on the gNB command line **must match** the gnb_key_validity_end
 used when the key was issued via `tf5_ibs_issue`. Mismatched values cause signature verification failure.
 
 ### Running with TESLA
@@ -154,7 +149,7 @@ sudo ./nr-softmodem \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
     --rfsim \
     --tesla-privkey /path/to/gnb_keys/sk_gnb.bin \
-    --tesla-validity-end 1051200
+    --tesla-gnb-key-validity-end 1051200
 
 # Run UE with Core's MPK (in another terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi 001010000000001 --rfsim \
@@ -163,8 +158,8 @@ sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi
 ```
 
 **Key Validity Checks:**
-- **gNB startup**: Refuses to start if the key has expired (current time >= validity_end)
-- **UE verification**: Rejects SIB1 if the embedded validity_end has passed
+- **gNB startup**: Refuses to start if the key has expired (current time >= gnb_key_validity_end)
+- **UE verification**: Rejects SIB1 if the embedded gnb_key_validity_end has passed
 
 ### Cell ID and Validity Binding
 
@@ -176,9 +171,9 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 - Mismatch causes signature verification failure
 
 **Validity binding:**
-- The `--tesla-validity-end` parameter must match the validity_end used during key issuance
-- Both Cell ID and validity_end are hashed together: `pk_ID = H_s(Cell_ID || validity_end)`
-- If validity_end is mismatched, the derived public key differs and verification fails
+- The `--tesla-gnb-key-validity-end` parameter must match the gnb_key_validity_end used during key issuance
+- Both Cell ID and gnb_key_validity_end are hashed together: `pk_ID = H_s(Cell_ID || gnb_key_validity_end)`
+- If gnb_key_validity_end is mismatched, the derived public key differs and verification fails
 - UE also checks if the key has expired before attempting verification
 
 ---
@@ -191,23 +186,3 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 | blst | BLS12-381 IBS signatures (pk-in-G2 mode) |
 
 The blst library (Supranational) is included as a submodule at `cmake_targets/third_party/blst/`.
-
-### Migration from Legacy BLS Mode
-
-If upgrading from a previous version that used standard BLS signatures:
-
-1. **Regenerate keys** - IBS uses a different key hierarchy (Core PKG issues gNB keys)
-2. **Update UE parameters** - UE now loads Core's MPK instead of gNB public key
-3. **Update gNB parameters** - gNB no longer needs `--tesla-pubkey`
-
-```bash
-# Build Core PKG
-cd tf5-core-pkg && mkdir build && cd build && cmake .. && make
-
-# Generate new IBS keys
-./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
-./tf5_ibs_issue pkg_keys/msk.bin <your_cell_id_hex> <validity_end> gnb_keys/sk_gnb.bin
-
-# Example: Cell ID 123456789, valid for 2 years
-./tf5_ibs_issue pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_gnb.bin
-```

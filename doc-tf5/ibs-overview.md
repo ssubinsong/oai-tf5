@@ -25,18 +25,18 @@ This eliminates the need to distribute individual gNB public keys to UEs and ena
 | `s` | Core master secret (scalar in Z_r) | 32 bytes |
 | `MPK = s*Q` | Core master public key (G2 point) | 96 bytes |
 | `Cell_ID` | gNB's NR Cell ID | 5 bytes (36 bits) |
-| `validity_end` | Key expiration (minutes since 2024-01-01 UTC) | 3 bytes (24 bits) |
-| `pk_ID = H_s(Cell_ID ‖ validity_end)` | Identity-derived scalar | 32 bytes |
+| `gnb_key_validity_end` | Key expiration (minutes since 2024-01-01 UTC) | 3 bytes (24 bits) |
+| `pk_ID = H_s(Cell_ID ‖ gnb_key_validity_end)` | Identity-derived scalar | 32 bytes |
 | `sk_ID = s * pk_ID mod r` | gNB's secret key (issued by Core) | 32 bytes |
 | `Σ = sk_ID * H_m(m)` | Signature (G1 point) | 48 bytes |
 
 **Key Identity Construction:**
 ```
-Identity = Cell_ID (5 bytes) || validity_end (3 bytes, big-endian)
+Identity = Cell_ID (5 bytes) || gnb_key_validity_end (3 bytes, big-endian)
 pk_ID = H_s(Identity)
 ```
 
-The validity_end is encoded as minutes since the epoch 2024-01-01 00:00:00 UTC (Unix timestamp 1704067200).
+The gnb_key_validity_end is encoded as minutes since the epoch 2024-01-01 00:00:00 UTC (Unix timestamp 1704067200).
 Maximum value 0xFFFFFF = 16,777,215 minutes ≈ 31.9 years (until ~2056).
 
 ### Verification Equation
@@ -73,7 +73,7 @@ Core PKG
 
 gNB-specific Keys (issued per Cell ID + validity)
     │
-    └──> sk_ID = s * H_s(Cell_ID || validity_end) mod r
+    └──> sk_ID = s * H_s(Cell_ID || gnb_key_validity_end) mod r
          └── sk_gnb.bin (32B) - gNB Secret Key (valid until expiration)
 ```
 
@@ -102,7 +102,7 @@ gNB-specific Keys (issued per Cell ID + validity)
 ```bash
 ./nr-softmodem -O gnb.conf \
     --tesla-privkey /path/to/sk_gnb.bin \
-    --tesla-validity-end 1051200
+    --tesla-gnb-key-validity-end 1051200
 ```
 
 **UE** (loads Core's MPK):
@@ -112,11 +112,11 @@ gNB-specific Keys (issued per Cell ID + validity)
 
 ### 4. Runtime Verification
 
-1. UE receives SIB1 with TESLA extension (includes signature Σ and validity_end)
+1. UE receives SIB1 with TESLA extension (includes signature Σ and gnb_key_validity_end)
 2. UE extracts `Cell_ID` from SIB1's `cellAccessRelatedInfo`
-3. UE extracts `validity_end` from TESLA extension
-4. **UE checks expiration**: if current_time >= validity_end, reject
-5. UE computes `pk_ID = H_s(Cell_ID || validity_end)`
+3. UE extracts `gnb_key_validity_end` from TESLA extension
+4. **UE checks expiration**: if current_time >= gnb_key_validity_end, reject
+5. UE computes `pk_ID = H_s(Cell_ID || gnb_key_validity_end)`
 6. UE computes `derived_pk = pk_ID * MPK`
 7. UE verifies: `e(Σ, Q) = e(H_m(auth_input), derived_pk)`
 
@@ -126,13 +126,13 @@ gNB-specific Keys (issued per Cell ID + validity)
 
 ### Identity and Validity Binding
 The gNB's secret key is cryptographically bound to both its Cell ID and validity period:
-- `sk_ID = s * H_s(Cell_ID || validity_end)`
-- Changing Cell ID or validity_end invalidates the key
-- UE derives verification key from Cell ID (in SIB1) and validity_end (in extension)
+- `sk_ID = s * H_s(Cell_ID || gnb_key_validity_end)`
+- Changing Cell ID or gnb_key_validity_end invalidates the key
+- UE derives verification key from Cell ID (in SIB1) and gnb_key_validity_end (in extension)
 
 ### Key Expiration
 - Keys have a finite validity period set at issuance time
-- UE rejects SIB1 if the embedded validity_end has passed
+- UE rejects SIB1 if the embedded gnb_key_validity_end has passed
 - Compromised keys become unusable after expiration
 
 ---
@@ -152,5 +152,5 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 
 ## Wire Format
 
-The `crypto_suite_id` field is set to `0x03`, indicating HMAC-SHA256 + IBS mode.
+The TESLA extension uses HMAC-SHA256 for MAC computation and IBS (BLS12-381 based) for signatures.
 

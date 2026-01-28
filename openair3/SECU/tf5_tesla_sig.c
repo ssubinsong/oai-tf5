@@ -224,12 +224,12 @@ int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
 static const uint8_t TF5_IBS_DST_HS[] = "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1";
 static const size_t TF5_IBS_DST_HS_LEN = sizeof(TF5_IBS_DST_HS) - 1;
 
-/* IKM size: DST (35) + Cell_ID (5) + validity_end (3) = 43 bytes */
+/* IKM size: DST (35) + Cell_ID (5) + gnb_key_validity_end (3) = 43 bytes */
 #define TF5_IBS_IKM_LEN  (TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_LEN)
 
 int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
                                   size_t cell_id_len,
-                                  uint32_t validity_end,
+                                  uint32_t gnb_key_validity_end,
                                   uint8_t scalar_out[TF5_BLS_SECRET_KEY_LEN])
 {
     if (!cell_id || !scalar_out || cell_id_len == 0) {
@@ -237,21 +237,21 @@ int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
     }
 
     /*
-     * Create expanded IKM by concatenating DST, cell_id, and validity_end.
+     * Create expanded IKM by concatenating DST, cell_id, and gnb_key_validity_end.
      * This ensures IKM >= 32 bytes (43 bytes: 35 DST + 5 cell_id + 3 validity)
      * which is required for blst_keygen to produce non-zero output.
      *
-     * Identity hash: pk_ID = H_s(Cell_ID || validity_end)
+     * Identity hash: pk_ID = H_s(Cell_ID || gnb_key_validity_end)
      */
     uint8_t ikm[TF5_IBS_IKM_LEN];
     memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
     memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, cell_id_len);
 
-    /* Encode validity_end as 3 bytes big-endian */
+    /* Encode gnb_key_validity_end as 3 bytes big-endian */
     size_t off = TF5_IBS_DST_HS_LEN + cell_id_len;
-    ikm[off + 0] = (validity_end >> 16) & 0xFF;
-    ikm[off + 1] = (validity_end >> 8) & 0xFF;
-    ikm[off + 2] = validity_end & 0xFF;
+    ikm[off + 0] = (gnb_key_validity_end >> 16) & 0xFF;
+    ikm[off + 1] = (gnb_key_validity_end >> 8) & 0xFF;
+    ikm[off + 2] = gnb_key_validity_end & 0xFF;
 
     blst_scalar pk_id;
 
@@ -273,7 +273,7 @@ int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
 
 int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBLIC_KEY_LEN],
                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                          uint32_t validity_end,
+                          uint32_t gnb_key_validity_end,
                           const uint8_t *data,
                           size_t data_len,
                           const uint8_t signature[TF5_BLS_SIGNATURE_LEN])
@@ -290,16 +290,16 @@ int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBLIC_KEY_LEN],
     uint8_t pk_id_bytes[32];
     BLST_ERROR err;
 
-    /* Step 1: Compute pk_ID = H_s(cell_id || validity_end) using expanded IKM */
+    /* Step 1: Compute pk_ID = H_s(cell_id || gnb_key_validity_end) using expanded IKM */
     uint8_t ikm[TF5_IBS_IKM_LEN];
     memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
     memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, TF5_IBS_CELL_ID_LEN);
 
-    /* Encode validity_end as 3 bytes big-endian */
+    /* Encode gnb_key_validity_end as 3 bytes big-endian */
     size_t off = TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN;
-    ikm[off + 0] = (validity_end >> 16) & 0xFF;
-    ikm[off + 1] = (validity_end >> 8) & 0xFF;
-    ikm[off + 2] = validity_end & 0xFF;
+    ikm[off + 0] = (gnb_key_validity_end >> 16) & 0xFF;
+    ikm[off + 1] = (gnb_key_validity_end >> 8) & 0xFF;
+    ikm[off + 2] = gnb_key_validity_end & 0xFF;
 
     blst_keygen(&pk_id, ikm, sizeof(ikm), NULL, 0);
     memset(ikm, 0, sizeof(ikm));

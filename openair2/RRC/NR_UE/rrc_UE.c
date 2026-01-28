@@ -532,15 +532,15 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
     if (unpack_rc == 0) {
       LOG_D(NR_RRC, "TESLA: Unpacked extension, interval=%u, t_int=%u ms, d=%u, validity=%u\n",
-            ext.interval_index, ext.static_params.t_int_ms, ext.static_params.disclosure_delay,
-            ext.validity_end);
+            ext.interval_index, ext.tesla_params.t_int_ms, ext.tesla_params.disclosure_delay,
+            ext.gnb_key_validity_end);
 
       /* Check key expiration before any verification */
-      uint64_t expiry_unix = tf5_ibs_validity_to_unix(ext.validity_end);
+      uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(ext.gnb_key_validity_end);
       uint64_t ue_time_sec = tf5_tesla_get_wallclock_ms() / 1000;
       if (ue_time_sec >= expiry_unix) {
-        LOG_E(NR_RRC, "TESLA: gNB key EXPIRED (validity_end=%u, expiry=%lu, now=%lu)\n",
-              ext.validity_end, (unsigned long)expiry_unix, (unsigned long)ue_time_sec);
+        LOG_E(NR_RRC, "TESLA: gNB key EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n",
+              ext.gnb_key_validity_end, (unsigned long)expiry_unix, (unsigned long)ue_time_sec);
         SI_info->tesla_state->auth_failed = true;
         nr_rrc_abort_connection(rrc, gNB_index);
         return;
@@ -588,13 +588,13 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                   (long)((int64_t)ext.timestamp_ms - (int64_t)ue_time_ms));
           }
 
-          /* Build signature auth input (includes validity_end, interval_index, disclosed_key, and timestamp) */
+          /* Build signature auth input (includes gnb_key_validity_end, interval_index, disclosed_key, and timestamp) */
           uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
           size_t sig_auth_len = 0;
           tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_len,
                                           sib1_buf, sib1_len,
-                                          &ext.static_params,
-                                          ext.validity_end,
+                                          &ext.tesla_params,
+                                          ext.gnb_key_validity_end,
                                           &ext.timesync_info,
                                           ext.interval_index,
                                           ext.disclosed_key,
@@ -607,7 +607,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           SI_info->tesla_state->auth_in_progress = true;
           int sig_rc = tf5_tesla_ibs_verify(SI_info->tesla_state->mpk,
                                              cell_id,
-                                             ext.validity_end,
+                                             ext.gnb_key_validity_end,
                                              sig_auth_input, sig_auth_len,
                                              ext.gnb_signature);
           SI_info->tesla_state->auth_in_progress = false;
@@ -620,7 +620,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             tf5_tesla_slot_time_t derived_t0;
             int derive_rc = tf5_tesla_derive_t0(&ext.timesync_info,
                                                  ext.interval_index,
-                                                 ext.static_params.t_int_ms,
+                                                 ext.tesla_params.t_int_ms,
                                                  SI_info->tesla_state->slots_per_frame,
                                                  &derived_t0);
             if (derive_rc != 0) {
@@ -629,11 +629,11 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
               nr_rrc_abort_connection(rrc, gNB_index);
               return;
             }
-            ext.static_params.t0 = derived_t0;
+            ext.tesla_params.t0 = derived_t0;
             LOG_I(NR_RRC, "TESLA IBS: Derived T_0: SFN=%u slot=%u\n",
                   derived_t0.sfn, derived_t0.slot);
 
-            memcpy(&SI_info->tesla_state->static_params, &ext.static_params, sizeof(tf5_tesla_static_params_t));
+            memcpy(&SI_info->tesla_state->tesla_params, &ext.tesla_params, sizeof(tf5_tesla_params_t));
             SI_info->tesla_state->k0_trusted = true;
             SI_info->tesla_state->sib1_authenticated = true;
             SI_info->tesla_state->params_received = true;
@@ -641,7 +641,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             /* Accept disclosed key K_{i-d} as anchor for future key chain verification.
              * Since the signature covers the entire auth_input (including disclosed_key),
              * K_{i-d} is authenticated and serves as O(1) anchor instead of K_0. */
-            uint32_t disclosed_interval = ext.interval_index - ext.static_params.disclosure_delay;
+            uint32_t disclosed_interval = ext.interval_index - ext.tesla_params.disclosure_delay;
             memcpy(SI_info->tesla_state->last_verified_key, ext.disclosed_key, TF5_TESLA_KEY_LEN);
             SI_info->tesla_state->last_verified_key_idx = disclosed_interval;
             SI_info->tesla_state->last_verified_key_valid = true;
@@ -695,8 +695,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             size_t sig_auth_len_fallback = 0;
             tf5_tesla_build_sig_auth_input(sig_auth_input_fallback, &sig_auth_len_fallback,
                                             sib1_buf, sib1_len,
-                                            &ext.static_params,
-                                            ext.validity_end,
+                                            &ext.tesla_params,
+                                            ext.gnb_key_validity_end,
                                             &ext.timesync_info,
                                             ext.interval_index,
                                             ext.disclosed_key,
@@ -708,7 +708,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
             int sig_rc = tf5_tesla_ue_verify_signature(SI_info->tesla_state,
                                                        cell_id_fallback,
-                                                       ext.validity_end,
+                                                       ext.gnb_key_validity_end,
                                                        sig_auth_input_fallback, sig_auth_len_fallback,
                                                        ext.gnb_signature);
             if (sig_rc == 0) {
@@ -740,13 +740,14 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             /* Skip this SIB1 entirely - do not buffer, do not process further */
           } else {
             /* Build MAC auth input (excludes interval_index and disclosed_key per RFC 4082)
-             * Use cached static_params (authenticated during first-time UE verification)
+             * Use cached tesla_params (authenticated during first-time UE verification)
              * but timesync_info from current extension (dynamic per-SIB1) */
             uint8_t mac_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
             size_t mac_auth_len = 0;
             tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
                                             sib1_buf, sib1_len,
-                                            &SI_info->tesla_state->static_params,
+                                            &SI_info->tesla_state->tesla_params,
+                                            ext.gnb_key_validity_end,
                                             &ext.timesync_info);
 
             /* Step 2: Buffer current SIB1 for future TESLA verification */
@@ -770,8 +771,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
              * disclosed keys, so even if packets are lost, we will still be able to verify
              * buffered, safe packets from earlier time intervals." */
             if (SI_info->tesla_state->buffer_queue_count > 0 &&
-                ext.interval_index > SI_info->tesla_state->static_params.disclosure_delay) {
-              uint32_t disclosed_interval = ext.interval_index - SI_info->tesla_state->static_params.disclosure_delay;
+                ext.interval_index > SI_info->tesla_state->tesla_params.disclosure_delay) {
+              uint32_t disclosed_interval = ext.interval_index - SI_info->tesla_state->tesla_params.disclosure_delay;
 
               int verified_count = 0, failed_count = 0;
               bool rrc_trigger_verified = false;

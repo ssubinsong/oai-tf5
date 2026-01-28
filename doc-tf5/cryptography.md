@@ -149,12 +149,12 @@ The signature and MAC use different authentication inputs:
 **Source**: [tf5_tesla.c:196](../openair3/SECU/tf5_tesla.c#L196) `tf5_tesla_build_sig_auth_input()`
 
 ```
-sig_auth_input = original_SIB1 || static_params || validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
+sig_auth_input = original_SIB1 || tesla_params || gnb_key_validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
 ```
 
 - **original_SIB1**: SIB1 content without TESLA extension
-- **static_params**: 30 bytes of static TESLA parameters
-- **validity_end**: 3 bytes key expiration (minutes since 2024-01-01)
+- **tesla_params**: 8 bytes of TESLA parameters
+- **gnb_key_validity_end**: 3 bytes key expiration (minutes since 2024-01-01)
 - **timesync_info**: 4 bytes of timing information
 - **interval_index**: 4 bytes current interval
 - **disclosed_key**: 16 bytes K_{i-d}
@@ -166,10 +166,10 @@ sig_auth_input = original_SIB1 || static_params || validity_end || timesync_info
 
 Per RFC 4082, the MAC does NOT include the interval index, disclosed key:
 ```
-mac_auth_input = original_SIB1 || static_params || validity_end || timesync_info
+mac_auth_input = original_SIB1 || tesla_params || gnb_key_validity_end || timesync_info
 ```
 
 - **original_SIB1**: SIB1 content without TESLA extension
-- **static_params**: 30 bytes of static TESLA parameters
-- **validity_end**: 3 bytes key expiration (minutes since 2024-01-01, big-endian)
+- **tesla_params**: 8 bytes of TESLA parameters
+- **gnb_key_validity_end**: 3 bytes key expiration (minutes since 2024-01-01, big-endian)
 - **timesync_info**: 4 bytes of timing information
