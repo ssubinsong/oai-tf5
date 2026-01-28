@@ -144,10 +144,10 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
    └── FAILED: Skip this SIB1 → return
    └── PASSED: Continue to step 3
 
-3. Build MAC auth_input (per RFC 4082, excludes interval_index and disclosed_key)
+3. Build MAC auth_input (excludes interval_index, disclosed_key, tesla_params, timesync_info)
    └── Re-encode SIB1 (without lateNonCriticalExtension)
-   └── tf5_tesla_build_mac_auth_input(sib1, tesla_params, timesync_info)
-       (excludes interval_index and disclosed_key for MAC verification)
+   └── tf5_tesla_build_mac_auth_input(sib1, gnb_key_validity_end)
+       (tesla_params and timesync_info authenticated via BLS signature)
 
 4. Buffer current SIB1 for future TESLA verification
    └── tf5_tesla_ue_buffer_sib1()

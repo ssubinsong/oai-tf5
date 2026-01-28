@@ -739,16 +739,12 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
             /* Skip this SIB1 entirely - do not buffer, do not process further */
           } else {
-            /* Build MAC auth input (excludes interval_index and disclosed_key per RFC 4082)
-             * Use cached tesla_params (authenticated during first-time UE verification)
-             * but timesync_info from current extension (dynamic per-SIB1) */
+            /* Build MAC auth input (SIB1 + gnb_key_validity_end only) */
             uint8_t mac_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
             size_t mac_auth_len = 0;
             tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
                                             sib1_buf, sib1_len,
-                                            &SI_info->tesla_state->tesla_params,
-                                            ext.gnb_key_validity_end,
-                                            &ext.timesync_info);
+                                            ext.gnb_key_validity_end);
 
             /* Step 2: Buffer current SIB1 for future TESLA verification */
             tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);

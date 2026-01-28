@@ -120,7 +120,7 @@ uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end);
 **Authentication Coverage**:
 
 - **Signature**: SIB1 || tesla_params || gnb_key_validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
-- **MAC**: SIB1 || tesla_params || gnb_key_validity_end || timesync_info
+- **MAC**: SIB1 || gnb_key_validity_end
 
 **Binary Wire Format** (107 bytes, big-endian):
 

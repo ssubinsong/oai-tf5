@@ -325,26 +325,23 @@ uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
  * Build MAC authentication input buffer
  *
  * Constructs the data to be MAC'd (per RFC 4082):
- * original_SIB1 || tesla_params || gnb_key_validity_end || timesync_info
+ * original_SIB1 || gnb_key_validity_end
  *
  * Note: interval_index and disclosed_key are NOT included in MAC input.
+ * Note: tesla_params and timesync_info excluded - authenticated by signature.
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
  * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
  * @param sib1_len      Length of original SIB1 data
- * @param tesla_params  TESLA parameters
  * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
- * @param timesync_info Time synchronization info
  * @return 0 on success, negative on error
  */
 int tf5_tesla_build_mac_auth_input(uint8_t *out,
                                    size_t *out_len,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
-                                   const tf5_tesla_params_t *tesla_params,
-                                   uint32_t gnb_key_validity_end,
-                                   const tf5_tesla_timesync_info_t *timesync_info);
+                                   uint32_t gnb_key_validity_end);
 
 /**
  * Build signature authentication input buffer

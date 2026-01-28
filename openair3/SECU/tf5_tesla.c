@@ -278,11 +278,9 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
                                    size_t *out_len,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
-                                   const tf5_tesla_params_t *tesla_params,
-                                   uint32_t gnb_key_validity_end,
-                                   const tf5_tesla_timesync_info_t *timesync_info)
+                                   uint32_t gnb_key_validity_end)
 {
-    if (!out || !out_len || !original_sib1 || !tesla_params || !timesync_info) {
+    if (!out || !out_len || !original_sib1) {
         return -1;
     }
 
@@ -292,15 +290,9 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
     memcpy(out + offset, original_sib1, sib1_len);
     offset += sib1_len;
 
-    // 2. TESLA params (8 bytes)
-    offset += tf5_encode_tesla_params(out + offset, tesla_params);
-
-    // 3. gNB key validity end (3 bytes) - key expiration (minutes since 2024-01-01)
+    // 2. gNB key validity end (3 bytes) - key expiration (minutes since 2024-01-01)
     tf5_encode_gnb_key_validity_end(out + offset, gnb_key_validity_end);
     offset += TF5_IBS_VALIDITY_LEN;
-
-    // 4. Timesync info (4 bytes) - per RFC 4082, MAC does NOT include interval_index/disclosed_key
-    offset += tf5_encode_timesync_info(out + offset, timesync_info);
 
     *out_len = offset;
     return 0;
@@ -321,15 +313,21 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
         return -1;
     }
 
-    // Build MAC auth input first (SIB1 + tesla_params + gnb_key_validity_end + timesync_info)
+    // Build MAC auth input first (SIB1 + gnb_key_validity_end only)
     size_t mac_len = 0;
     int rc = tf5_tesla_build_mac_auth_input(out, &mac_len, original_sib1, sib1_len,
-                                            tesla_params, gnb_key_validity_end, timesync_info);
+                                            gnb_key_validity_end);
     if (rc < 0) {
         return rc;
     }
 
     size_t offset = mac_len;
+
+    // Append tesla_params (8 bytes) - only in signature input, not MAC
+    offset += tf5_encode_tesla_params(out + offset, tesla_params);
+
+    // Append timesync_info (4 bytes) - only in signature input, not MAC
+    offset += tf5_encode_timesync_info(out + offset, timesync_info);
 
     // Append interval_index (4 bytes)
     tf5_encode_u32_be(out + offset, interval_index);
@@ -621,14 +619,12 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
         return -4;
     }
 
-    // Build MAC auth input (SIB1 + tesla_params + gnb_key_validity_end + timesync, excludes interval/key per RFC 4082)
+    // Build MAC auth input (SIB1 + gnb_key_validity_end only)
     uint8_t mac_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
     size_t mac_auth_input_len;
     rc = tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                         original_sib1, sib1_len,
-                                        &ext->tesla_params,
-                                        ext->gnb_key_validity_end,
-                                        &ext->timesync_info);
+                                        ext->gnb_key_validity_end);
     if (rc != 0) {
         LOG_E(NR_RRC, "TESLA: Failed to build MAC auth input\n");
         return -5;

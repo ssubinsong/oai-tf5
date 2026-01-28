@@ -162,14 +162,14 @@ sig_auth_input = original_SIB1 || tesla_params || gnb_key_validity_end || timesy
 
 ### MAC Auth Input
 
-**Source**: [tf5_tesla.c:149](../openair3/SECU/tf5_tesla.c#L149) `tf5_tesla_build_mac_auth_input()`
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_build_mac_auth_input()`
 
-Per RFC 4082, the MAC does NOT include the interval index, disclosed key:
+Per RFC 4082, the MAC does NOT include interval_index and disclosed_key.
+Additionally, `tesla_params` and `timesync_info` are excluded as they are
+already authenticated by the BLS signature during first-time UE verification:
 ```
-mac_auth_input = original_SIB1 || tesla_params || gnb_key_validity_end || timesync_info
+mac_auth_input = original_SIB1 || gnb_key_validity_end
 ```
 
 - **original_SIB1**: SIB1 content without TESLA extension
-- **tesla_params**: 8 bytes of TESLA parameters
 - **gnb_key_validity_end**: 3 bytes key expiration (minutes since 2024-01-01, big-endian)
-- **timesync_info**: 4 bytes of timing information
