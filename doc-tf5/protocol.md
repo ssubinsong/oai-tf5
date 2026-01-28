@@ -13,7 +13,7 @@ K_N (seed) --F--> K_{N-1} --F--> ... --F--> K_1 --F--> K_0 (root/commitment)
 ```
 
 - **K_N**: Random seed (generated at initialization)
-- **F**: One-way function: `K_i = HMAC-SHA256(K_{i+1}, 0x00)[0:15]`
+- **F**: One-way function: `K_i = SHA-256(0x00 || K_{i+1})[0:15]`
 - **K_0**: Root key (commitment), shared with UE in static parameters
 
 The gNB uses keys in forward order (K_1, K_2, ..., K_N), disclosing each key one interval after it was used.

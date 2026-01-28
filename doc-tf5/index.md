@@ -20,18 +20,6 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 ## Reference
 
 - **RFC 4082**: Timed Efficient Stream Loss-Tolerant Authentication (TESLA)
-- Location in repo: `claude-ref/rfc/rfc4082.txt`
-
-## Key Features
-
-| Feature | Description |
-|---------|-------------|
-| Delayed key disclosure | Keys revealed one interval after use |
-| Dual authentication | IBS signature + TESLA MAC |
-| Identity-Based Signatures | UE needs only Core's MPK to verify any gNB |
-| Conditional compilation | Enabled via `TF5_ENABLE_TESLA` flag |
-
----
 
 ## Documentation Index
 
