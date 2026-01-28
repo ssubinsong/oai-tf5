@@ -71,16 +71,14 @@ All components needed for derivation (timesync_info, interval_index, T_int) are 
 
 ## Time Synchronization Info (4 bytes)
 
-Timing information for UE-gNB time synchronization. HFN is now obtained from hyperSFN-r17 in SIB1-v1700-IEs:
+Alias for `tf5_tesla_slot_time_t` used in TESLA extension wire format.
+HFN is obtained from hyperSFN-r17 in SIB1-v1700-IEs (standard 3GPP).
 
 ```c
-typedef struct {
-    uint16_t sfn;   // 2B - System Frame Number (0-1023)
-    uint16_t slot;  // 2B - Slot within frame
-} tf5_tesla_timesync_info_t;
+typedef tf5_tesla_slot_time_t tf5_tesla_timesync_info_t;
 ```
 
-Field access: `.sfn`, `.slot`
+Field access: `.sfn`, `.slot` (same as `tf5_tesla_slot_time_t`)
 
 ---
 

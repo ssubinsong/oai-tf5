@@ -184,16 +184,13 @@ typedef struct {
     uint32_t chain_len;            // 4B - Number of intervals N
 } tf5_tesla_params_t;
 
-/*
- * TESLA Time Synchronization Info (4 bytes)
+/**
+ * Time Synchronization Info (4 bytes)
  *
- * Contains SFN/slot timing for UE-gNB time synchronization.
- * HFN is now obtained from hyperSFN-r17 in SIB1-v1700-IEs (standard 3GPP).
+ * Alias for tf5_tesla_slot_time_t used in TESLA extension wire format.
+ * HFN is obtained from hyperSFN-r17 in SIB1-v1700-IEs (standard 3GPP).
  */
-typedef struct {
-    uint16_t sfn;   // 2B - System Frame Number (0-1023)
-    uint16_t slot;  // 2B - Slot within frame
-} tf5_tesla_timesync_info_t;
+typedef tf5_tesla_slot_time_t tf5_tesla_timesync_info_t;
 
 /*
  * Complete TESLA Extension Payload

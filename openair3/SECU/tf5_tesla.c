@@ -47,7 +47,7 @@
  */
 _Static_assert(sizeof(tf5_tesla_slot_time_t) == 4, "slot_time_t must be 4 bytes");
 _Static_assert(sizeof(tf5_tesla_d_params_t) == 20, "d_params_t must be 20 bytes");
-_Static_assert(sizeof(tf5_tesla_timesync_info_t) == 4, "timesync_info_t must be 4 bytes (HFN now from hyperSFN-r17)");
+_Static_assert(sizeof(tf5_tesla_timesync_info_t) == sizeof(tf5_tesla_slot_time_t), "timesync_info_t must match slot_time_t");
 
 /*
  * =============================================================================
