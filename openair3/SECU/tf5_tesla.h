@@ -141,10 +141,8 @@ static inline tf5_tesla_slot_time_t tf5_slot_time_make(uint16_t sfn,
  * TESLA Parameters
  *
  * These parameters are constant for the lifetime of a key chain.
- * Wire format size: 8 bytes (T_0 not transmitted, derived by UE)
- * In-memory size: includes T_0 for internal use (derived after IBS verification)
+ * Wire format size: 12 bytes (T_0 now transmitted directly)
  *
- * Note: T_0 is derived by UE from signed fields: T_0 = timesync - (i × T_int)
  * Note: root_key (K_0) is not included here. Since every SIB1 is signed,
  * the disclosed_key serves as a trusted anchor for key chain verification.
  */
@@ -152,17 +150,10 @@ typedef struct {
     uint8_t  te_version;           // 1B - Protocol version
     uint16_t t_int_ms;             // 2B - Interval duration in ms (e.g., 20ms)
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay d (e.g., 1)
-    tf5_tesla_slot_time_t t0;      // 4B - T_0: interval 0 start (NOT in wire format, derived by UE)
+    tf5_tesla_slot_time_t t0;      // 4B - T_0: interval 0 start (transmitted in wire format)
     uint32_t chain_len;            // 4B - Number of intervals N
 } tf5_tesla_params_t;
 
-/**
- * Time Synchronization Info (4 bytes)
- *
- * Alias for tf5_tesla_slot_time_t used in TESLA extension wire format.
- * HFN is obtained from hyperSFN-r17 in SIB1-v1700-IEs (standard 3GPP).
- */
-typedef tf5_tesla_slot_time_t tf5_tesla_timesync_info_t;
 
 /*
  * Complete TESLA Extension Payload
@@ -170,21 +161,19 @@ typedef tf5_tesla_slot_time_t tf5_tesla_timesync_info_t;
  * This structure represents the complete TESLA data appended to SIB1
  * via lateNonCriticalExtension.
  *
- * Signature authenticates: SIB1 || tesla_params || gnb_key_validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
- * MAC authenticates:       SIB1 || tesla_params || gnb_key_validity_end || timesync_info (per RFC 4082)
+ * Signature authenticates: SIB1 || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
+ * MAC authenticates:       SIB1 || gnb_key_validity_end (per RFC 4082)
  *
  * Wire format size: 107 bytes (with BLS signatures)
- *   tesla_params(8) + gnb_key_validity_end(3) + timesync_info(4) + interval_index(4) +
+ *   tesla_params(12) + gnb_key_validity_end(3) + interval_index(4) +
  *   disclosed_key(16) + timestamp_ms(8) + gnb_signature(48) + tesla_tag(16)
  *
- * Note: T_0 not in wire format - UE derives from signed fields
- * Note: HFN removed from timesync_info - now obtained from hyperSFN-r17
+ * Note: T_0 is transmitted in tesla_params (authenticated by signature)
  * Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
  */
 typedef struct {
-    tf5_tesla_params_t         tesla_params;                  // 8B (wire) - T_0 derived by UE
+    tf5_tesla_params_t         tesla_params;                  // 12B (wire) - includes T_0
     uint32_t                   gnb_key_validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
-    tf5_tesla_timesync_info_t  timesync_info;                 // 4B (sfn + slot only)
     uint32_t                   interval_index;                // 4B - Current interval i
     uint8_t                    disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint64_t                   timestamp_ms;                  // 8B - Unix epoch timestamp (ms) for replay protection
@@ -328,7 +317,7 @@ uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
  * original_SIB1 || gnb_key_validity_end
  *
  * Note: interval_index and disclosed_key are NOT included in MAC input.
- * Note: tesla_params and timesync_info excluded - authenticated by signature.
+ * Note: tesla_params excluded - authenticated by signature.
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
@@ -347,15 +336,14 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
  * Build signature authentication input buffer
  *
  * Constructs the data to be signed:
- * original_SIB1 || tesla_params || gnb_key_validity_end || timesync_info || interval_index || disclosed_key || timestamp_ms
+ * original_SIB1 || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
  * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
  * @param sib1_len      Length of original SIB1 data
- * @param tesla_params  TESLA parameters
+ * @param tesla_params  TESLA parameters (includes T_0)
  * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
- * @param timesync_info Time synchronization info
  * @param interval_index Current interval index
  * @param disclosed_key Disclosed key K_{i-d}
  * @param timestamp_ms  Wall-clock timestamp (ms since Unix epoch) for replay protection
@@ -367,7 +355,6 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    size_t sib1_len,
                                    const tf5_tesla_params_t *tesla_params,
                                    uint32_t gnb_key_validity_end,
-                                   const tf5_tesla_timesync_info_t *timesync_info,
                                    uint32_t interval_index,
                                    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
                                    uint64_t timestamp_ms);
@@ -432,24 +419,6 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
  * @param state         Pointer to UE TESLA state structure
  */
 void tf5_tesla_ue_free(tf5_tesla_ue_state_t *state);
-
-/**
- * Verify initial time synchronization after BLS signature verification
- *
- * Checks that UE's RX timing is consistent with gNB's signed TX timing.
- * Uses initial_sync_bound_us as the bound since no drift has accumulated yet.
- *
- * Per RFC 4082 Section 2.2, this verifies the "loose time synchronization"
- * assumption required for TESLA protocol operation.
- *
- * @param state         UE TESLA state (reads initial_sync_bound_us, slots_per_frame)
- * @param tx            TX timing from signed extension (gNB TX time, only sfn/slot used)
- * @param rx            UE's actual RX timing (from MAC layer, only sfn/slot used)
- * @return 0 if valid, -1 if RX before TX, -2 if diff exceeds initial_sync_bound
- */
-int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
-                                      const tf5_tesla_slot_time_t *tx,
-                                      const tf5_tesla_slot_time_t *rx);
 
 /**
  * Unpack TESLA extension from binary format
@@ -768,25 +737,6 @@ static inline tf5_tesla_slot_time_t tf5_slots_to_slot_time(uint64_t abs_slots,
     uint16_t slot = abs_slots % slots_per_frame;
     return tf5_slot_time_make(sfn, slot);
 }
-
-/**
- * Derive T_0 from signed fields (UE use after IBS verification)
- *
- * Since T_0 is not broadcast in the SIB1 TESLA extension, the UE must derive it
- * from other signed fields. Formula: T_0 = current_time - (interval_index × T_int)
- *
- * @param timesync_info   Current time (SFN/slot) from signed SIB1 extension
- * @param interval_index  Current interval index i
- * @param t_int_ms        Interval duration in milliseconds
- * @param slots_per_frame Number of slots per frame (SCS-dependent)
- * @param out_t0          Output: derived T_0
- * @return 0 on success, -1 on error (e.g., underflow)
- */
-int tf5_tesla_derive_t0(const tf5_tesla_timesync_info_t *timesync_info,
-                        uint32_t interval_index,
-                        uint16_t t_int_ms,
-                        uint16_t slots_per_frame,
-                        tf5_tesla_slot_time_t *out_t0);
 
 /*
  * =============================================================================

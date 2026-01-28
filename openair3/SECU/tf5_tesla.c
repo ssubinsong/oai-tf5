@@ -43,10 +43,9 @@
  * Static Assertions for Struct Sizes
  * =============================================================================
  * Note: tesla_params_t is smaller in-memory due to struct padding,
- * but the wire format is 8 bytes (serialization is packed).
+ * but the wire format is 12 bytes (serialization is packed, includes T_0).
  */
 _Static_assert(sizeof(tf5_tesla_slot_time_t) == 4, "slot_time_t must be 4 bytes");
-_Static_assert(sizeof(tf5_tesla_timesync_info_t) == sizeof(tf5_tesla_slot_time_t), "timesync_info_t must match slot_time_t");
 
 /*
  * =============================================================================
@@ -136,48 +135,6 @@ uint32_t tf5_tesla_get_interval_index(const tf5_tesla_slot_time_t *current,
     return (uint32_t)(time_ms / t_int_ms);
 }
 
-int tf5_tesla_derive_t0(const tf5_tesla_timesync_info_t *timesync_info,
-                        uint32_t interval_index,
-                        uint16_t t_int_ms,
-                        uint16_t slots_per_frame,
-                        tf5_tesla_slot_time_t *out_t0)
-{
-    if (!timesync_info || !out_t0 || slots_per_frame == 0 || t_int_ms == 0) {
-        return -1;
-    }
-
-    // Convert current time (from timesync_info) to absolute slots
-    tf5_tesla_slot_time_t current_time = tf5_slot_time_make(timesync_info->sfn,
-                                                             timesync_info->slot);
-    uint64_t current_abs_slots = tf5_tesla_absolute_slots(&current_time, slots_per_frame);
-
-    // Calculate slots per interval
-    // Each frame = 10ms, so slots_per_ms = slots_per_frame / 10
-    // slots_per_interval = t_int_ms * slots_per_ms = t_int_ms * slots_per_frame / 10
-    uint64_t slots_per_interval = ((uint64_t)t_int_ms * slots_per_frame) / 10;
-
-    // T_0 = current_time - (interval_index × T_int)
-    uint64_t offset_slots = (uint64_t)interval_index * slots_per_interval;
-
-    if (current_abs_slots < offset_slots) {
-        // Underflow: invalid parameters (interval_index too large for current time)
-        LOG_E(NR_RRC, "[TF5] T_0 derivation underflow: current_slots=%lu, offset=%lu (i=%u, T_int=%u)\n",
-              (unsigned long)current_abs_slots, (unsigned long)offset_slots,
-              interval_index, t_int_ms);
-        return -1;
-    }
-
-    uint64_t t0_abs_slots = current_abs_slots - offset_slots;
-
-    // Convert back to SFN/slot
-    *out_t0 = tf5_slots_to_slot_time(t0_abs_slots, slots_per_frame);
-
-    LOG_D(NR_RRC, "[TF5] Derived T_0: SFN=%u slot=%u (from i=%u, T_int=%u)\n",
-          out_t0->sfn, out_t0->slot, interval_index, t_int_ms);
-
-    return 0;
-}
-
 /*
  * =============================================================================
  * Timestamp Functions for Replay Protection
@@ -222,8 +179,8 @@ int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
  * These consolidate duplicated serialization logic.
  */
 
-/* Encode tesla params (8 bytes) to buffer
- * Note: T_0 removed from wire format - UE derives it from signed fields
+/* Encode tesla params (12 bytes) to buffer
+ * Note: T_0 now included in wire format (authenticated by signature)
  * Note: root_key removed - disclosed_key serves as trusted anchor */
 static size_t tf5_encode_tesla_params(uint8_t *buf,
                                        const tf5_tesla_params_t *p)
@@ -232,13 +189,15 @@ static size_t tf5_encode_tesla_params(uint8_t *buf,
     buf[offset++] = p->te_version;
     tf5_encode_u16_be(buf + offset, p->t_int_ms); offset += 2;
     buf[offset++] = p->disclosure_delay;
-    /* T_0 removed: UE derives from timesync_info - (interval_index × T_int) */
+    /* T_0 now transmitted in wire format */
+    tf5_encode_u16_be(buf + offset, p->t0.sfn); offset += 2;
+    tf5_encode_u16_be(buf + offset, p->t0.slot); offset += 2;
     tf5_encode_u32_be(buf + offset, p->chain_len); offset += 4;
-    return offset;  /* Always 8 */
+    return offset;  /* Always 12 */
 }
 
-/* Decode tesla params (8 bytes) from buffer
- * Note: T_0 not in wire format - UE must derive it separately via tf5_tesla_derive_t0()
+/* Decode tesla params (12 bytes) from buffer
+ * Note: T_0 now included in wire format (authenticated by signature)
  * Note: root_key removed - disclosed_key serves as trusted anchor */
 static size_t tf5_decode_tesla_params(const uint8_t *buf,
                                        tf5_tesla_params_t *p)
@@ -247,31 +206,11 @@ static size_t tf5_decode_tesla_params(const uint8_t *buf,
     p->te_version = buf[offset++];
     p->t_int_ms = tf5_decode_u16_be(buf + offset); offset += 2;
     p->disclosure_delay = buf[offset++];
-    /* T_0 not in wire: UE derives from timesync_info - (interval_index × T_int) */
-    p->t0.sfn = 0;   /* Placeholder - derived later by UE */
-    p->t0.slot = 0;
+    /* T_0 now decoded from wire format */
+    p->t0.sfn = tf5_decode_u16_be(buf + offset); offset += 2;
+    p->t0.slot = tf5_decode_u16_be(buf + offset); offset += 2;
     p->chain_len = tf5_decode_u32_be(buf + offset); offset += 4;
-    return offset;  /* Always 8 */
-}
-
-/* Encode timesync info (4 bytes) to buffer - HFN now from hyperSFN-r17 */
-static size_t tf5_encode_timesync_info(uint8_t *buf,
-                                        const tf5_tesla_timesync_info_t *ti)
-{
-    size_t offset = 0;
-    tf5_encode_u16_be(buf + offset, ti->sfn); offset += 2;
-    tf5_encode_u16_be(buf + offset, ti->slot); offset += 2;
-    return offset;  /* Always 4 */
-}
-
-/* Decode timesync info (4 bytes) from buffer - HFN now from hyperSFN-r17 */
-static size_t tf5_decode_timesync_info(const uint8_t *buf,
-                                        tf5_tesla_timesync_info_t *ti)
-{
-    size_t offset = 0;
-    ti->sfn = tf5_decode_u16_be(buf + offset); offset += 2;
-    ti->slot = tf5_decode_u16_be(buf + offset); offset += 2;
-    return offset;  /* Always 4 */
+    return offset;  /* Always 12 */
 }
 
 int tf5_tesla_build_mac_auth_input(uint8_t *out,
@@ -304,12 +243,11 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    size_t sib1_len,
                                    const tf5_tesla_params_t *tesla_params,
                                    uint32_t gnb_key_validity_end,
-                                   const tf5_tesla_timesync_info_t *timesync_info,
                                    uint32_t interval_index,
                                    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
                                    uint64_t timestamp_ms)
 {
-    if (!out || !out_len || !original_sib1 || !tesla_params || !timesync_info || !disclosed_key) {
+    if (!out || !out_len || !original_sib1 || !tesla_params || !disclosed_key) {
         return -1;
     }
 
@@ -323,11 +261,8 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
 
     size_t offset = mac_len;
 
-    // Append tesla_params (8 bytes) - only in signature input, not MAC
+    // Append tesla_params (12 bytes, includes T_0) - only in signature input, not MAC
     offset += tf5_encode_tesla_params(out + offset, tesla_params);
-
-    // Append timesync_info (4 bytes) - only in signature input, not MAC
-    offset += tf5_encode_timesync_info(out + offset, timesync_info);
 
     // Append interval_index (4 bytes)
     tf5_encode_u32_be(out + offset, interval_index);
@@ -353,9 +288,8 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
         return -1;
     }
 
-    // Total size: 8 + 3 + 4 + 4 + 16 + 8 + 48 + 16 = 107 bytes (with BLS signatures)
-    // Note: T_0 not in wire format - UE derives from signed fields
-    // Note: timesync_info is 4 bytes (HFN removed - now from hyperSFN-r17)
+    // Total size: 12 + 3 + 4 + 16 + 8 + 48 + 16 = 107 bytes (with BLS signatures)
+    // Note: T_0 now included in tesla_params (12 bytes)
     const size_t required_len = 107;
     if (buf_len < required_len) {
         return -2;
@@ -363,15 +297,12 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
 
     size_t offset = 0;
 
-    // TESLA params (8 bytes) - T_0 not transmitted, derived by UE
+    // TESLA params (12 bytes) - includes T_0
     offset += tf5_encode_tesla_params(buf + offset, &ext->tesla_params);
 
     // gNB key validity end (3 bytes) - key expiration (minutes since 2024-01-01)
     tf5_encode_gnb_key_validity_end(buf + offset, ext->gnb_key_validity_end);
     offset += TF5_IBS_VALIDITY_LEN;
-
-    // Timesync info (4 bytes)
-    offset += tf5_encode_timesync_info(buf + offset, &ext->timesync_info);
 
     // Interval index (4 bytes)
     tf5_encode_u32_be(buf + offset, ext->interval_index);
@@ -404,8 +335,8 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
         return -1;
     }
 
-    // Total size: 8 + 3 + 4 + 4 + 16 + 8 + 48 + 16 = 107 bytes (with BLS signatures)
-    // Note: T_0 not in wire format - UE must derive via tf5_tesla_derive_t0()
+    // Total size: 12 + 3 + 4 + 16 + 8 + 48 + 16 = 107 bytes (with BLS signatures)
+    // Note: T_0 now included in tesla_params (12 bytes)
     const size_t required_len = 107;
     if (buf_len < required_len) {
         return -2;
@@ -413,15 +344,12 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
 
     size_t offset = 0;
 
-    // TESLA params (8 bytes) - T_0 set to zero, caller must derive
+    // TESLA params (12 bytes) - includes T_0
     offset += tf5_decode_tesla_params(buf + offset, &ext->tesla_params);
 
     // gNB key validity end (3 bytes) - key expiration (minutes since 2024-01-01)
     ext->gnb_key_validity_end = tf5_decode_gnb_key_validity_end(buf + offset);
     offset += TF5_IBS_VALIDITY_LEN;
-
-    // Timesync info (4 bytes)
-    offset += tf5_decode_timesync_info(buf + offset, &ext->timesync_info);
 
     // Interval index (4 bytes)
     ext->interval_index = tf5_decode_u32_be(buf + offset);
@@ -561,15 +489,11 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
         return -2;
     }
 
-    // Copy TESLA params
+    // Copy TESLA params (includes T_0)
     memcpy(&ext->tesla_params, &state->params, sizeof(state->params));
 
     // Set key validity period (minutes since 2024-01-01)
     ext->gnb_key_validity_end = state->gnb_key_validity_end;
-
-    // Set timesync info (HFN is now transmitted via hyperSFN-r17 in SIB1-v1700-IEs)
-    ext->timesync_info.sfn = sfn;
-    ext->timesync_info.slot = slot;
 
     // Set interval index
     ext->interval_index = interval;
@@ -594,14 +518,13 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
         return -7;
     }
 
-    // Build signature auth input (SIB1 + tesla_params + gnb_key_validity_end + timesync + interval + key + timestamp)
+    // Build signature auth input (SIB1 + tesla_params + gnb_key_validity_end + interval + key + timestamp)
     uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
     size_t sig_auth_input_len;
     int rc = tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_input_len,
                                             original_sib1, sib1_len,
                                             &ext->tesla_params,
                                             ext->gnb_key_validity_end,
-                                            &ext->timesync_info,
                                             ext->interval_index,
                                             ext->disclosed_key,
                                             ext->timestamp_ms);
@@ -706,69 +629,6 @@ void tf5_tesla_ue_free(tf5_tesla_ue_state_t *state)
     if (state) {
         memset(state, 0, sizeof(*state));
     }
-}
-
-int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
-                                      const tf5_tesla_slot_time_t *tx,
-                                      const tf5_tesla_slot_time_t *rx)
-{
-    /*
-     * Verify initial time synchronization after BLS signature verification
-     *
-     * For initial sync verification, use initial_sync_bound_us as the bound
-     * since no clock drift has accumulated yet.
-     *
-     * Per RFC 4082 Section 2.2, this verifies the "loose time synchronization"
-     * assumption required for TESLA protocol operation.
-     */
-
-    if (!state || !tx || !rx) {
-        return -1;
-    }
-
-    // For initial sync, use initial_sync_bound_us (no drift has accumulated yet)
-    uint32_t initial_bound_us = state->initial_sync_bound_us;
-
-    // Convert bound from μs to slots
-    // slot_duration_us = 10ms / slots_per_frame = 10000 / slots_per_frame
-    uint32_t slot_duration_us = 10000 / state->slots_per_frame;
-    uint32_t max_error_slots = (initial_bound_us + slot_duration_us - 1) / slot_duration_us;
-
-    // Compute slot difference (within same HFN for initial sync)
-    // For first SIB1, TX and RX should be in same or adjacent SFN
-    int32_t sfn_diff = (int32_t)rx->sfn - (int32_t)tx->sfn;
-
-    // Handle SFN wraparound (1024-cycle)
-    if (sfn_diff < -512) {
-        sfn_diff += 1024;
-    }
-    if (sfn_diff > 512) {
-        sfn_diff -= 1024;
-    }
-
-    int64_t slot_diff = (int64_t)sfn_diff * state->slots_per_frame +
-                        (int64_t)rx->slot - (int64_t)tx->slot;
-
-    if (slot_diff < 0) {
-        // RX before TX - impossible (propagation delay always positive)
-        LOG_W(NR_RRC, "TESLA: Initial timesync FAILED - RX before TX "
-              "(tx=%u:%u, rx=%u:%u, diff=%ld slots)\n",
-              tx->sfn, tx->slot, rx->sfn, rx->slot, (long)slot_diff);
-        return -1;
-    }
-
-    if ((uint64_t)slot_diff > max_error_slots) {
-        // Too large - SSB sync may have failed or timing is wrong
-        LOG_W(NR_RRC, "TESLA: Initial timesync FAILED - diff too large "
-              "(tx=%u:%u, rx=%u:%u, diff=%ld slots, max=%u slots, initial_sync_bound=%u us)\n",
-              tx->sfn, tx->slot, rx->sfn, rx->slot, (long)slot_diff,
-              max_error_slots, state->initial_sync_bound_us);
-        return -2;
-    }
-
-    LOG_I(NR_RRC, "TESLA: Initial timesync OK (diff=%ld slots, max=%u, initial_sync_bound=%u us)\n",
-          (long)slot_diff, max_error_slots, state->initial_sync_bound_us);
-    return 0;
 }
 
 int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,

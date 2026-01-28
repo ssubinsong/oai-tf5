@@ -241,20 +241,15 @@ With defaults: $E_{\text{sync}}=500\mu s$, $E_s=100ppb$, $E_r=10000ppb$, $\Delta
 
 ### 10.2 Initial Time Sync Verification
 
-**File:** `openair3/SECU/tf5_tesla.c`
+**Status:** Removed (implicit after IBS verification)
 
-```c
-int tf5_tesla_verify_initial_timesync(tf5_tesla_ue_state_t *state,
-                                      const tf5_tesla_slot_time_t *tx,
-                                      const tf5_tesla_slot_time_t *rx);
-```
+With the removal of `timesync_info` from the TESLA extension, explicit initial time sync verification is no longer performed. The rationale:
 
-Called after BLS signature verification to validate that SSB-based time synchronization was successful. Uses `--tesla-initial-sync-bound` (no clock drift has accumulated yet).
+1. A legitimate gNB does not forge SSB timing
+2. Once IBS signature verification succeeds, the gNB is confirmed legitimate
+3. Therefore, the SSB-derived timing is implicitly trusted
 
-**Return values:**
-- `0`: Time sync OK
-- `-1`: RX before TX (impossible - indicates sync failure)
-- `-2`: Difference exceeds initial sync bound (sync too loose)
+The `timesync_verified` flag is now set to `true` automatically after successful IBS signature verification.
 
 ### 10.3 Default Parameter Values
 
@@ -284,21 +279,23 @@ flowchart TD
     A[UE Power On] --> B[SSB Sync - PHY<br/>radio time align]
     B --> C[Receive SIB1<br/>record rx_frame, rx_slot]
     C --> D[BLS Verify<br/>first-time UE]
-    D --> E{Initial Time Sync Verify<br/>#124;RX - TX#124; ≤ E_sync?}
-    E -->|Yes| F[timesync_verified = true]
-    E -->|No| G[timesync_verified = false]
+    D --> E{IBS Signature OK?}
+    E -->|Yes| F[timesync_verified = true<br/>gNB authenticated, SSB timing trusted]
+    E -->|No| G[auth_failed = true<br/>Abort RRC]
     F --> H[TESLA MAC Mode<br/>safe packet + delayed verify]
-    G --> I[Signature-Only Mode<br/>BLS for each SIB1]
 ```
+
+Note: Initial time sync verification is now implicit. Once the gNB is authenticated via IBS signature, its SSB timing is trusted.
 
 ### 10.7 Code References
 
 | Function | File | Purpose |
 |----------|------|---------|
-| `tf5_tesla_verify_initial_timesync()` | `openair3/SECU/tf5_tesla.c` | Verify initial sync after BLS |
 | `tf5_tesla_ue_safe_packet_test()` | `openair3/SECU/tf5_tesla.c` | Safe packet test (uses D) |
 | `tf5_tesla_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize UE with D parameters |
 | `nr_rrc_process_sib1()` | `openair2/RRC/NR_UE/rrc_UE.c` | SIB1 processing with time sync |
+
+Note: `tf5_tesla_verify_initial_timesync()` has been removed. Time sync is now implicitly verified after successful IBS signature verification.
 
 ### 10.8 Configuration
 

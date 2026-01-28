@@ -117,8 +117,8 @@ flowchart TB
 
 2. Build signature auth_input
    └── Re-encode SIB1 (without lateNonCriticalExtension)
-   └── tf5_tesla_build_sig_auth_input(sib1, tesla_params, timesync_info, interval_index, disclosed_key)
-       (includes full content for signature verification)
+   └── tf5_tesla_build_sig_auth_input(sib1, tesla_params, interval_index, disclosed_key)
+       (tesla_params includes T_0, authenticated by signature)
 
 3. Extract Cell ID from SIB1's cellAccessRelatedInfo
    └── tf5_extract_cell_id_from_sib1(sib1, cell_id)
@@ -127,6 +127,7 @@ flowchart TB
    └── tf5_tesla_ibs_verify(mpk, cell_id, auth_input, signature)
    ├── SUCCESS:
    │   └── Accept K_0: k0_trusted = true, sib1_authenticated = true
+   │   └── timesync_verified = true (gNB authenticated, SSB timing trusted)
    │   └── If rrcsetup_deferred: send RRCSetupComplete now
    └── FAILED:
        └── auth_failed = true
@@ -144,10 +145,10 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
    └── FAILED: Skip this SIB1 → return
    └── PASSED: Continue to step 3
 
-3. Build MAC auth_input (excludes interval_index, disclosed_key, tesla_params, timesync_info)
+3. Build MAC auth_input (excludes interval_index, disclosed_key, tesla_params)
    └── Re-encode SIB1 (without lateNonCriticalExtension)
    └── tf5_tesla_build_mac_auth_input(sib1, gnb_key_validity_end)
-       (tesla_params and timesync_info authenticated via BLS signature)
+       (tesla_params authenticated via BLS signature during first-time verification)
 
 4. Buffer current SIB1 for future TESLA verification
    └── tf5_tesla_ue_buffer_sib1()

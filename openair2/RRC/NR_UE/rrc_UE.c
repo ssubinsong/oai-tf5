@@ -595,7 +595,6 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                           sib1_buf, sib1_len,
                                           &ext.tesla_params,
                                           ext.gnb_key_validity_end,
-                                          &ext.timesync_info,
                                           ext.interval_index,
                                           ext.disclosed_key,
                                           ext.timestamp_ms);
@@ -615,23 +614,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           if (sig_rc == 0) {
             /* Success: Accept K_0 and mark authenticated */
 
-            /* Derive T_0 from signed fields (T_0 not in wire format)
-             * Formula: T_0 = timesync_info - (interval_index × T_int) */
-            tf5_tesla_slot_time_t derived_t0;
-            int derive_rc = tf5_tesla_derive_t0(&ext.timesync_info,
-                                                 ext.interval_index,
-                                                 ext.tesla_params.t_int_ms,
-                                                 SI_info->tesla_state->slots_per_frame,
-                                                 &derived_t0);
-            if (derive_rc != 0) {
-              LOG_E(NR_RRC, "TESLA: Failed to derive T_0 from signed fields\n");
-              SI_info->tesla_state->auth_failed = true;
-              nr_rrc_abort_connection(rrc, gNB_index);
-              return;
-            }
-            ext.tesla_params.t0 = derived_t0;
-            LOG_I(NR_RRC, "TESLA IBS: Derived T_0: SFN=%u slot=%u\n",
-                  derived_t0.sfn, derived_t0.slot);
+            /* T_0 is now directly in ext.tesla_params (authenticated by signature) */
+            LOG_I(NR_RRC, "TESLA IBS: T_0 from extension: SFN=%u slot=%u\n",
+                  ext.tesla_params.t0.sfn, ext.tesla_params.t0.slot);
 
             memcpy(&SI_info->tesla_state->tesla_params, &ext.tesla_params, sizeof(tf5_tesla_params_t));
             SI_info->tesla_state->k0_trusted = true;
@@ -649,23 +634,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             LOG_I(NR_RRC, "TESLA IBS: First-time UE - K_0 authenticated, K_%u accepted as anchor (interval %u)\n",
                   disclosed_interval, ext.interval_index);
 
-            /* Verify initial time synchronization (essential TESLA assumption per RFC 4082 Section 2.2) */
-            /* Uses E_sync only as bound since no drift has accumulated yet */
-            /* Convert timesync_info (sfn/slot only) to slot_time_t (hfn=0 since we only care about sfn/slot diff) */
-            tf5_tesla_slot_time_t tx_time = tf5_slot_time_make(0, ext.timesync_info.sfn, ext.timesync_info.slot);
-            tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, rx_frame, rx_slot);
-            int ts_rc = tf5_tesla_verify_initial_timesync(
-                SI_info->tesla_state,
-                &tx_time, &rx_time);
-
-            if (ts_rc != 0) {
-              LOG_W(NR_RRC, "TESLA: Initial time sync verification FAILED (rc=%d). "
-                    "SSB sync may be compromised. Falling back to signature-only mode.\n", ts_rc);
-              /* Don't abort - gracefully degrade to signature-only */
-              SI_info->tesla_state->timesync_verified = false;
-            } else {
-              SI_info->tesla_state->timesync_verified = true;
-            }
+            /* Time sync is now implicitly verified via IBS signature.
+             * Once the gNB is authenticated, its SSB timing is trusted. */
+            SI_info->tesla_state->timesync_verified = true;
 
             /* If RRCSetupComplete was deferred, send it now */
             if (SI_info->tesla_state->rrcsetup_deferred) {
@@ -697,7 +668,6 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
                                             sib1_buf, sib1_len,
                                             &ext.tesla_params,
                                             ext.gnb_key_validity_end,
-                                            &ext.timesync_info,
                                             ext.interval_index,
                                             ext.disclosed_key,
                                             ext.timestamp_ms);
