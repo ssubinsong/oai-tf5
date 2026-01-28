@@ -39,43 +39,18 @@ Where `T_0` is the start time of interval 0, aligned with the first SIB1 transmi
 
 ### T_int Alignment with SIB1 Repetition Period
 
-Per **3GPP TS 38.331 Section 5.2.1.2**, the TESLA interval duration (T_int) is aligned with the SIB1 repetition transmission period:
+Per **3GPP TS 38.331 Section 5.2.1.2**, the TESLA interval duration (T_int) is aligned with the SIB1 repetition transmission period.
 
-| SSB/CORESET Mux Pattern | SIB1 Repetition Period | T_int |
-|-------------------------|------------------------|-------|
-| Pattern 1 (FR1, FR2 common) | 20 ms (fixed) | 20 ms |
-| Pattern 2 (FR2 120/240kHz SSB) | SSB period | SSB period |
-| Pattern 3 (FR2 120kHz SSB/PDCCH) | SSB period | SSB period |
-
-**SSB Period Values**:
-
-| Enum | Period |
-|------|--------|
-| 0 | 5 ms |
-| 1 | 10 ms |
-| 2 | 20 ms |
-| 3 | 40 ms |
-| 4 | 80 ms |
-| 5 | 160 ms |
+**Current implementation**: T_int is fixed at **20 ms**, assuming CORESET mux pattern 1. The gNB will abort if a different pattern is detected.
 
 ### T_0 Alignment with First SIB1 Transmission
 
 T_0 is set to the first SIB1 transmission occasion (SSB index 0):
-- **Mux pattern 1**: First frame where `(SFN % 2 == sfn_c)`, at slot `n_0`
-- **Mux patterns 2/3**: Based on SSB timing, slot `n_c`
+- First frame where `(SFN % 2 == sfn_c)`, at slot `n_0`
 
 ### Chain Length
 
-The default chain length is 65536 intervals. Key chain lifetime depends on T_int:
-
-| T_int | chain_len | Lifetime |
-|-------|-----------|----------|
-| 5 ms | 65536 | ~5.5 min |
-| 10 ms | 65536 | ~10.9 min |
-| 20 ms | 65536 | ~21.8 min |
-| 40 ms | 65536 | ~43.7 min |
-| 80 ms | 65536 | ~87.4 min |
-| 160 ms | 65536 | ~174.8 min |
+The default chain length is 65536 intervals. With T_int = 20 ms, this gives a key chain lifetime of ~21.8 minutes.
 
 The chain length can be configured by the user if a different lifetime is needed.
 
