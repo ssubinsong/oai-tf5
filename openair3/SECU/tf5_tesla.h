@@ -41,8 +41,9 @@
 
 /*
  * TESLA Configuration Constants
+ * Note: TF5_TESLA_KEY_LEN is hardcoded (not configurable) per design.
  */
-#define TF5_TESLA_KEY_LEN           16      // 128-bit TESLA chain keys
+#define TF5_TESLA_KEY_LEN           16      // 128-bit TESLA chain keys (hardcoded)
 #define TF5_TESLA_TAG_LEN           16      // Truncated HMAC-SHA256 to 128 bits
 #define TF5_TESLA_SIG_LEN           TF5_BLS_SIGNATURE_LEN   // BLS signature length (48 bytes)
 #define TF5_TESLA_PUBKEY_LEN        TF5_BLS_PUBLIC_KEY_LEN  // BLS public key length (96 bytes)

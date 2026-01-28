@@ -43,6 +43,7 @@ Parameters constant for the lifetime of a key chain.
 
 **Wire format**: 8 bytes (T_0 not transmitted, derived by UE from signed fields)
 **In-memory**: Includes T_0 for internal use (derived after IBS verification)
+**Key length**: Hardcoded to 16 bytes (128 bits) - not configurable
 
 ```c
 typedef struct {
