@@ -29,7 +29,7 @@ extern uint16_t ue_id_g;
 
 #ifdef TF5_ENABLE_TESLA
 #define  CONFIG_HLP_TESLA_CORE_MPK         "Core's Master Public Key (MPK) file for IBS verification (96-byte raw binary). REQUIRED.\n"
-#define  CONFIG_HLP_TESLA_D_BOUND          "TESLA D bound in microseconds (upper bound on sender-receiver time offset). Default: 1604 us.\n"
+#define  CONFIG_HLP_TESLA_D_BOUND          "TESLA D bound in microseconds (upper bound on sender-receiver time offset). Default: 1510 us.\n"
 #define  CONFIG_HLP_TESLA_INIT_SYNC        "TESLA initial sync bound in microseconds (for first SIB1 timesync check). Default: 500 us.\n"
 #endif
 
@@ -53,7 +53,7 @@ extern uint16_t ue_id_g;
 #ifdef TF5_ENABLE_TESLA
 #define CMDLINE_TESLA_PARAMS_UE \
   {"tesla-core-mpk",               CONFIG_HLP_TESLA_CORE_MPK,   0,              .strptr=&nrUE_params.tesla_core_mpk_file,         .defstrval=NULL,  TYPE_STRING, 0}, \
-  {"tesla-d-bound",                CONFIG_HLP_TESLA_D_BOUND,    0,              .uptr=&nrUE_params.tesla_d_bound_us,              .defuintval=1604, TYPE_UINT,   0}, \
+  {"tesla-d-bound",                CONFIG_HLP_TESLA_D_BOUND,    0,              .uptr=&nrUE_params.tesla_d_bound_us,              .defuintval=1510, TYPE_UINT,   0}, \
   {"tesla-initial-sync-bound",     CONFIG_HLP_TESLA_INIT_SYNC,  0,              .uptr=&nrUE_params.tesla_initial_sync_bound_us,   .defuintval=500,  TYPE_UINT,   0},
 #else
 #define CMDLINE_TESLA_PARAMS_UE

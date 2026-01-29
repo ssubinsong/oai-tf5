@@ -60,9 +60,10 @@
  * D is the upper bound on (sender_time - receiver_time), per RFC 4082 Section 2.2.
  * These defaults were pre-calculated from the formula:
  * D = E_sync + (E_s + E_r) * ΔT_max + M_impl
- * With: E_sync=500us, E_s=100ppb, E_r=10000ppb, ΔT_max=10.24s, M_impl=1000us => D≈1604us
+ * With: E_sync=500us, E_s=100ppb, E_r=10000ppb, ΔT_max=1s, M_impl=1000us => D≈1510us
+ * See doc-tf5/time-sync.md Section 10.9 for parameter rationale.
  */
-#define TF5_DEFAULT_D_BOUND_US           1604    // Pre-calculated D bound (microseconds)
+#define TF5_DEFAULT_D_BOUND_US           1510    // Pre-calculated D bound (microseconds)
 #define TF5_DEFAULT_INITIAL_SYNC_US      500     // E_sync for initial timesync check (microseconds)
 
 // Protocol version

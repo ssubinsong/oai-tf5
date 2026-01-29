@@ -231,13 +231,13 @@ D and initial sync bounds are now configured via CLI parameters rather than calc
 
 | CLI Option | Default | Description |
 |------------|---------|-------------|
-| `--tesla-d-bound` | 1604 μs | Upper bound on (sender_time - receiver_time) for safe packet test |
+| `--tesla-d-bound` | 1510 μs | Upper bound on (sender_time - receiver_time) for safe packet test |
 | `--tesla-initial-sync-bound` | 500 μs | Bound for initial time sync verification (no drift yet) |
 
 The default values were pre-calculated using the formula:
 $$D = E_{\text{sync}} + (E_s + E_r) \times \Delta T_{\max} + M_{\text{impl}}$$
 
-With defaults: $E_{\text{sync}}=500\mu s$, $E_s=100ppb$, $E_r=10000ppb$, $\Delta T_{\max}=10.24s$, $M_{\text{impl}}=1000\mu s$ → $D \approx 1604\mu s$
+With defaults: $E_{\text{sync}}=500\mu s$, $E_s=100ppb$, $E_r=10000ppb$, $\Delta T_{\max}=1s$, $M_{\text{impl}}=1000\mu s$ → $D \approx 1510\mu s$
 
 ### 10.2 Initial Time Sync Verification
 
@@ -257,7 +257,7 @@ The `timesync_verified` flag is now set to `true` automatically after successful
 
 | Parameter | Default | Rationale |
 |-----------|---------|-----------|
-| `TF5_DEFAULT_D_BOUND_US` | 1604 μs | Pre-calculated D for typical deployment |
+| `TF5_DEFAULT_D_BOUND_US` | 1510 μs | Pre-calculated D for typical deployment (see §10.9 for derivation) |
 | `TF5_DEFAULT_INITIAL_SYNC_US` | 500 μs | SSB-based sync accuracy (conservative) |
 
 ### 10.4 Two-Stage Verification
@@ -302,7 +302,7 @@ Note: `tf5_tesla_verify_initial_timesync()` has been removed. Time sync is now i
 D parameters are configured via command-line options:
 
 ```bash
-# Using defaults (D=1604us, initial_sync=500us)
+# Using defaults (D=1510us, initial_sync=500us)
 ./nr-uesoftmodem --tesla-core-mpk /path/to/mpk.bin
 
 # Custom D values (e.g., for challenging RF environments)
@@ -310,3 +310,87 @@ D parameters are configured via command-line options:
     --tesla-d-bound 3000 \
     --tesla-initial-sync-bound 1000
 ```
+
+### 10.9 Parameter Rationale
+
+This section documents the standards-based justification for each default parameter value used in the D calculation.
+
+#### Summary Table
+
+| Parameter | Default | Reference | Justification |
+|-----------|---------|-----------|---------------|
+| $E_{\text{sync}}$ | 500 μs | 3GPP TS 38.133, Design | Conservative bound for SSB-based sync; accounts for multipath and estimator variations |
+| $E_s$ | 100 ppb | 3GPP TS 38.104 §6.4.1 | Medium/Local Area BS frequency accuracy requirement |
+| $E_r$ | 10000 ppb | 3GPP TS 38.101-1, Industry | Worst-case bound for consumer UE oscillators in idle mode |
+| $\Delta T_{\max}$ | 1 s | 3GPP TS 38.331 (DRX cycles) | Realistic bound covering typical DRX scenarios (320ms-2.56s) |
+| $M_{\text{impl}}$ | 1000 μs | Design choice | Implementation safety margin (~14 OFDM symbols at 15 kHz SCS) |
+
+#### $E_s$ = 100 ppb (gNB Clock Drift)
+
+**Reference:** 3GPP TS 38.104, Section 6.4.1 "Frequency error"
+
+| BS Type | Frequency Accuracy |
+|---------|-------------------|
+| Wide Area BS | ±0.05 ppm (50 ppb) |
+| Medium Range BS | ±0.1 ppm (100 ppb) |
+| Local Area BS | ±0.1 ppm (100 ppb) |
+
+The 100 ppb value corresponds to the Medium/Local Area BS frequency accuracy requirement. This is conservative for Wide Area BS (which has tighter ±50 ppb) but covers a broader range of deployment scenarios.
+
+#### $E_r$ = 10000 ppb (UE Clock Drift)
+
+**References:**
+- 3GPP TS 38.101-1, Section 6.4.1 "Frequency error" (connected UE: ±0.1 ppm)
+- Industry practice for consumer-grade oscillators
+
+While connected UEs have ±0.1 ppm requirement per TS 38.101-1, during RRC_IDLE/camping with DRX cycles the UE oscillator drifts without network synchronization. Consumer-grade UE oscillators (TCXO) typically have ±2-10 ppm initial tolerance. The 10 ppm (10,000 ppb) is a conservative worst-case bound for:
+- Low-cost UE oscillators
+- Temperature variations over operating range
+- Idle mode drift without frequent re-sync
+
+This matches LTE design assumptions where CFO of 5 ppm was considered for initial cell search.
+
+#### $E_{\text{sync}}$ = 500 μs (Synchronization Error)
+
+**References:**
+- 3GPP TS 38.133 "Requirements for support of radio resource management"
+- TDD cell phase synchronization requirement: ±1.5 μs (absolute time error)
+
+TDD systems require cell phase synchronization of ±1.5 μs per 3GPP. SSB-based initial synchronization typically achieves sub-ms accuracy. The 500 μs is conservative to account for:
+- Multipath propagation effects
+- PSS/SSS detection algorithm variations
+- Estimator corner cases in challenging RF environments
+- Symbol timing estimation errors
+
+For TESLA bootstrapping (downlink-only), this provides safety margin without requiring uplink timing advance.
+
+#### $\Delta T_{\max}$ = 1 s (Validity Horizon)
+
+**Reference:** Typical DRX cycle ranges (3GPP TS 38.331)
+
+This represents the maximum real-time duration for which PHY time alignment is assumed valid without re-synchronization. It is a **validity horizon**, not an actual re-sync frequency.
+
+**UE timing re-sync mechanisms (actual re-sync happens more frequently):**
+
+| Mechanism | Typical Period | Reference |
+|-----------|---------------|-----------|
+| SSB broadcast | 20 ms (default) | TS 38.213, configurable 5-160 ms |
+| DRX wake-up | 320 ms - 2.56 s | TS 38.331, paging DRX cycle |
+| SMTC window | 20-160 ms | TS 38.331, RRM measurement timing |
+| SIB1 periodicity | 160 ms | TS 38.331 |
+
+Connected UEs track timing continuously via TRS/DMRS. Idle UEs re-sync at each DRX wake-up when they measure SSB for paging. The 1s value covers most practical idle mode DRX scenarios with margin.
+
+**Note:** The previous value of 10.24s (maximum SIB modification period) was overly conservative. With $\Delta T_{\max}$ = 1s, the drift term contributes only ~10 μs to D.
+
+#### $M_{\text{impl}}$ = 1000 μs (Implementation Margin)
+
+**Reference:** Design choice (no specific standard)
+
+Safety margin to absorb implementation uncertainties:
+- Residual timestamping quantization/jitter
+- Software processing latency variations
+- Multipath effects not captured in $E_{\text{sync}}$ model
+- Any unmodeled system-level delays
+
+1 ms is approximately 14 OFDM symbols at 15 kHz SCS (or ~56 symbols at 60 kHz). This provides reasonable safety slack without excessive delay in TESLA authentication.
