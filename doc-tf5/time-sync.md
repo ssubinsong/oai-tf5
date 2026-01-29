@@ -319,7 +319,7 @@ This section documents the standards-based justification for each default parame
 
 | Parameter | Default | Reference | Justification |
 |-----------|---------|-----------|---------------|
-| $E_{\text{sync}}$ | 500 μs | 3GPP TS 38.133, Design | Conservative bound for SSB-based sync; accounts for multipath and estimator variations |
+| $E_{\text{sync}}$ | 500 μs | Design \[1\]\[2\] | Conservative bound for SSB-based sync; accounts for multipath and estimator variations |
 | $E_s$ | 100 ppb | 3GPP TS 38.104 §6.4.1 | Medium/Local Area BS frequency accuracy requirement |
 | $E_r$ | 10000 ppb | 3GPP TS 38.101-1, Industry | Worst-case bound for consumer UE oscillators in idle mode |
 | $\Delta T_{\max}$ | 1 s | 3GPP TS 38.331 (DRX cycles) | Realistic bound covering typical DRX scenarios (320ms-2.56s) |
@@ -353,16 +353,17 @@ This matches LTE design assumptions where CFO of 5 ppm was considered for initia
 #### $E_{\text{sync}}$ = 500 μs (Synchronization Error)
 
 **References:**
-- 3GPP TS 38.133 "Requirements for support of radio resource management"
-- TDD cell phase synchronization requirement: ±1.5 μs (absolute time error)
+- \[1\] R. Tuninato, D. Riviello, et al., "A comprehensive study on the synchronization procedure in 5G NR with 3GPP-compliant link-level simulator," *EURASIP J. Wireless Commun. Netw.*, 2023. https://doi.org/10.1186/s13638-023-02317-5
+- \[2\] Ericsson, "5G synchronization requirements and solutions," *Ericsson Technology Review*, Nov. 2020. https://www.ericsson.com/en/reports-and-papers/ericsson-technology-review/articles/5g-synchronization-requirements-and-solutions
 
-TDD systems require cell phase synchronization of ±1.5 μs per 3GPP. SSB-based initial synchronization typically achieves sub-ms accuracy. The 500 μs is conservative to account for:
-- Multipath propagation effects
-- PSS/SSS detection algorithm variations
-- Estimator corner cases in challenging RF environments
-- Symbol timing estimation errors
+**Rationale:**
 
-For TESLA bootstrapping (downlink-only), this provides safety margin without requiring uplink timing advance.
+3GPP does not directly specify a UE-side SSB synchronization accuracy bound. Per \[2\], the timing error tolerance is fundamentally determined by the cyclic prefix (CP) duration (4.7 μs at 15 kHz SCS). Simulation studies \[1\] show that PSS-based timing synchronization typically achieves 1-sample precision (~32 ns at 30.72 MHz sampling) under good conditions, but performance degrades significantly under:
+- Low SNR (below -6 dB)
+- Severe multipath fading channels
+- Large carrier frequency offsets
+
+The 500 μs value is a conservative design choice that accounts for worst-case scenarios during initial cell search, where coarse synchronization may be used before fine tracking is established. For TESLA bootstrapping (downlink-only), this provides sufficient safety margin without requiring uplink timing advance.
 
 #### $\Delta T_{\max}$ = 1 s (Validity Horizon)
 
