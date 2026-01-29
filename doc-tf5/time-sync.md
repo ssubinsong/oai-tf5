@@ -232,7 +232,7 @@ D and initial sync bounds are now configured via CLI parameters rather than calc
 | CLI Option | Default | Description |
 |------------|---------|-------------|
 | `--tesla-d-bound` | 1510 μs | Upper bound on (sender_time - receiver_time) for safe packet test |
-| `--tesla-initial-sync-bound` | 500 μs | Bound for initial time sync verification (no drift yet) |
+| `--tesla-initial-sync-bound` | 10 μs | Bound for initial time sync verification (no drift yet) |
 
 The default values were pre-calculated using the formula:
 $$D = E_{\text{sync}} + (E_s + E_r) \times \Delta T_{\max} + M_{\text{impl}}$$
@@ -258,7 +258,7 @@ The `timesync_verified` flag is now set to `true` automatically after successful
 | Parameter | Default | Rationale |
 |-----------|---------|-----------|
 | `TF5_DEFAULT_D_BOUND_US` | 1510 μs | Pre-calculated D for typical deployment (see §10.9 for derivation) |
-| `TF5_DEFAULT_INITIAL_SYNC_US` | 500 μs | SSB-based sync accuracy (conservative) |
+| `TF5_DEFAULT_INITIAL_SYNC_US` | 10 μs | SSB-based sync accuracy (~2× CP margin) |
 
 ### 10.4 Two-Stage Verification
 
@@ -319,7 +319,7 @@ This section documents the standards-based justification for each default parame
 
 | Parameter | Default | Reference | Justification |
 |-----------|---------|-----------|---------------|
-| $E_{\text{sync}}$ | 500 μs | Design \[1\]\[2\] | Conservative bound for SSB-based sync; accounts for multipath and estimator variations |
+| $E_{\text{sync}}$ | 10 μs | Design \[1\]\[2\] | ~2× CP duration margin for SSB-based sync |
 | $E_s$ | 100 ppb | 3GPP TS 38.104 §6.4.1 | Medium/Local Area BS frequency accuracy requirement |
 | $E_r$ | 10000 ppb | 3GPP TS 38.101-1, Industry | Worst-case bound for consumer UE oscillators in idle mode |
 | $\Delta T_{\max}$ | 1 s | 3GPP TS 38.331 (DRX cycles) | Realistic bound covering typical DRX scenarios (320ms-2.56s) |
@@ -350,7 +350,7 @@ While connected UEs have ±0.1 ppm requirement per TS 38.101-1, during RRC_IDLE/
 
 This matches LTE design assumptions where CFO of 5 ppm was considered for initial cell search.
 
-#### $E_{\text{sync}}$ = 500 μs (Synchronization Error)
+#### $E_{\text{sync}}$ = 10 μs (Synchronization Error)
 
 **References:**
 - \[1\] R. Tuninato, D. Riviello, et al., "A comprehensive study on the synchronization procedure in 5G NR with 3GPP-compliant link-level simulator," *EURASIP J. Wireless Commun. Netw.*, 2023. https://doi.org/10.1186/s13638-023-02317-5
@@ -363,7 +363,23 @@ This matches LTE design assumptions where CFO of 5 ppm was considered for initia
 - Severe multipath fading channels
 - Large carrier frequency offsets
 
-The 500 μs value is a conservative design choice that accounts for worst-case scenarios during initial cell search, where coarse synchronization may be used before fine tracking is established. For TESLA bootstrapping (downlink-only), this provides sufficient safety margin without requiring uplink timing advance.
+The 10 μs value (~2× CP duration at 15 kHz SCS) provides sufficient margin for worst-case timing estimation errors while remaining practical. This accounts for degraded conditions (low SNR, multipath) during initial cell search, while being much tighter than overly conservative values.
+
+**Hard Physical Limit: Cyclic Prefix Duration**
+
+In OFDM systems, the Cyclic Prefix (CP) absorbs timing errors and multipath delay spread. If timing error exceeds CP duration:
+- **Inter-Symbol Interference (ISI)** occurs between adjacent OFDM symbols
+- **Inter-Carrier Interference (ICI)** destroys OFDM subcarrier orthogonality
+- → Demodulation becomes impossible
+
+| SCS | Normal CP | Extended CP | Reference |
+|-----|-----------|-------------|-----------|
+| 15 kHz | **4.7 μs** | - | 3GPP TS 38.211 Table 5.3.1-1/2 |
+| 30 kHz | **2.3 μs** | - | |
+| 60 kHz | **1.2 μs** | 4.2 μs | |
+| 120 kHz | **0.59 μs** | - | |
+
+Since SIB1 typically uses 15 kHz SCS, the hard limit is **4.7 μs**. Our 10 μs design value (~2× CP) provides adequate safety margin while remaining practical for TESLA time synchronization requirements.
 
 #### $\Delta T_{\max}$ = 1 s (Validity Horizon)
 
