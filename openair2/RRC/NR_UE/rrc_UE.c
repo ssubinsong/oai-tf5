@@ -506,6 +506,346 @@ static void tf5_extract_cell_id_from_sib1(const NR_SIB1_t *sib1, uint8_t cell_id
     /* Copy 5 bytes (36 bits + 4 padding bits) directly */
     memcpy(cell_id, cid->buf, TF5_IBS_CELL_ID_LEN);
 }
+
+/**
+ * TESLA verification result codes.
+ * Non-negative values indicate success/skip, negative values indicate failure.
+ */
+typedef enum {
+    TF5_VERIFY_OK = 0,              // Verification succeeded
+    TF5_VERIFY_SKIP_DEDICATED = 1,  // Dedicated delivery - skip TESLA
+    TF5_VERIFY_SKIP_NO_STATE = 2,   // No tesla_state configured
+    TF5_VERIFY_PENDING = 3,         // Buffered, waiting for key disclosure
+    TF5_VERIFY_SKIP_UNSAFE = 4,     // Safe packet test failed
+
+    TF5_VERIFY_FAIL_UNPACK = -1,        // Extension unpack failed
+    TF5_VERIFY_FAIL_KEY_EXPIRED = -2,   // gNB key expired
+    TF5_VERIFY_FAIL_ENCODE = -3,        // SIB1 re-encoding failed
+    TF5_VERIFY_FAIL_NO_CLOCK = -4,      // UE wall-clock not synced
+    TF5_VERIFY_FAIL_TIMESTAMP = -5,     // Timestamp validation failed
+    TF5_VERIFY_FAIL_SIGNATURE = -6,     // IBS signature verification failed
+    TF5_VERIFY_FAIL_MAC = -7,           // All TESLA MAC verifications failed
+} tf5_verify_result_t;
+
+/**
+ * Handle TESLA verification failure - abort RRC connection.
+ */
+static void tf5_tesla_on_auth_failure(NR_UE_RRC_INST_t *rrc,
+                                       NR_UE_RRC_SI_INFO *SI_info,
+                                       int gNB_index,
+                                       tf5_verify_result_t result)
+{
+    static const char *result_names[] = {
+        [1] = "unpack failed",
+        [2] = "gNB key expired",
+        [3] = "SIB1 encoding failed",
+        [4] = "UE clock not synced",
+        [5] = "timestamp invalid",
+        [6] = "signature verification failed",
+        [7] = "MAC verification failed",
+    };
+
+    int idx = -result;
+    const char *reason = (idx >= 1 && idx <= 7) ? result_names[idx] : "unknown";
+
+    LOG_E(NR_RRC, "TESLA: Verification failed (%s) - aborting RRC\n", reason);
+    SI_info->tesla_state->auth_failed = true;
+    nr_rrc_abort_connection(rrc, gNB_index);
+}
+
+/**
+ * Handle successful authentication (send deferred RRCSetupComplete if needed).
+ */
+static void tf5_tesla_on_auth_success(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info)
+{
+    tf5_tesla_ue_state_t *state = SI_info->tesla_state;
+
+    if (state->rrcsetup_deferred) {
+        LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
+        rrc_ue_generate_RRCSetupComplete(rrc, state->rrcsetup_transaction_id);
+        state->rrcsetup_deferred = false;
+    }
+}
+
+/**
+ * Re-encode SIB1 without lateNonCriticalExtension for authentication.
+ */
+static tf5_verify_result_t tf5_tesla_encode_sib1_for_auth(NR_SIB1_t *sib1,
+                                                          uint8_t *out_buf,
+                                                          size_t buf_size,
+                                                          size_t *out_len)
+{
+    /* Temporarily remove lateNonCriticalExtension for clean encoding */
+    OCTET_STRING_t *saved_ext = sib1->lateNonCriticalExtension;
+    sib1->lateNonCriticalExtension = NULL;
+
+    asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_SIB1,
+                                                     NULL,
+                                                     sib1,
+                                                     out_buf,
+                                                     buf_size);
+
+    /* Restore extension */
+    sib1->lateNonCriticalExtension = saved_ext;
+
+    if (enc_rval.encoded <= 0) {
+        LOG_E(NR_RRC, "TESLA: Failed to re-encode SIB1 for auth input\n");
+        return TF5_VERIFY_FAIL_ENCODE;
+    }
+
+    *out_len = (enc_rval.encoded + 7) / 8;
+    return TF5_VERIFY_OK;
+}
+
+/**
+ * Validate TESLA extension and check key expiration.
+ */
+static tf5_verify_result_t tf5_tesla_unpack_and_validate(const NR_SIB1_t *sib1,
+                                                          tf5_tesla_extension_t *ext)
+{
+    int unpack_rc = tf5_tesla_unpack_extension(sib1->lateNonCriticalExtension->buf,
+                                                sib1->lateNonCriticalExtension->size,
+                                                ext);
+
+    if (unpack_rc != 0) {
+        LOG_E(NR_RRC, "TESLA: Failed to unpack extension (rc=%d)\n", unpack_rc);
+        return TF5_VERIFY_FAIL_UNPACK;
+    }
+
+    LOG_D(NR_RRC, "TESLA: Unpacked extension, interval=%u, t_int=%u ms, d=%u, validity=%u\n",
+          ext->interval_index, ext->tesla_params.t_int_ms,
+          ext->tesla_params.disclosure_delay, ext->gnb_key_validity_end);
+
+    /* Check key expiration */
+    uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(ext->gnb_key_validity_end);
+    uint64_t ue_time_sec = tf5_tesla_get_wallclock_ms() / 1000;
+
+    if (ue_time_sec >= expiry_unix) {
+        LOG_E(NR_RRC, "TESLA: gNB key EXPIRED (validity_end=%u, expiry=%lu, now=%lu)\n",
+              ext->gnb_key_validity_end, (unsigned long)expiry_unix, (unsigned long)ue_time_sec);
+        return TF5_VERIFY_FAIL_KEY_EXPIRED;
+    }
+
+    return TF5_VERIFY_OK;
+}
+
+/**
+ * Verify SIB1 using IBS signature (first-time UE path).
+ */
+static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
+                                                       NR_UE_RRC_SI_INFO *SI_info,
+                                                       const NR_SIB1_t *sib1,
+                                                       const tf5_tesla_extension_t *ext,
+                                                       const uint8_t *sib1_buf,
+                                                       size_t sib1_len)
+{
+    tf5_tesla_ue_state_t *state = SI_info->tesla_state;
+
+    AssertFatal(state->has_mpk, "TESLA IBS: Core MPK not configured");
+
+    /* Validate wall-clock (fail fast before expensive crypto) */
+    uint64_t ue_time_ms = tf5_tesla_get_wallclock_ms();
+    if (ue_time_ms == 0) {
+        LOG_E(NR_RRC, "TESLA: UE wall-clock not synced\n");
+        return TF5_VERIFY_FAIL_NO_CLOCK;
+    }
+
+    int ts_rc = tf5_tesla_validate_timestamp(ue_time_ms,
+                                              ext->timestamp_ms,
+                                              state->timestamp_window_ms);
+    if (ts_rc != 0) {
+        LOG_E(NR_RRC, "TESLA: Timestamp validation FAILED (rc=%d) - "
+              "ext_ts=%lu, ue_ts=%lu, window=%lu ms\n",
+              ts_rc, (unsigned long)ext->timestamp_ms, (unsigned long)ue_time_ms,
+              (unsigned long)state->timestamp_window_ms);
+        return TF5_VERIFY_FAIL_TIMESTAMP;
+    }
+
+    LOG_D(NR_RRC, "TESLA: Timestamp valid (delta=%ld ms)\n",
+          (long)((int64_t)ext->timestamp_ms - (int64_t)ue_time_ms));
+
+    /* Build signature auth input */
+    uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
+    size_t sig_auth_len = 0;
+    tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_len,
+                                    sib1_buf, sib1_len,
+                                    &ext->tesla_params,
+                                    ext->gnb_key_validity_end,
+                                    ext->interval_index,
+                                    ext->disclosed_key,
+                                    ext->timestamp_ms);
+
+    /* Extract Cell ID for IBS verification */
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
+    tf5_extract_cell_id_from_sib1(sib1, cell_id);
+
+    /* Perform IBS signature verification */
+    state->auth_in_progress = true;
+    int sig_rc = tf5_tesla_ibs_verify(state->mpk,
+                                       cell_id,
+                                       ext->gnb_key_validity_end,
+                                       sig_auth_input, sig_auth_len,
+                                       ext->gnb_signature);
+    state->auth_in_progress = false;
+
+    if (sig_rc != 0) {
+        LOG_E(NR_RRC, "TESLA: Signature verification FAILED (rc=%d)\n", sig_rc);
+        return TF5_VERIFY_FAIL_SIGNATURE;
+    }
+
+    /* Success: Bootstrap the chain */
+    memcpy(&state->tesla_params, &ext->tesla_params, sizeof(tf5_tesla_params_t));
+    state->chain_bootstrapped = true;
+    state->sib1_authenticated = true;
+
+    /* Accept disclosed key as trust anchor (signature authenticates it) */
+    uint32_t disclosed_interval = ext->interval_index - ext->tesla_params.disclosure_delay;
+    memcpy(state->trust_anchor_key, ext->disclosed_key, TF5_TESLA_KEY_LEN);
+    state->trust_anchor_idx = disclosed_interval;
+
+    LOG_I(NR_RRC, "TESLA IBS: First-time UE - chain bootstrapped, K_%u as trust anchor (interval %u)\n",
+          disclosed_interval, ext->interval_index);
+
+    tf5_tesla_on_auth_success(rrc, SI_info);
+    return TF5_VERIFY_OK;
+}
+
+/**
+ * Verify SIB1 using TESLA MAC (returning UE path).
+ * Per RFC 4082 Section 3.5:
+ * 1. Safe packet test (must be first)
+ * 2. Buffer current SIB1
+ * 3. Verify buffered SIB1s with disclosed key (with key recovery)
+ */
+static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
+                                                       NR_UE_RRC_SI_INFO *SI_info,
+                                                       const tf5_tesla_extension_t *ext,
+                                                       const uint8_t *sib1_buf,
+                                                       size_t sib1_len,
+                                                       int rx_frame,
+                                                       int rx_slot)
+{
+    tf5_tesla_ue_state_t *state = SI_info->tesla_state;
+
+    LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
+
+    /* Mark auth in progress if not yet authenticated */
+    if (!state->sib1_authenticated) {
+        state->auth_in_progress = true;
+    }
+
+    /* Step 1 (RFC 4082 3.5): Safe packet test FIRST */
+    /* CRITICAL: Must use actual RX timing, not TX timing from signed extension */
+    if (!tf5_tesla_ue_safe_packet_test(state, ext, rx_frame, rx_slot)) {
+        LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
+        return TF5_VERIFY_SKIP_UNSAFE;
+    }
+
+    /* Build MAC auth input */
+    uint8_t mac_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
+    size_t mac_auth_len = 0;
+    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
+                                    sib1_buf, sib1_len,
+                                    ext->gnb_key_validity_end);
+
+    /* Step 2: Buffer current SIB1 */
+    tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);
+    bool should_trigger_rrc = !state->rrcsetup_deferred &&
+                              !state->sib1_authenticated &&
+                              !state->auth_in_progress;
+
+    tf5_tesla_ue_buffer_sib1(state,
+                              mac_auth_input, mac_auth_len,
+                              ext->interval_index,
+                              ext->tesla_tag,
+                              &buffer_rx_time,
+                              should_trigger_rrc);
+
+    /* Step 3: Verify buffered SIB1s with disclosed key (key recovery) */
+    if (state->buffer_queue_count == 0 ||
+        ext->interval_index <= state->tesla_params.disclosure_delay) {
+        return TF5_VERIFY_PENDING;
+    }
+
+    uint32_t disclosed_interval = ext->interval_index - state->tesla_params.disclosure_delay;
+    int verified_count = 0, failed_count = 0;
+    bool rrc_trigger_verified = false;
+
+    int verify_rc = tf5_tesla_ue_verify_with_key_recovery(state,
+                                                           ext->disclosed_key,
+                                                           disclosed_interval,
+                                                           &verified_count,
+                                                           &failed_count,
+                                                           &rrc_trigger_verified);
+
+    if (verify_rc == 0 && verified_count > 0) {
+        LOG_I(NR_RRC, "TESLA: Returning UE - %d SIB1(s) MAC verified (with key recovery)\n",
+              verified_count);
+
+        if (rrc_trigger_verified) {
+            state->sib1_authenticated = true;
+            state->auth_in_progress = false;
+            tf5_tesla_on_auth_success(rrc, SI_info);
+        }
+        return TF5_VERIFY_OK;
+    }
+
+    if (failed_count > 0 && verified_count == 0) {
+        LOG_E(NR_RRC, "TESLA: All %d MAC verification(s) FAILED (rc=%d)\n",
+              failed_count, verify_rc);
+        return TF5_VERIFY_FAIL_MAC;
+    }
+
+    /* Partial success or no entries to verify yet */
+    return TF5_VERIFY_PENDING;
+}
+
+/**
+ * Main TESLA verification entry point for SIB1.
+ */
+static tf5_verify_result_t tf5_tesla_verify_sib1(NR_UE_RRC_INST_t *rrc,
+                                                  NR_UE_RRC_SI_INFO *SI_info,
+                                                  NR_SIB1_t *sib1,
+                                                  int gNB_index,
+                                                  int rx_frame,
+                                                  int rx_slot)
+{
+    /* Skip TESLA for dedicated SIB1 delivery (protected by RRC integrity) */
+    if (rx_frame < 0) {
+        LOG_D(NR_RRC, "TESLA: Skipping verification for dedicated SIB1 delivery\n");
+        return TF5_VERIFY_SKIP_DEDICATED;
+    }
+
+    /* No TESLA state configured */
+    if (!SI_info->tesla_state) {
+        return TF5_VERIFY_SKIP_NO_STATE;
+    }
+
+    AssertFatal(sib1->lateNonCriticalExtension,
+                "TESLA: SIB1 missing lateNonCriticalExtension for TESLA verification\n");
+
+    /* Unpack and validate extension */
+    tf5_tesla_extension_t ext;
+    tf5_verify_result_t rc = tf5_tesla_unpack_and_validate(sib1, &ext);
+    if (rc < 0) {
+        return rc;
+    }
+
+    /* Re-encode SIB1 for authentication */
+    uint8_t sib1_buf[512];
+    size_t sib1_len;
+    rc = tf5_tesla_encode_sib1_for_auth(sib1, sib1_buf, sizeof(sib1_buf), &sib1_len);
+    if (rc < 0) {
+        return rc;
+    }
+
+    /* Dispatch to appropriate verification path */
+    if (!SI_info->tesla_state->chain_bootstrapped) {
+        return tf5_tesla_verify_firsttime(rrc, SI_info, sib1, &ext, sib1_buf, sib1_len);
+    } else {
+        return tf5_tesla_verify_returning(rrc, SI_info, &ext, sib1_buf, sib1_len, rx_frame, rx_slot);
+    }
+}
 #endif
 
 static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, NR_SIB1_t *sib1, int gNB_index,
@@ -516,250 +856,11 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef TF5_ENABLE_TESLA
-  // Skip TESLA verification for dedicated SIB1 delivery (rx_frame < 0)
-  // Dedicated delivery is already protected by RRC integrity/ciphering
-  if (rx_frame < 0) {
-    LOG_D(NR_RRC, "TESLA: Skipping verification for dedicated SIB1 delivery\n");
-    goto skip_tesla;
-  }
-
-  if (sib1->lateNonCriticalExtension && SI_info->tesla_state) {
-    tf5_tesla_extension_t ext;
-    int unpack_rc = tf5_tesla_unpack_extension(
-        sib1->lateNonCriticalExtension->buf,
-        sib1->lateNonCriticalExtension->size,
-        &ext);
-
-    if (unpack_rc == 0) {
-      LOG_D(NR_RRC, "TESLA: Unpacked extension, interval=%u, t_int=%u ms, d=%u, validity=%u\n",
-            ext.interval_index, ext.tesla_params.t_int_ms, ext.tesla_params.disclosure_delay,
-            ext.gnb_key_validity_end);
-
-      /* Check key expiration before any verification */
-      uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(ext.gnb_key_validity_end);
-      uint64_t ue_time_sec = tf5_tesla_get_wallclock_ms() / 1000;
-      if (ue_time_sec >= expiry_unix) {
-        LOG_E(NR_RRC, "TESLA: gNB key EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n",
-              ext.gnb_key_validity_end, (unsigned long)expiry_unix, (unsigned long)ue_time_sec);
-        SI_info->tesla_state->auth_failed = true;
-        nr_rrc_abort_connection(rrc, gNB_index);
-        return;
-      }
-
-      /* Re-encode original SIB1 without lateNonCriticalExtension for auth */
-      OCTET_STRING_t *saved_ext = sib1->lateNonCriticalExtension;
-      sib1->lateNonCriticalExtension = NULL;
-      uint8_t sib1_buf[512];
-      asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_SIB1,
-                                                       NULL,
-                                                       sib1,
-                                                       sib1_buf,
-                                                       sizeof(sib1_buf));
-      sib1->lateNonCriticalExtension = saved_ext;
-
-      if (enc_rval.encoded > 0) {
-        size_t sib1_len = (enc_rval.encoded + 7) / 8;
-
-        /* Parallel authentication: First-time vs Returning UE */
-        if (!SI_info->tesla_state->chain_bootstrapped) {
-          /* === FIRST-TIME UE: IBS signature verification === */
-          AssertFatal(SI_info->tesla_state->has_mpk,
-                      "TESLA IBS: Core MPK not configured");
-
-          /* Validate wall-clock timestamp (fail fast before expensive signature verification) */
-          uint64_t ue_time_ms = tf5_tesla_get_wallclock_ms();
-          if (ue_time_ms == 0) {
-            LOG_E(NR_RRC, "TESLA: UE wall-clock not synced - aborting\n");
-            SI_info->tesla_state->auth_failed = true;
-            nr_rrc_abort_connection(rrc, gNB_index);
-            return;
-          }
-          int ts_rc = tf5_tesla_validate_timestamp(ue_time_ms,
-                                                    ext.timestamp_ms,
-                                                    SI_info->tesla_state->timestamp_window_ms);
-          if (ts_rc != 0) {
-            LOG_E(NR_RRC, "TESLA: Timestamp validation FAILED (rc=%d) - "
-                  "ext_ts=%lu, ue_ts=%lu, window=%lu ms\n",
-                  ts_rc, (unsigned long)ext.timestamp_ms, (unsigned long)ue_time_ms,
-                  (unsigned long)SI_info->tesla_state->timestamp_window_ms);
-            SI_info->tesla_state->auth_failed = true;
-            nr_rrc_abort_connection(rrc, gNB_index);
-            return;
-          }
-          LOG_D(NR_RRC, "TESLA: Timestamp valid (delta=%ld ms)\n",
-                (long)((int64_t)ext.timestamp_ms - (int64_t)ue_time_ms));
-
-          /* Build signature auth input */
-          uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
-          size_t sig_auth_len = 0;
-          tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_len,
-                                          sib1_buf, sib1_len,
-                                          &ext.tesla_params,
-                                          ext.gnb_key_validity_end,
-                                          ext.interval_index,
-                                          ext.disclosed_key,
-                                          ext.timestamp_ms);
-
-          /* Extract Cell ID from SIB1 for IBS verification */
-          uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
-          tf5_extract_cell_id_from_sib1(sib1, cell_id);
-
-          SI_info->tesla_state->auth_in_progress = true;
-          int sig_rc = tf5_tesla_ibs_verify(SI_info->tesla_state->mpk,
-                                             cell_id,
-                                             ext.gnb_key_validity_end,
-                                             sig_auth_input, sig_auth_len,
-                                             ext.gnb_signature);
-          SI_info->tesla_state->auth_in_progress = false;
-
-          if (sig_rc == 0) {
-            /* Success: Chain bootstrapped - mark authenticated */
-            memcpy(&SI_info->tesla_state->tesla_params, &ext.tesla_params, sizeof(tf5_tesla_params_t));
-            SI_info->tesla_state->chain_bootstrapped = true;
-            SI_info->tesla_state->sib1_authenticated = true;
-
-            /* Accept disclosed key K_{i-d} as trust anchor for future key chain verification.
-             * Since the signature covers the entire auth_input (including disclosed_key),
-             * K_{i-d} is authenticated and serves as O(1) anchor instead of K_0. */
-            uint32_t disclosed_interval = ext.interval_index - ext.tesla_params.disclosure_delay;
-            memcpy(SI_info->tesla_state->trust_anchor_key, ext.disclosed_key, TF5_TESLA_KEY_LEN);
-            SI_info->tesla_state->trust_anchor_idx = disclosed_interval;
-
-            LOG_I(NR_RRC, "TESLA IBS: First-time UE - chain bootstrapped, K_%u accepted as trust anchor (interval %u)\n",
-                  disclosed_interval, ext.interval_index);
-
-            /* If RRCSetupComplete was deferred, send it now */
-            if (SI_info->tesla_state->rrcsetup_deferred) {
-              LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
-              rrc_ue_generate_RRCSetupComplete(rrc, SI_info->tesla_state->rrcsetup_transaction_id);
-              SI_info->tesla_state->rrcsetup_deferred = false;
-            }
-          } else {
-            /* FAILED: Mark for RRC abort */
-            SI_info->tesla_state->auth_failed = true;
-            LOG_E(NR_RRC, "TESLA: Signature verification FAILED - aborting RRC\n");
-            nr_rrc_abort_connection(rrc, gNB_index);
-            return;
-          }
-
-        } else {
-          /* === RETURNING UE === */
-
-          /* Check if time sync was previously verified */
-          if (!SI_info->tesla_state->chain_bootstrapped) {
-            /* Time sync failed during initial verification - abort instead of fallback */
-            LOG_E(NR_RRC, "TESLA: Returning UE time sync not verified - aborting\n");
-            SI_info->tesla_state->auth_failed = true;
-            nr_rrc_abort_connection(rrc, gNB_index);
-            return;
-          } else {
-            /* Normal TESLA MAC verification path (time sync verified) */
-            /* Per RFC 4082 Section 3.5: Safe packet test MUST be Step 1, before buffering or MAC verification */
-            LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
-
-            /* Mark auth in progress until TESLA MAC is verified */
-            if (!SI_info->tesla_state->sib1_authenticated) {
-              SI_info->tesla_state->auth_in_progress = true;
-            }
-
-            /* Step 1 (RFC 4082): Safe packet test FIRST - reject if message could have been forged */
-          /* CRITICAL: Must use actual RX timing, not TX timing from signed extension */
-          /* Using TX timing would allow replay attacks with old signed messages */
-          if (!tf5_tesla_ue_safe_packet_test(SI_info->tesla_state, &ext,
-                                              rx_frame,
-                                              rx_slot)) {
-            LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
-            /* Skip this SIB1 entirely - do not buffer, do not process further */
-          } else {
-            /* Build MAC auth input (SIB1 + gnb_key_validity_end only) */
-            uint8_t mac_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
-            size_t mac_auth_len = 0;
-            tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
-                                            sib1_buf, sib1_len,
-                                            ext.gnb_key_validity_end);
-
-            /* Step 2: Buffer current SIB1 for future TESLA verification */
-            tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);
-
-            /* Determine if this SIB1 should trigger RRC setup:
-             * Only the first SIB1 when no RRC session is pending triggers setup */
-            bool should_trigger_rrc = !SI_info->tesla_state->rrcsetup_deferred &&
-                                      !SI_info->tesla_state->sib1_authenticated &&
-                                      !SI_info->tesla_state->auth_in_progress;
-
-            tf5_tesla_ue_buffer_sib1(SI_info->tesla_state,
-                                      mac_auth_input, mac_auth_len,
-                                      ext.interval_index,
-                                      ext.tesla_tag,
-                                      &buffer_rx_time,
-                                      should_trigger_rrc);
-
-            /* Step 3 (RFC 4082): Check if disclosed key available for PREVIOUSLY buffered SIB1(s)
-             * Per RFC 4082 Section 3.5: "Using a disclosed key, we can calculate all previous
-             * disclosed keys, so even if packets are lost, we will still be able to verify
-             * buffered, safe packets from earlier time intervals." */
-            if (SI_info->tesla_state->buffer_queue_count > 0 &&
-                ext.interval_index > SI_info->tesla_state->tesla_params.disclosure_delay) {
-              uint32_t disclosed_interval = ext.interval_index - SI_info->tesla_state->tesla_params.disclosure_delay;
-
-              int verified_count = 0, failed_count = 0;
-              bool rrc_trigger_verified = false;
-              int verify_rc = tf5_tesla_ue_verify_with_key_recovery(SI_info->tesla_state,
-                                                                     ext.disclosed_key,
-                                                                     disclosed_interval,
-                                                                     &verified_count,
-                                                                     &failed_count,
-                                                                     &rrc_trigger_verified);
-
-              if (verify_rc == 0 && verified_count > 0) {
-                LOG_I(NR_RRC, "TESLA: Returning UE - %d SIB1(s) MAC verified (with key recovery)\n",
-                      verified_count);
-
-                /* Only set sib1_authenticated if the RRC-triggering SIB1 was verified */
-                if (rrc_trigger_verified) {
-                  SI_info->tesla_state->sib1_authenticated = true;
-                  SI_info->tesla_state->auth_in_progress = false;
-
-                  /* If RRCSetupComplete was deferred, send it now */
-                  if (SI_info->tesla_state->rrcsetup_deferred) {
-                    LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
-                    rrc_ue_generate_RRCSetupComplete(rrc, SI_info->tesla_state->rrcsetup_transaction_id);
-                    SI_info->tesla_state->rrcsetup_deferred = false;
-                  }
-                }
-              } else if (failed_count > 0 && verified_count == 0) {
-                /* All TESLA MAC verifications failed - abort */
-                SI_info->tesla_state->auth_failed = true;
-                LOG_E(NR_RRC, "TESLA: All %d MAC verification(s) FAILED (rc=%d) - aborting RRC\n",
-                      failed_count, verify_rc);
-                nr_rrc_abort_connection(rrc, gNB_index);
-                return;
-              }
-              /* Note: Partial success (some verified, some failed) is acceptable per RFC 4082 */
-            }
-          }
-          } /* End of chain_bootstrapped else (TESLA MAC path) */
-        }
-      } else {
-        LOG_E(NR_RRC, "TESLA: Failed to re-encode SIB1 for auth input - aborting\n");
-        SI_info->tesla_state->auth_failed = true;
-        nr_rrc_abort_connection(rrc, gNB_index);
-        return;
-      }
-    } else {
-      LOG_E(NR_RRC, "TESLA: Failed to unpack extension (rc=%d) - aborting\n", unpack_rc);
-      SI_info->tesla_state->auth_failed = true;
-      nr_rrc_abort_connection(rrc, gNB_index);
-      return;
-    }
-  } else if (SI_info->tesla_state) {
-    LOG_E(NR_RRC, "TESLA: SIB1 has no lateNonCriticalExtension - aborting\n");
-    SI_info->tesla_state->auth_failed = true;
-    nr_rrc_abort_connection(rrc, gNB_index);
+  tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, gNB_index, rx_frame, rx_slot);
+  if (tesla_rc < 0) {
+    tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);
     return;
   }
-skip_tesla:
-  (void)0; // Empty statement after label (for C compliance)
 #endif
 
   nr_timer_start(&SI_info->sib1_timer);

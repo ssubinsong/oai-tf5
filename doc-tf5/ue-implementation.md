@@ -108,7 +108,53 @@ flowchart TB
 
 ## SIB1 Processing Flow
 
-**Location**: [rrc_UE.c:502-630](../openair2/RRC/NR_UE/rrc_UE.c#L502-L630) `nr_rrc_process_sib1()`
+**Location**: [rrc_UE.c](../openair2/RRC/NR_UE/rrc_UE.c) `nr_rrc_process_sib1()`
+
+### TESLA Verification Entry Point
+
+The main `nr_rrc_process_sib1()` function delegates TESLA verification to a clean dispatcher:
+
+```c
+#ifdef TF5_ENABLE_TESLA
+  tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, gNB_index, rx_frame, rx_slot);
+  if (tesla_rc < 0) {
+    tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);
+    return;
+  }
+#endif
+```
+
+### Helper Functions
+
+| Function | Purpose |
+|----------|---------|
+| `tf5_tesla_verify_sib1()` | Main entry point with early returns |
+| `tf5_tesla_unpack_and_validate()` | Unpack extension + key expiry check |
+| `tf5_tesla_encode_sib1_for_auth()` | Re-encode SIB1 without extension |
+| `tf5_tesla_verify_firsttime()` | IBS signature path (first-time UE) |
+| `tf5_tesla_verify_returning()` | TESLA MAC path (returning UE, RFC 4082) |
+| `tf5_tesla_on_auth_success()` | Send deferred RRCSetupComplete |
+| `tf5_tesla_on_auth_failure()` | Mark failed + abort RRC |
+
+### Result Codes
+
+```c
+typedef enum {
+    TF5_VERIFY_OK = 0,              // Verification succeeded
+    TF5_VERIFY_SKIP_DEDICATED = 1,  // Dedicated delivery - skip TESLA
+    TF5_VERIFY_SKIP_NO_STATE = 2,   // No tesla_state configured
+    TF5_VERIFY_PENDING = 3,         // Buffered, waiting for key disclosure
+    TF5_VERIFY_SKIP_UNSAFE = 4,     // Safe packet test failed
+
+    TF5_VERIFY_FAIL_UNPACK = -1,        // Extension unpack failed
+    TF5_VERIFY_FAIL_KEY_EXPIRED = -2,   // gNB key expired
+    TF5_VERIFY_FAIL_ENCODE = -3,        // SIB1 re-encoding failed
+    TF5_VERIFY_FAIL_NO_CLOCK = -4,      // UE wall-clock not synced
+    TF5_VERIFY_FAIL_TIMESTAMP = -5,     // Timestamp validation failed
+    TF5_VERIFY_FAIL_SIGNATURE = -6,     // IBS signature verification failed
+    TF5_VERIFY_FAIL_MAC = -7,           // All TESLA MAC verifications failed
+} tf5_verify_result_t;
+```
 
 ### First-Time UE (chain_bootstrapped == false)
 
