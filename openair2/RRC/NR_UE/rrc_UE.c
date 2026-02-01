@@ -624,14 +624,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             uint32_t disclosed_interval = ext.interval_index - ext.tesla_params.disclosure_delay;
             memcpy(SI_info->tesla_state->trust_anchor_key, ext.disclosed_key, TF5_TESLA_KEY_LEN);
             SI_info->tesla_state->trust_anchor_idx = disclosed_interval;
-            SI_info->tesla_state->trust_anchor_valid = true;
 
             LOG_I(NR_RRC, "TESLA IBS: First-time UE - chain bootstrapped, K_%u accepted as trust anchor (interval %u)\n",
                   disclosed_interval, ext.interval_index);
-
-            /* Time sync is now implicitly verified via IBS signature.
-             * Once the gNB is authenticated, its SSB timing is trusted. */
-            SI_info->tesla_state->timesync_verified = true;
 
             /* If RRCSetupComplete was deferred, send it now */
             if (SI_info->tesla_state->rrcsetup_deferred) {
@@ -651,7 +646,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           /* === RETURNING UE === */
 
           /* Check if time sync was previously verified */
-          if (!SI_info->tesla_state->timesync_verified) {
+          if (!SI_info->tesla_state->chain_bootstrapped) {
             /* Time sync failed during initial verification - abort instead of fallback */
             LOG_E(NR_RRC, "TESLA: Returning UE time sync not verified - aborting\n");
             SI_info->tesla_state->auth_failed = true;
@@ -743,7 +738,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
               /* Note: Partial success (some verified, some failed) is acceptable per RFC 4082 */
             }
           }
-          } /* End of timesync_verified else (TESLA MAC path) */
+          } /* End of chain_bootstrapped else (TESLA MAC path) */
         }
       } else {
         LOG_E(NR_RRC, "TESLA: Failed to re-encode SIB1 for auth input - aborting\n");

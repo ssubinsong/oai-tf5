@@ -228,8 +228,7 @@ typedef struct {
     uint8_t  mpk[TF5_TESLA_PUBKEY_LEN];  // 96B - Core's MPK = s*Q (G2 point)
     bool     has_mpk;                     // Is Core MPK configured?
 
-    // Verification state
-    bool     trust_anchor_valid;      // Is trust_anchor_key initialized with authenticated key?
+    // Verification state (trust anchor for key chain verification)
     uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
     uint8_t  trust_anchor_key[TF5_TESLA_KEY_LEN];  // Key used as anchor for chain verification
 
@@ -257,9 +256,6 @@ typedef struct {
 
     // Timestamp validation for signature replay protection
     uint64_t timestamp_window_ms;     // Acceptable time window (default 60000ms)
-
-    // Time sync verification state (per doc-tf5/time-sync.md Section 4)
-    bool     timesync_verified;       // Has SSB-based time sync been verified?
 
     // D parameter (CLI-configured, used by receiver)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)

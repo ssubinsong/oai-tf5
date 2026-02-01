@@ -146,8 +146,8 @@ typedef struct {
     uint8_t  mpk[96];  // BLS public key (G2)
     bool     has_mpk;
 
-    // Verification state
-    bool     trust_anchor_valid;      // Is trust_anchor_key initialized?
+    // Verification state (trust anchor for key chain verification)
+    // Note: chain_bootstrapped indicates trust anchor is valid
     uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
     uint8_t  trust_anchor_key[16];    // Key used as anchor for chain verification
 
@@ -178,9 +178,6 @@ typedef struct {
 
     // Timestamp validation
     uint64_t timestamp_window_ms;
-
-    // Time sync state
-    bool     timesync_verified;
 
     // D parameter (CLI-configured)
     uint32_t d_bound_us;  // D bound for safe packet test (microseconds)

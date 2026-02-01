@@ -252,8 +252,6 @@ With the removal of `timesync_info` from the TESLA extension, explicit initial t
 2. Once IBS signature verification succeeds, the gNB is confirmed legitimate
 3. Therefore, the SSB-derived timing is implicitly trusted
 
-The `timesync_verified` flag is now set to `true` automatically after successful IBS signature verification.
-
 ### 10.3 Default Parameter Values
 
 **File:** `openair3/SECU/tf5_tesla.h`
@@ -277,7 +275,7 @@ flowchart TD
     B --> C[Receive SIB1<br/>record rx_frame, rx_slot]
     C --> D[BLS Verify<br/>first-time UE]
     D --> E{IBS Signature OK?}
-    E -->|Yes| F[timesync_verified = true<br/>gNB authenticated, SSB timing trusted]
+    E -->|Yes| F[chain_bootstrapped = true<br/>gNB authenticated, SSB timing trusted]
     E -->|No| G[auth_failed = true<br/>Abort RRC]
     F --> H[TESLA MAC Mode<br/>safe packet + delayed verify]
 ```

@@ -606,9 +606,6 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     // Timestamp validation for signature replay protection
     state->timestamp_window_ms = TF5_TESLA_DEFAULT_TIME_WINDOW_MS;
 
-    // Time sync state
-    state->timesync_verified = false;
-
     // D parameter (CLI-configured)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
     state->d_bound_us = d_bound_us;
@@ -881,7 +878,6 @@ int tf5_tesla_ue_verify_all_buffered(tf5_tesla_ue_state_t *state,
     if (*verified_count > 0) {
         memcpy(state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
         state->trust_anchor_idx = key_interval;
-        state->trust_anchor_valid = true;
 
         LOG_I(NR_RRC, "TESLA: Verified %d SIB1(s) for interval %u (%d failed, rrc_trigger=%d)\n",
               *verified_count, key_interval, *failed_count, *rrc_trigger_verified);
@@ -900,7 +896,8 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
     }
 
     // Check if we have a valid anchor key (set by BLS signature verification or previous TESLA verification)
-    if (!state->trust_anchor_valid) {
+    // chain_bootstrapped indicates the anchor is valid (set when IBS signature verified)
+    if (!state->chain_bootstrapped) {
         // No anchor yet - this should not happen if BLS signature verification ran first
         LOG_E(NR_RRC, "TESLA: No valid anchor key - cannot verify key chain\n");
         return false;
@@ -987,7 +984,7 @@ int tf5_tesla_ue_verify_with_key_recovery(
     // Step 3: Determine verification range
     // Lower bound: don't re-verify already verified intervals
     uint32_t verify_start = earliest_buffered;
-    if (state->trust_anchor_valid &&
+    if (state->chain_bootstrapped &&
         state->trust_anchor_idx + 1 > verify_start) {
         verify_start = state->trust_anchor_idx + 1;
     }
@@ -1095,7 +1092,6 @@ int tf5_tesla_ue_verify_with_key_recovery(
     if (*total_verified > 0) {
         memcpy(state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
         state->trust_anchor_idx = disclosed_interval;
-        state->trust_anchor_valid = true;
 
         LOG_I(NR_RRC, "TESLA: Key recovery verified %d SIB1(s) across intervals [%u, %u] "
               "(%d failed, rrc_trigger=%d)\n",

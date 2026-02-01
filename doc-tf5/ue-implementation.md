@@ -126,8 +126,7 @@ flowchart TB
 4. Verify IBS signature (synchronous - fast)
    └── tf5_tesla_ibs_verify(mpk, cell_id, auth_input, signature)
    ├── SUCCESS:
-   │   └── Chain bootstrapped: chain_bootstrapped = true, sib1_authenticated = true
-   │   └── timesync_verified = true (gNB authenticated, SSB timing trusted)
+   │   └── Chain bootstrapped: chain_bootstrapped = true, sib1_authenticated = true (gNB authenticated, SSB timing trusted)
    │   └── If rrcsetup_deferred: send RRCSetupComplete now
    └── FAILED:
        └── auth_failed = true
@@ -271,7 +270,8 @@ Interval i+2: verify K_{i+1} → K_i (1 hash), anchor = K_{i+1}
 ```c
 bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
     // Require valid trust anchor (set by IBS signature or previous TESLA verification)
-    if (!state->trust_anchor_valid) return false;
+    // chain_bootstrapped indicates the anchor is valid
+    if (!state->chain_bootstrapped) return false;
 
     if (key_index > state->trust_anchor_idx) {
         // Chain from disclosed key down to trust anchor
