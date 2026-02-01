@@ -1187,7 +1187,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   // Load IBS secret key from file (issued by Core PKG)
   extern char *tesla_privkey_file;
   extern unsigned int tesla_chain_len;
-  extern unsigned int tesla_gnb_key_validity_end;
+  extern unsigned int tesla_key_validity_end;
 
   uint8_t private_key[TF5_BLS_SECRET_KEY_LEN];
   int rc;
@@ -1200,24 +1200,24 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   }
 
   // Check that gnb_key_validity_end is provided (no defaults - must be explicit)
-  if (tesla_gnb_key_validity_end == 0) {
-    LOG_E(NR_MAC, "TESLA IBS: --tesla-gnb-key-validity-end is required. Specify key expiration.\n");
+  if (tesla_key_validity_end == 0) {
+    LOG_E(NR_MAC, "TESLA IBS: --tesla-key-validity-end is required. Specify key expiration.\n");
     LOG_E(NR_MAC, "TESLA IBS: Format: minutes since 2024-01-01 00:00 UTC (same value used with tf5_ibs_issue)\n");
     goto tesla_disabled;
   }
 
   // Validate gnb_key_validity_end is within 24-bit range
-  if (tesla_gnb_key_validity_end > 0xFFFFFF) {
-    LOG_E(NR_MAC, "TESLA IBS: --tesla-gnb-key-validity-end=%u exceeds max (16777215)\n", tesla_gnb_key_validity_end);
+  if (tesla_key_validity_end > 0xFFFFFF) {
+    LOG_E(NR_MAC, "TESLA IBS: --tesla-key-validity-end=%u exceeds max (16777215)\n", tesla_key_validity_end);
     goto tesla_disabled;
   }
 
   // Check if key has expired
-  uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(tesla_gnb_key_validity_end);
+  uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(tesla_key_validity_end);
   uint64_t current_unix = tf5_tesla_get_wallclock_ms() / 1000;
   if (current_unix >= expiry_unix) {
     LOG_E(NR_MAC, "TESLA IBS: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n",
-          tesla_gnb_key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
+          tesla_key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
     LOG_E(NR_MAC, "TESLA IBS: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n");
     goto tesla_disabled;
   }
@@ -1291,14 +1291,14 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   memcpy(cc->tesla_state->gnb_cell_id, gnb_cell_id, TF5_IBS_CELL_ID_LEN);
 
   // Store key validity period (minutes since 2024-01-01)
-  cc->tesla_state->gnb_key_validity_end = tesla_gnb_key_validity_end;
+  cc->tesla_state->gnb_key_validity_end = tesla_key_validity_end;
 
   // Log validity info
-  time_t expiry_time = (time_t)tf5_ibs_gnb_key_validity_to_unix(tesla_gnb_key_validity_end);
+  time_t expiry_time = (time_t)tf5_ibs_gnb_key_validity_to_unix(tesla_key_validity_end);
   struct tm *tm_expiry = gmtime(&expiry_time);
   char expiry_str[64];
   strftime(expiry_str, sizeof(expiry_str), "%Y-%m-%d %H:%M UTC", tm_expiry);
-  LOG_I(NR_MAC, "TESLA IBS: Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, tesla_gnb_key_validity_end);
+  LOG_I(NR_MAC, "TESLA IBS: Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, tesla_key_validity_end);
 
   LOG_I(NR_MAC, "TESLA IBS: gNB initialization successful\n");
   goto tesla_init_done;

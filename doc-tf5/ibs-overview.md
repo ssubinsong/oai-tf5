@@ -102,7 +102,7 @@ gNB-specific Keys (issued per Cell ID + validity)
 ```bash
 ./nr-softmodem -O gnb.conf \
     --tesla-privkey /path/to/sk_gnb.bin \
-    --tesla-gnb-key-validity-end 1051200
+    --tesla-key-validity-end 1051200
 ```
 
 **UE** (loads Core's MPK):
@@ -153,4 +153,3 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 ## Wire Format
 
 The TESLA extension uses HMAC-SHA256 for MAC computation and IBS (BLS12-381 based) for signatures.
-

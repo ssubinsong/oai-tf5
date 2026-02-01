@@ -13,7 +13,7 @@
 #ifdef TF5_ENABLE_TESLA
 #define CONFIG_HLP_TESLA_PRIVKEY    "TESLA BLS secret key file (raw binary, 32 bytes). REQUIRED.\n"
 #define CONFIG_HLP_TESLA_PUBKEY     "TESLA BLS public key file (raw binary, 96 bytes). REQUIRED.\n"
-#define CONFIG_HLP_TESLA_CHAINLEN   "TESLA key chain length (default: 65536, approx. 21.8 min with T_int=20ms, 36.4 min with SSB period)\n"
+#define CONFIG_HLP_TESLA_CHAINLEN   "TESLA key chain length (default: 65536, approx. 21.8 min with T_int=20ms)\n"
 #define CONFIG_HLP_TESLA_VALIDITY   "TESLA IBS key validity end (minutes since 2024-01-01 00:00 UTC). REQUIRED.\n"
 #define TF5_DEFAULT_CHAIN_LEN       65536
 #endif
@@ -32,7 +32,7 @@
   {"tesla-privkey",              CONFIG_HLP_TESLA_PRIVKEY,  0,                .strptr=&tesla_privkey_file,              .defstrval=NULL, TYPE_STRING, 0},     \
   {"tesla-pubkey",               CONFIG_HLP_TESLA_PUBKEY,   0,                .strptr=&tesla_pubkey_file,               .defstrval=NULL,  TYPE_STRING, 0},     \
   {"tesla-chain-len",            CONFIG_HLP_TESLA_CHAINLEN, 0,                .uptr=&tesla_chain_len,                   .defuintval=TF5_DEFAULT_CHAIN_LEN,   TYPE_UINT,   0},     \
-  {"tesla-gnb-key-validity-end", CONFIG_HLP_TESLA_VALIDITY, 0,                .uptr=&tesla_gnb_key_validity_end,        .defuintval=0,   TYPE_UINT,   0},
+  {"tesla-key-validity-end",     CONFIG_HLP_TESLA_VALIDITY, 0,                .uptr=&tesla_key_validity_end,            .defuintval=0,   TYPE_UINT,   0},
 #else
 #define CMDLINE_TESLA_PARAMS_GNB
 #endif
@@ -65,7 +65,7 @@ extern char *uecap_file;
 extern char *tesla_privkey_file;
 extern char *tesla_pubkey_file;
 extern unsigned int tesla_chain_len;
-extern unsigned int tesla_gnb_key_validity_end;
+extern unsigned int tesla_key_validity_end;
 #endif
 
 // In nr-gnb.c

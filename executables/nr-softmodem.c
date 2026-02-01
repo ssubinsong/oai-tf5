@@ -107,7 +107,7 @@ char *uecap_file;
 char *tesla_privkey_file = NULL;
 char *tesla_pubkey_file = NULL;
 unsigned int tesla_chain_len;
-unsigned int tesla_gnb_key_validity_end;
+unsigned int tesla_key_validity_end;
 #endif
 
 runmode_t mode = normal_txrx;

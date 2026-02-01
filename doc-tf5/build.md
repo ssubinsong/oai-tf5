@@ -124,12 +124,12 @@ Key paths and validity **must** be specified explicitly on the command line (no 
 | Component | Parameter | Description |
 |-----------|-----------|-------------|
 | gNB | `--tesla-privkey` | Path to gNB's secret key (sk_ID) from PKG |
-| gNB | `--tesla-gnb-key-validity-end` | Key validity end (minutes since 2024-01-01 00:00 UTC). **REQUIRED.** |
+| gNB | `--tesla-key-validity-end` | Key validity end (minutes since 2024-01-01 00:00 UTC). **REQUIRED.** |
 | UE | `--tesla-core-mpk` | Path to Core's Master Public Key (MPK) |
 
 **Note**: gNB no longer needs `--tesla-pubkey` in IBS mode.
 
-**Important**: The `--tesla-gnb-key-validity-end` value on the gNB command line **must match** the gnb_key_validity_end
+**Important**: The `--tesla-key-validity-end` value on the gNB command line **must match** the gnb_key_validity_end
 used when the key was issued via `tf5_ibs_issue`. Mismatched values cause signature verification failure.
 
 ### Running with TESLA
@@ -149,7 +149,7 @@ sudo ./nr-softmodem \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
     --rfsim \
     --tesla-privkey /path/to/gnb_keys/sk_gnb.bin \
-    --tesla-gnb-key-validity-end 1051200
+    --tesla-key-validity-end 1051200
 
 # Run UE with Core's MPK (in another terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi 001010000000001 --rfsim \
@@ -171,7 +171,7 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 - Mismatch causes signature verification failure
 
 **Validity binding:**
-- The `--tesla-gnb-key-validity-end` parameter must match the gnb_key_validity_end used during key issuance
+- The `--tesla-key-validity-end` parameter must match the gnb_key_validity_end used during key issuance
 - Both Cell ID and gnb_key_validity_end are hashed together: `pk_ID = H_s(Cell_ID || gnb_key_validity_end)`
 - If gnb_key_validity_end is mismatched, the derived public key differs and verification fails
 - UE also checks if the key has expired before attempting verification
