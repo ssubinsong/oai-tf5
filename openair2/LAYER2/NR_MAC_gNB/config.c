@@ -1172,8 +1172,6 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   cc->sib1 = sib1;
 
 #ifdef TF5_ENABLE_TESLA
-  // Note: sib1_original will be populated by nr_mac_update_sib1_tesla() before first TX
-
   // Initialize TESLA state
   cc->tesla_state = calloc(1, sizeof(tf5_tesla_gnb_state_t));
   AssertFatal(cc->tesla_state != NULL, "Failed to allocate TESLA state\n");
