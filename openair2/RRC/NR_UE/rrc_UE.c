@@ -590,7 +590,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           LOG_D(NR_RRC, "TESLA: Timestamp valid (delta=%ld ms)\n",
                 (long)((int64_t)ext.timestamp_ms - (int64_t)ue_time_ms));
 
-          /* Build signature auth input (includes gnb_key_validity_end, interval_index, disclosed_key, and timestamp) */
+          /* Build signature auth input */
           uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
           size_t sig_auth_len = 0;
           tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_len,
@@ -615,11 +615,6 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
           if (sig_rc == 0) {
             /* Success: Accept K_0 and mark authenticated */
-
-            /* T_0 is now directly in ext.tesla_params (authenticated by signature) */
-            LOG_I(NR_RRC, "TESLA IBS: T_0 from extension: SFN=%u slot=%u\n",
-                  ext.tesla_params.t0.sfn, ext.tesla_params.t0.slot);
-
             memcpy(&SI_info->tesla_state->tesla_params, &ext.tesla_params, sizeof(tf5_tesla_params_t));
             SI_info->tesla_state->k0_trusted = true;
             SI_info->tesla_state->sib1_authenticated = true;
