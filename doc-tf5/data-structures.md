@@ -21,20 +21,6 @@ typedef struct {
 
 Used for T_0 reference, TX timing, and RX timing throughout the TESLA module.
 
-### D-Bound Parameters (20 bytes)
-
-Parameters for calculating D (upper bound on sender-receiver time offset) per RFC 4082:
-
-```c
-typedef struct {
-    uint32_t e_sync_us;      // E_sync: Sync accuracy bound (microseconds)
-    uint32_t e_s_ppb;        // E_s: gNB max drift rate (parts per billion)
-    uint32_t e_r_ppb;        // E_r: UE max drift rate (parts per billion)
-    uint32_t delta_t_max_ms; // ΔT_max: Operating horizon (milliseconds)
-    uint32_t m_impl_us;      // M_impl: Implementation margin (microseconds)
-} tf5_tesla_d_params_t;
-```
-
 ---
 
 ## TESLA Parameters (12 bytes wire format)
@@ -197,9 +183,8 @@ typedef struct {
     // Time sync state
     bool     timesync_verified;
 
-    // D calculation parameters
-    tf5_tesla_d_params_t d_params;
-    uint32_t d_bound_us;  // Calculated D value
+    // D parameter (CLI-configured)
+    uint32_t d_bound_us;  // D bound for safe packet test (microseconds)
 } tf5_tesla_ue_state_t;
 ```
 

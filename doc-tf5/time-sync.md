@@ -95,42 +95,48 @@ We obtain such a bound by combining:
 
 ---
 
-## 4. Drift Model and Bounding $D$
+## 4. CP-Based D Bound Derivation
 
-### 4.1 Drift bounds (ppm-style)
+### 4.1 OFDM Demodulation Constraint
 
-Model drift accumulation functions $f_s(\cdot)$ and $f_r(\cdot)$ such that:
-$$C_s(\tau) = C_s(\tau_0) + f_s(\tau - \tau_0),$$
-$$C_r(\tau) = C_r(\tau_1) + f_r(\tau - \tau_1).$$
+In OFDM systems, the **Cyclic Prefix (CP)** absorbs timing errors and multipath delay spread. If the timing error exceeds the CP duration:
 
-Assume bounded drift rates:
-$$|f_s(x)| \le E_s |x|,\quad |f_r(x)| \le E_r |x|,$$
-where:
+- **Inter-Symbol Interference (ISI)** occurs between adjacent OFDM symbols
+- **Inter-Carrier Interference (ICI)** destroys OFDM subcarrier orthogonality
+- → Demodulation becomes impossible
 
-- $E_s$: sender (gNB) max drift rate (e.g., ppm converted to time-error per second)
-- $E_r$: receiver (UE) max drift rate (worst-case conformance bound for “honest/compliant” UEs)
+This provides a **hard physical constraint**: if the UE successfully decodes a message (SIB1, etc.), then the clock drift is automatically bounded by the CP duration.
 
-### 4.2 Operating horizon (re-sync cadence)
+### 4.2 CP Duration by Numerology
 
-Let $\Delta T_{\max}$ be the maximum real-time duration for which we expect the PHY time alignment to remain valid without requiring a new synchronization “event” (or without assuming tighter tracking).
+| SCS (kHz) | Normal CP Duration | Reference |
+|-----------|-------------------|-----------|
+| 15        | **4.69 μs**       | 3GPP TS 38.211 Table 5.3.1-1/2 |
+| 30        | 2.34 μs           | |
+| 60        | 1.17 μs           | |
+| 120       | 0.59 μs           | |
 
-### 4.3 A conservative bound for same-time skew
+Since SIB1 typically uses 15 kHz SCS, the hard limit is **4.69 μs**.
 
-Over the operating horizon, a standard conservative bound is:
-$$D_{\text{theory}} \triangleq E_{\text{sync}} + (E_s + E_r)\Delta T_{\max}.$$
+### 4.3 D Bound Derivation
 
-If you want to be extremely literal about the sync equation relating tx–rx instants, you may add a term of the form $E_s \tau_{\text{prop,max}}$ (prop-delay times ppm). This term is typically negligible compared to $E_{\text{sync}}$ and the drift term.
+At any time $\tau$ where message decoding is successful:
+$$\Delta(\tau) \le \text{CP}_{\max} = 4.69 \mu s$$
 
-### 4.4 Implementation margin
+Adding an implementation safety margin:
+$$D = \text{CP}_{\max} + M_{\text{impl}} = 4.69 + 1000 \approx 1005 \mu s$$
 
-Define the operational bound used by TESLA as:
-$$D \triangleq D_{\text{theory}} + M_{\text{impl}}.$$
+Where $M_{\text{impl}} = 1000 \mu s$ absorbs:
 
-$M_{\text{impl}}$ absorbs:
+- Residual timestamping quantization/jitter
+- Software processing latency variations
+- Any unmodeled system-level delays
 
-- modeling conservatism in $E_{\text{sync}}$ (multipath, estimator corner cases),
-- residual timestamping quantization/jitter,
-- any extra safety slack (often easiest to choose in “symbols” or “slots” if implementing the test in radio-time units).
+### 4.4 Comparison with TESLA Interval
+
+$$T_{\text{int}} = 20 \text{ ms} \gg D \approx 1 \text{ ms}$$
+
+The TESLA interval duration is ~20× larger than D, providing substantial margin for the safe packet test.
 
 ---
 
@@ -219,7 +225,7 @@ TESLA’s safety check uses the UE’s recorded arrival time in its radio-time c
 
 **Design-time responsibilities:**
 
-- Choose conservative $E_{\text{sync}}, E_s, E_r, \Delta T_{\max}$, and $M_{\text{impl}}$ so that $D$ is valid for the intended UE population and operating conditions.
+- Choose conservative $M_{\text{impl}}$ (implementation margin) to ensure $D$ is valid for the intended operating conditions.
 
 ---
 
@@ -227,17 +233,14 @@ TESLA’s safety check uses the UE’s recorded arrival time in its radio-time c
 
 ### 10.1 CLI Parameters
 
-D and initial sync bounds are now configured via CLI parameters rather than calculated at runtime.
+D is configured via CLI parameter rather than calculated at runtime.
 
 | CLI Option | Default | Description |
 |------------|---------|-------------|
-| `--tesla-d-bound` | 1510 μs | Upper bound on (sender_time - receiver_time) for safe packet test |
-| `--tesla-initial-sync-bound` | 10 μs | Bound for initial time sync verification (no drift yet) |
+| `--tesla-d-bound` | 1005 μs | Upper bound on (sender_time - receiver_time) for safe packet test |
 
-The default values were pre-calculated using the formula:
-$$D = E_{\text{sync}} + (E_s + E_r) \times \Delta T_{\max} + M_{\text{impl}}$$
-
-With defaults: $E_{\text{sync}}=500\mu s$, $E_s=100ppb$, $E_r=10000ppb$, $\Delta T_{\max}=1s$, $M_{\text{impl}}=1000\mu s$ → $D \approx 1510\mu s$
+The default value was derived using the CP-based formula (see §4):
+$$D = \text{CP}_{\max} + M_{\text{impl}} = 4.69 + 1000 \approx 1005 \mu s$$
 
 ### 10.2 Initial Time Sync Verification
 
@@ -257,22 +260,16 @@ The `timesync_verified` flag is now set to `true` automatically after successful
 
 | Parameter | Default | Rationale |
 |-----------|---------|-----------|
-| `TF5_DEFAULT_D_BOUND_US` | 1510 μs | Pre-calculated D for typical deployment (see §10.9 for derivation) |
-| `TF5_DEFAULT_INITIAL_SYNC_US` | 10 μs | SSB-based sync accuracy (~2× CP margin) |
+| `TF5_DEFAULT_D_BOUND_US` | 1005 μs | CP-based derivation: CP_max (4.69 μs) + M_impl (1000 μs) |
 
-### 10.4 Two-Stage Verification
+### 10.4 Graceful Degradation
 
-1. **Initial verification** (after BLS): Uses `--tesla-initial-sync-bound` since no drift has accumulated
-2. **Safe packet test** (ongoing TESLA): Uses `--tesla-d-bound`
-
-### 10.5 Graceful Degradation
-
-If initial time sync verification fails, the UE falls back to **signature-only mode**:
+If authentication fails, the UE falls back to **signature-only mode**:
 - Each SIB1 is verified via BLS signature
 - TESLA MAC verification is bypassed
 - This prevents availability attacks via deliberate clock manipulation
 
-### 10.6 State Diagram
+### 10.5 State Diagram
 
 ```mermaid
 flowchart TD
@@ -287,118 +284,61 @@ flowchart TD
 
 Note: Initial time sync verification is now implicit. Once the gNB is authenticated via IBS signature, its SSB timing is trusted.
 
-### 10.7 Code References
+### 10.6 Code References
 
 | Function | File | Purpose |
 |----------|------|---------|
 | `tf5_tesla_ue_safe_packet_test()` | `openair3/SECU/tf5_tesla.c` | Safe packet test (uses D) |
-| `tf5_tesla_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize UE with D parameters |
+| `tf5_tesla_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize UE with D parameter |
 | `nr_rrc_process_sib1()` | `openair2/RRC/NR_UE/rrc_UE.c` | SIB1 processing with time sync |
 
-Note: `tf5_tesla_verify_initial_timesync()` has been removed. Time sync is now implicitly verified after successful IBS signature verification.
+### 10.7 Configuration
 
-### 10.8 Configuration
-
-D parameters are configured via command-line options:
+D is configured via command-line option:
 
 ```bash
-# Using defaults (D=1510us, initial_sync=500us)
+# Using default (D=1005us)
 ./nr-uesoftmodem --tesla-core-mpk /path/to/mpk.bin
 
-# Custom D values (e.g., for challenging RF environments)
+# Custom D value (e.g., for challenging RF environments)
 ./nr-uesoftmodem --tesla-core-mpk /path/to/mpk.bin \
-    --tesla-d-bound 3000 \
-    --tesla-initial-sync-bound 1000
+    --tesla-d-bound 2000
 ```
 
-### 10.9 Parameter Rationale
+### 10.8 Parameter Rationale
 
-This section documents the standards-based justification for each default parameter value used in the D calculation.
+This section documents the standards-based justification for the D bound derivation.
 
-#### Summary Table
+#### CP-Based D Derivation
 
-| Parameter | Default | Reference | Justification |
-|-----------|---------|-----------|---------------|
-| $E_{\text{sync}}$ | 10 μs | Design \[1\]\[2\] | ~2× CP duration margin for SSB-based sync |
-| $E_s$ | 100 ppb | 3GPP TS 38.104 §6.4.1 | Medium/Local Area BS frequency accuracy requirement |
-| $E_r$ | 10000 ppb | 3GPP TS 38.101-1, Industry | Worst-case bound for consumer UE oscillators in idle mode |
-| $\Delta T_{\max}$ | 1 s | 3GPP TS 38.331 (DRX cycles) | Realistic bound covering typical DRX scenarios (320ms-2.56s) |
-| $M_{\text{impl}}$ | 1000 μs | Design choice | Implementation safety margin (~14 OFDM symbols at 15 kHz SCS) |
+The D bound is derived from the **Cyclic Prefix (CP) duration** constraint in OFDM systems:
 
-#### $E_s$ = 100 ppb (gNB Clock Drift)
+| Parameter | Value | Reference | Justification |
+|-----------|-------|-----------|---------------|
+| $\text{CP}_{\max}$ | 4.69 μs | 3GPP TS 38.211 Table 5.3.1-1/2 | Normal CP at 15 kHz SCS |
+| $M_{\text{impl}}$ | 1000 μs | Design choice | Implementation safety margin |
+| **D** | **1005 μs** | Derived | $\text{CP}_{\max} + M_{\text{impl}}$ |
 
-**Reference:** 3GPP TS 38.104, Section 6.4.1 "Frequency error"
+#### Why CP Duration is the Hard Limit
 
-| BS Type | Frequency Accuracy |
-|---------|-------------------|
-| Wide Area BS | ±0.05 ppm (50 ppb) |
-| Medium Range BS | ±0.1 ppm (100 ppb) |
-| Local Area BS | ±0.1 ppm (100 ppb) |
+In OFDM systems, the Cyclic Prefix absorbs timing errors and multipath delay spread. If timing error exceeds CP duration:
 
-The 100 ppb value corresponds to the Medium/Local Area BS frequency accuracy requirement. This is conservative for Wide Area BS (which has tighter ±50 ppb) but covers a broader range of deployment scenarios.
-
-#### $E_r$ = 10000 ppb (UE Clock Drift)
-
-**References:**
-- 3GPP TS 38.101-1, Section 6.4.1 "Frequency error" (connected UE: ±0.1 ppm)
-- Industry practice for consumer-grade oscillators
-
-While connected UEs have ±0.1 ppm requirement per TS 38.101-1, during RRC_IDLE/camping with DRX cycles the UE oscillator drifts without network synchronization. Consumer-grade UE oscillators (TCXO) typically have ±2-10 ppm initial tolerance. The 10 ppm (10,000 ppb) is a conservative worst-case bound for:
-- Low-cost UE oscillators
-- Temperature variations over operating range
-- Idle mode drift without frequent re-sync
-
-This matches LTE design assumptions where CFO of 5 ppm was considered for initial cell search.
-
-#### $E_{\text{sync}}$ = 10 μs (Synchronization Error)
-
-**References:**
-- \[1\] R. Tuninato, D. Riviello, et al., "A comprehensive study on the synchronization procedure in 5G NR with 3GPP-compliant link-level simulator," *EURASIP J. Wireless Commun. Netw.*, 2023. https://doi.org/10.1186/s13638-023-02317-5
-- \[2\] Ericsson, "5G synchronization requirements and solutions," *Ericsson Technology Review*, Nov. 2020. https://www.ericsson.com/en/reports-and-papers/ericsson-technology-review/articles/5g-synchronization-requirements-and-solutions
-
-**Rationale:**
-
-3GPP does not directly specify a UE-side SSB synchronization accuracy bound. Per \[2\], the timing error tolerance is fundamentally determined by the cyclic prefix (CP) duration (4.7 μs at 15 kHz SCS). Simulation studies \[1\] show that PSS-based timing synchronization typically achieves 1-sample precision (~32 ns at 30.72 MHz sampling) under good conditions, but performance degrades significantly under:
-- Low SNR (below -6 dB)
-- Severe multipath fading channels
-- Large carrier frequency offsets
-
-The 10 μs value (~2× CP duration at 15 kHz SCS) provides sufficient margin for worst-case timing estimation errors while remaining practical. This accounts for degraded conditions (low SNR, multipath) during initial cell search, while being much tighter than overly conservative values.
-
-**Hard Physical Limit: Cyclic Prefix Duration**
-
-In OFDM systems, the Cyclic Prefix (CP) absorbs timing errors and multipath delay spread. If timing error exceeds CP duration:
 - **Inter-Symbol Interference (ISI)** occurs between adjacent OFDM symbols
 - **Inter-Carrier Interference (ICI)** destroys OFDM subcarrier orthogonality
-- → Demodulation becomes impossible
+- → **Demodulation becomes impossible**
 
-| SCS | Normal CP | Extended CP | Reference |
-|-----|-----------|-------------|-----------|
-| 15 kHz | **4.7 μs** | - | 3GPP TS 38.211 Table 5.3.1-1/2 |
-| 30 kHz | **2.3 μs** | - | |
-| 60 kHz | **1.2 μs** | 4.2 μs | |
-| 120 kHz | **0.59 μs** | - | |
+Therefore, if a UE successfully decodes SIB1, its clock drift is automatically bounded by the CP duration.
 
-Since SIB1 typically uses 15 kHz SCS, the hard limit is **4.7 μs**. Our 10 μs design value (~2× CP) provides adequate safety margin while remaining practical for TESLA time synchronization requirements.
+#### CP Duration by Numerology
 
-#### $\Delta T_{\max}$ = 1 s (Validity Horizon)
+| SCS (kHz) | Normal CP | Reference |
+|-----------|-----------|-----------|
+| 15        | **4.69 μs** | 3GPP TS 38.211 Table 5.3.1-1/2 |
+| 30        | 2.34 μs   | |
+| 60        | 1.17 μs   | |
+| 120       | 0.59 μs   | |
 
-**Reference:** Typical DRX cycle ranges (3GPP TS 38.331)
-
-This represents the maximum real-time duration for which PHY time alignment is assumed valid without re-synchronization. It is a **validity horizon**, not an actual re-sync frequency.
-
-**UE timing re-sync mechanisms (actual re-sync happens more frequently):**
-
-| Mechanism | Typical Period | Reference |
-|-----------|---------------|-----------|
-| SSB broadcast | 20 ms (default) | TS 38.213, configurable 5-160 ms |
-| DRX wake-up | 320 ms - 2.56 s | TS 38.331, paging DRX cycle |
-| SMTC window | 20-160 ms | TS 38.331, RRM measurement timing |
-| SIB1 periodicity | 160 ms | TS 38.331 |
-
-Connected UEs track timing continuously via TRS/DMRS. Idle UEs re-sync at each DRX wake-up when they measure SSB for paging. The 1s value covers most practical idle mode DRX scenarios with margin.
-
-**Note:** The previous value of 10.24s (maximum SIB modification period) was overly conservative. With $\Delta T_{\max}$ = 1s, the drift term contributes only ~10 μs to D.
+Since SIB1 typically uses 15 kHz SCS, we use **4.69 μs** as the hard limit.
 
 #### $M_{\text{impl}}$ = 1000 μs (Implementation Margin)
 
@@ -407,7 +347,12 @@ Connected UEs track timing continuously via TRS/DMRS. Idle UEs re-sync at each D
 Safety margin to absorb implementation uncertainties:
 - Residual timestamping quantization/jitter
 - Software processing latency variations
-- Multipath effects not captured in $E_{\text{sync}}$ model
 - Any unmodeled system-level delays
 
-1 ms is approximately 14 OFDM symbols at 15 kHz SCS (or ~56 symbols at 60 kHz). This provides reasonable safety slack without excessive delay in TESLA authentication.
+1 ms is approximately 14 OFDM symbols at 15 kHz SCS. This provides reasonable safety slack without excessive delay in TESLA authentication.
+
+#### Comparison with TESLA Interval
+
+$$T_{\text{int}} = 20 \text{ ms} \gg D \approx 1 \text{ ms}$$
+
+The TESLA interval duration is ~20× larger than D, ensuring the safe packet test has substantial margin.

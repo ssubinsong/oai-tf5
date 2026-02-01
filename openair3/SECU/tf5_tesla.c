@@ -579,8 +579,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
                       const uint8_t mpk[TF5_TESLA_PUBKEY_LEN],
                       uint16_t slots_per_frame,
-                      uint32_t d_bound_us,
-                      uint32_t initial_sync_bound_us)
+                      uint32_t d_bound_us)
 {
     if (!state || !mpk) {
         return -1;
@@ -611,15 +610,13 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     // Time sync state
     state->timesync_verified = false;
 
-    // D parameters (CLI-configured)
+    // D parameter (CLI-configured)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
     state->d_bound_us = d_bound_us;
-    state->initial_sync_bound_us = initial_sync_bound_us;
 
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA IBS: UE initialized (D=%u us, initial_sync=%u us, first-time UE)\n",
-          state->d_bound_us, state->initial_sync_bound_us);
+    LOG_I(NR_RRC, "TESLA IBS: UE initialized (D=%u us, first-time UE)\n", state->d_bound_us);
 
     return 0;
 }

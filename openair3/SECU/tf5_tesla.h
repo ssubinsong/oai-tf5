@@ -55,16 +55,17 @@
 #define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered per RFC 4082 multi-packet
 
 /*
- * Default D parameters (CLI-configurable)
+ * Default D parameter (CLI-configurable)
  *
  * D is the upper bound on (sender_time - receiver_time), per RFC 4082 Section 2.2.
- * These defaults were pre-calculated from the formula:
- * D = E_sync + (E_s + E_r) * ΔT_max + M_impl
- * With: E_sync=500us, E_s=100ppb, E_r=10000ppb, ΔT_max=1s, M_impl=1000us => D≈1510us
- * See doc-tf5/time-sync.md Section 10.9 for parameter rationale.
+ *
+ * CP-based derivation:
+ *   Successful OFDM decode implies timing error ≤ CP duration (4.69 μs at 15 kHz SCS).
+ *   D = CP_max + M_impl = 4.69 + 1000 ≈ 1005 μs
+ *
+ * See doc-tf5/time-sync.md for detailed rationale.
  */
-#define TF5_DEFAULT_D_BOUND_US           1510    // Pre-calculated D bound (microseconds)
-#define TF5_DEFAULT_INITIAL_SYNC_US      500     // E_sync for initial timesync check (microseconds)
+#define TF5_DEFAULT_D_BOUND_US           1005    // Pre-calculated D bound (microseconds)
 
 // Protocol version
 #define TF5_TESLA_VERSION           0x01
@@ -258,10 +259,9 @@ typedef struct {
     // Time sync verification state (per doc-tf5/time-sync.md Section 4)
     bool     timesync_verified;       // Has SSB-based time sync been verified?
 
-    // D parameters (CLI-configured, used by receiver)
+    // D parameter (CLI-configured, used by receiver)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
     uint32_t d_bound_us;              // D bound for safe packet test (microseconds)
-    uint32_t initial_sync_bound_us;   // Bound for initial timesync check (microseconds)
 } tf5_tesla_ue_state_t;
 
 /*
@@ -405,14 +405,12 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
  * @param mpk           Pre-provisioned Core Master Public Key (96 bytes)
  * @param slots_per_frame Number of slots per frame
  * @param d_bound_us    D bound for safe packet test (microseconds)
- * @param initial_sync_bound_us Bound for initial timesync check (microseconds)
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
                       const uint8_t mpk[TF5_TESLA_PUBKEY_LEN],
                       uint16_t slots_per_frame,
-                      uint32_t d_bound_us,
-                      uint32_t initial_sync_bound_us);
+                      uint32_t d_bound_us);
 
 /**
  * Free TESLA state resources on UE
