@@ -4403,10 +4403,8 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
                                                    sizeof(cc->sib1_original));
   sib1->lateNonCriticalExtension = saved_ext;
 
-  if (enc_rval.encoded <= 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to encode SIB1 for signing (rc=%zd)\n", enc_rval.encoded);
-    return;
-  }
+  AssertFatal(enc_rval.encoded > 0,
+              "TESLA: Failed to encode SIB1 for signing (rc=%zd)\n", enc_rval.encoded);
   cc->sib1_original_length = (enc_rval.encoded + 7) / 8;  // bits to bytes
 
   // Prepare TESLA extension for current frame/slot
@@ -4416,18 +4414,12 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
                                            cc->sib1_original,
                                            cc->sib1_original_length,
                                            &ext);
-  if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to prepare extension (rc=%d)\n", rc);
-    return;
-  }
+  AssertFatal(rc == 0, "TESLA: Failed to prepare extension (rc=%d)\n", rc);
 
   // Pack TESLA extension into binary
   uint8_t ext_buf[256];
   int ext_len = tf5_tesla_pack_extension(&ext, ext_buf, sizeof(ext_buf));
-  if (ext_len < 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to pack extension\n");
-    return;
-  }
+  AssertFatal(ext_len >= 0, "TESLA: Failed to pack extension\n");
 
   // Set lateNonCriticalExtension
   if (sib1->lateNonCriticalExtension == NULL) {
@@ -4453,10 +4445,7 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
 
   // Re-encode SIB1 with TESLA extension
   cc->sib1_bcch_length = encode_SIB_NR(cc->sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
-  if (cc->sib1_bcch_length <= 0) {
-    LOG_E(NR_MAC, "TESLA: Failed to re-encode SIB1\n");
-    return;
-  }
+  AssertFatal(cc->sib1_bcch_length > 0, "TESLA: Failed to re-encode SIB1\n");
 
   LOG_D(NR_MAC, "TESLA: Updated SIB1 for frame %d slot %d (interval %u, len=%d)\n",
         frame, slot, ext.interval_index, cc->sib1_bcch_length);

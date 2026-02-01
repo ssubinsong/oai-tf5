@@ -1194,48 +1194,40 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
 
   // Check that key path is provided (no defaults - must be explicit)
   if (tesla_privkey_file == NULL || tesla_privkey_file[0] == '\0') {
-    LOG_E(NR_MAC, "TESLA IBS: --tesla-privkey is required. Specify path to sk_ID file (issued by Core PKG).\n");
-    LOG_E(NR_MAC, "TESLA IBS: Generate with: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>\n");
-    goto tesla_disabled;
+    AssertFatal(false,
+                "TESLA IBS: --tesla-privkey is required. Specify path to sk_ID file (issued by Core PKG).\n"
+                "TESLA IBS: Generate with: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>\n");
   }
 
   // Check that gnb_key_validity_end is provided (no defaults - must be explicit)
   if (tesla_key_validity_end == 0) {
-    LOG_E(NR_MAC, "TESLA IBS: --tesla-key-validity-end is required. Specify key expiration.\n");
-    LOG_E(NR_MAC, "TESLA IBS: Format: minutes since 2024-01-01 00:00 UTC (same value used with tf5_ibs_issue)\n");
-    goto tesla_disabled;
+    AssertFatal(false,
+                "TESLA IBS: --tesla-key-validity-end is required. Specify key expiration.\n"
+                "TESLA IBS: Format: minutes since 2024-01-01 00:00 UTC (same value used with tf5_ibs_issue)\n");
   }
 
   // Validate gnb_key_validity_end is within 24-bit range
-  if (tesla_key_validity_end > 0xFFFFFF) {
-    LOG_E(NR_MAC, "TESLA IBS: --tesla-key-validity-end=%u exceeds max (16777215)\n", tesla_key_validity_end);
-    goto tesla_disabled;
-  }
+  AssertFatal(tesla_key_validity_end <= 0xFFFFFF,
+              "TESLA IBS: --tesla-key-validity-end=%u exceeds max (16777215)\n", tesla_key_validity_end);
 
   // Check if key has expired
   uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(tesla_key_validity_end);
   uint64_t current_unix = tf5_tesla_get_wallclock_ms() / 1000;
-  if (current_unix >= expiry_unix) {
-    LOG_E(NR_MAC, "TESLA IBS: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n",
-          tesla_key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
-    LOG_E(NR_MAC, "TESLA IBS: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n");
-    goto tesla_disabled;
-  }
+  AssertFatal(current_unix < expiry_unix,
+              "TESLA IBS: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n"
+              "TESLA IBS: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n",
+              tesla_key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
 
   // Initialize BLS library
   rc = tf5_tesla_bls_init();
-  if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA IBS: Failed to initialize BLS library (rc=%d)\n", rc);
-    goto tesla_disabled;
-  }
+  AssertFatal(rc == 0, "TESLA IBS: Failed to initialize BLS library (rc=%d)\n", rc);
 
   // Load IBS secret key (sk_ID = s * H_s(cell_id) issued by Core PKG)
   rc = tf5_tesla_load_privkey(tesla_privkey_file, private_key);
-  if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA IBS: Failed to load sk_ID from %s (rc=%d)\n", tesla_privkey_file, rc);
-    LOG_E(NR_MAC, "TESLA IBS: Use tf5_ibs_issue to generate key for this gNB\n");
-    goto tesla_disabled;
-  }
+  AssertFatal(rc == 0,
+              "TESLA IBS: Failed to load sk_ID from %s (rc=%d)\n"
+              "TESLA IBS: Use tf5_ibs_issue to generate key for this gNB\n",
+              tesla_privkey_file, rc);
 
   // Extract NR Cell ID (36 bits) from gNB configuration
   // cellID is passed as uint64_t parameter to nr_mac_configure_sib1()
@@ -1282,10 +1274,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
                           private_key,
                           &t0,         // T_0 timing (SFN/slot)
                           slots_per_frame);
-  if (rc != 0) {
-    LOG_E(NR_MAC, "TESLA IBS: Failed to initialize (rc=%d)\n", rc);
-    goto tesla_disabled;
-  }
+  AssertFatal(rc == 0, "TESLA IBS: Failed to initialize (rc=%d)\n", rc);
 
   // Store Cell ID in TESLA state (for IBS mode)
   memcpy(cc->tesla_state->gnb_cell_id, gnb_cell_id, TF5_IBS_CELL_ID_LEN);
@@ -1301,14 +1290,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   LOG_I(NR_MAC, "TESLA IBS: Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, tesla_key_validity_end);
 
   LOG_I(NR_MAC, "TESLA IBS: gNB initialization successful\n");
-  goto tesla_init_done;
 
-tesla_disabled:
-  LOG_W(NR_MAC, "TESLA IBS: Disabled due to missing or invalid sk_ID file\n");
-  free(cc->tesla_state);
-  cc->tesla_state = NULL;
-
-tesla_init_done:
   // Initial SIB1 encoding (TESLA extension will be added dynamically before each TX)
   cc->sib1_bcch_length = cc->sib1_original_length;
   memcpy(cc->sib1_bcch_pdu, cc->sib1_original, cc->sib1_original_length);

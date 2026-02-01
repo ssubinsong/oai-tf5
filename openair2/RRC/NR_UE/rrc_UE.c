@@ -570,23 +570,25 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           /* Validate wall-clock timestamp (fail fast before expensive Ed25519) */
           uint64_t ue_time_ms = tf5_tesla_get_wallclock_ms();
           if (ue_time_ms == 0) {
-            LOG_W(NR_RRC, "TESLA: UE wall-clock not synced - skipping signature replay detection\n");
-          } else {
-            int ts_rc = tf5_tesla_validate_timestamp(ue_time_ms,
-                                                      ext.timestamp_ms,
-                                                      SI_info->tesla_state->timestamp_window_ms);
-            if (ts_rc != 0) {
-              LOG_E(NR_RRC, "TESLA: Timestamp validation FAILED (rc=%d) - "
-                    "ext_ts=%lu, ue_ts=%lu, window=%lu ms\n",
-                    ts_rc, (unsigned long)ext.timestamp_ms, (unsigned long)ue_time_ms,
-                    (unsigned long)SI_info->tesla_state->timestamp_window_ms);
-              SI_info->tesla_state->auth_failed = true;
-              nr_rrc_abort_connection(rrc, gNB_index);
-              return;
-            }
-            LOG_D(NR_RRC, "TESLA: Timestamp valid (delta=%ld ms)\n",
-                  (long)((int64_t)ext.timestamp_ms - (int64_t)ue_time_ms));
+            LOG_E(NR_RRC, "TESLA: UE wall-clock not synced - aborting\n");
+            SI_info->tesla_state->auth_failed = true;
+            nr_rrc_abort_connection(rrc, gNB_index);
+            return;
           }
+          int ts_rc = tf5_tesla_validate_timestamp(ue_time_ms,
+                                                    ext.timestamp_ms,
+                                                    SI_info->tesla_state->timestamp_window_ms);
+          if (ts_rc != 0) {
+            LOG_E(NR_RRC, "TESLA: Timestamp validation FAILED (rc=%d) - "
+                  "ext_ts=%lu, ue_ts=%lu, window=%lu ms\n",
+                  ts_rc, (unsigned long)ext.timestamp_ms, (unsigned long)ue_time_ms,
+                  (unsigned long)SI_info->tesla_state->timestamp_window_ms);
+            SI_info->tesla_state->auth_failed = true;
+            nr_rrc_abort_connection(rrc, gNB_index);
+            return;
+          }
+          LOG_D(NR_RRC, "TESLA: Timestamp valid (delta=%ld ms)\n",
+                (long)((int64_t)ext.timestamp_ms - (int64_t)ue_time_ms));
 
           /* Build signature auth input (includes gnb_key_validity_end, interval_index, disclosed_key, and timestamp) */
           uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
@@ -657,39 +659,11 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
 
           /* Check if time sync was previously verified */
           if (!SI_info->tesla_state->timesync_verified) {
-            /* Time sync failed during initial verification - stay in signature-only mode */
-            /* Verify IBS signature for each SIB1 instead of using TESLA MAC */
-            LOG_D(NR_RRC, "TESLA IBS: Signature-only mode (time sync not verified) - verifying IBS\n");
-
-            /* Build signature auth input for verification */
-            uint8_t sig_auth_input_fallback[TF5_TESLA_MAX_AUTH_INPUT];
-            size_t sig_auth_len_fallback = 0;
-            tf5_tesla_build_sig_auth_input(sig_auth_input_fallback, &sig_auth_len_fallback,
-                                            sib1_buf, sib1_len,
-                                            &ext.tesla_params,
-                                            ext.gnb_key_validity_end,
-                                            ext.interval_index,
-                                            ext.disclosed_key,
-                                            ext.timestamp_ms);
-
-            /* Extract Cell ID from SIB1 for IBS verification */
-            uint8_t cell_id_fallback[TF5_IBS_CELL_ID_LEN];
-            tf5_extract_cell_id_from_sib1(sib1, cell_id_fallback);
-
-            int sig_rc = tf5_tesla_ue_verify_signature(SI_info->tesla_state,
-                                                       cell_id_fallback,
-                                                       ext.gnb_key_validity_end,
-                                                       sig_auth_input_fallback, sig_auth_len_fallback,
-                                                       ext.gnb_signature);
-            if (sig_rc == 0) {
-              SI_info->tesla_state->sib1_authenticated = true;
-              LOG_I(NR_RRC, "TESLA IBS: Signature-only mode - SIB1 verified via IBS\n");
-            } else {
-              LOG_E(NR_RRC, "TESLA IBS: Signature-only mode - IBS verification FAILED\n");
-              SI_info->tesla_state->auth_failed = true;
-              nr_rrc_abort_connection(rrc, gNB_index);
-              return;
-            }
+            /* Time sync failed during initial verification - abort instead of fallback */
+            LOG_E(NR_RRC, "TESLA: Returning UE time sync not verified - aborting\n");
+            SI_info->tesla_state->auth_failed = true;
+            nr_rrc_abort_connection(rrc, gNB_index);
+            return;
           } else {
             /* Normal TESLA MAC verification path (time sync verified) */
             /* Per RFC 4082 Section 3.5: Safe packet test MUST be Step 1, before buffering or MAC verification */
@@ -779,13 +753,22 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           } /* End of timesync_verified else (TESLA MAC path) */
         }
       } else {
-        LOG_E(NR_RRC, "TESLA: Failed to re-encode SIB1 for auth input\n");
+        LOG_E(NR_RRC, "TESLA: Failed to re-encode SIB1 for auth input - aborting\n");
+        SI_info->tesla_state->auth_failed = true;
+        nr_rrc_abort_connection(rrc, gNB_index);
+        return;
       }
     } else {
-      LOG_W(NR_RRC, "TESLA: Failed to unpack extension (rc=%d)\n", unpack_rc);
+      LOG_E(NR_RRC, "TESLA: Failed to unpack extension (rc=%d) - aborting\n", unpack_rc);
+      SI_info->tesla_state->auth_failed = true;
+      nr_rrc_abort_connection(rrc, gNB_index);
+      return;
     }
   } else if (SI_info->tesla_state) {
-    LOG_D(NR_RRC, "TESLA: SIB1 has no lateNonCriticalExtension\n");
+    LOG_E(NR_RRC, "TESLA: SIB1 has no lateNonCriticalExtension - aborting\n");
+    SI_info->tesla_state->auth_failed = true;
+    nr_rrc_abort_connection(rrc, gNB_index);
+    return;
   }
 skip_tesla:
   (void)0; // Empty statement after label (for C compliance)
