@@ -1268,9 +1268,9 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   // Initialize TESLA with computed parameters
   tf5_tesla_slot_time_t t0 = tf5_slot_time_make(t0_sfn, t0_slot);
   rc = tf5_tesla_gnb_init(cc->tesla_state,
-                          t_int_ms,    // Computed T_int (aligned with SIB1 repetition)
+                          t_int_ms,    // T_int (aligned with SIB1 repetition)
                           1,           // d = 1 (disclosure delay)
-                          chain_len,   // Default chain length
+                          chain_len,   // Chain length
                           private_key,
                           &t0,         // T_0 timing (SFN/slot)
                           slots_per_frame);
