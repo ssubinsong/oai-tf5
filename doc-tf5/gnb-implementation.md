@@ -30,13 +30,15 @@
 ```
 
 **Command-line parameters**:
-- `--tesla-privkey <path>` - IBS secret key file (sk_ID issued by Core PKG)
+- `--tesla-privkey <path>` - IBS secret key file (35 bytes: sk_ID + validity, issued by Core PKG)
 
 **Key generation**: Use the Core PKG to issue gNB keys:
 ```bash
 cd tf5-core-pkg/build
-./tf5_ibs_issue pkg_keys/msk.bin <cell_id_hex> gnb_keys/sk_gnb.bin
+./tf5_ibs_issue pkg_keys/msk.bin <cell_id_hex> <validity_end> gnb_keys/sk_gnb.bin
 ```
+
+The validity period is embedded in the 35-byte key file (bytes 32-34, big-endian).
 
 **Cell ID binding**: The gNB's secret key is cryptographically bound to its Cell ID.
 The `cellID` in your gNB config must match the Cell ID used during key issuance.

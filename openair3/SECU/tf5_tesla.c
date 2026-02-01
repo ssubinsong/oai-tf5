@@ -1114,9 +1114,10 @@ int tf5_tesla_ue_verify_with_key_recovery(
  */
 
 int tf5_tesla_load_privkey(const char *filepath,
-                           uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN])
+                           uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN],
+                           uint32_t *validity_out)
 {
-    if (!filepath || !privkey_out) {
+    if (!filepath || !privkey_out || !validity_out) {
         return -1;
     }
 
@@ -1126,14 +1127,27 @@ int tf5_tesla_load_privkey(const char *filepath,
         return -1;
     }
 
-    size_t n = fread(privkey_out, 1, TF5_BLS_SECRET_KEY_LEN, fp);
+    // Read 35-byte key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
+    uint8_t buffer[TF5_IBS_SK_FILE_SIZE];
+    size_t n = fread(buffer, 1, TF5_IBS_SK_FILE_SIZE, fp);
     fclose(fp);
 
-    if (n != TF5_BLS_SECRET_KEY_LEN) {
+    if (n != TF5_IBS_SK_FILE_SIZE) {
         LOG_E(NR_RRC, "TESLA: Secret key file has wrong size: %zu (expected %d)\n",
-              n, TF5_BLS_SECRET_KEY_LEN);
+              n, TF5_IBS_SK_FILE_SIZE);
         return -2;
     }
+
+    // Extract secret key (bytes 0-31)
+    memcpy(privkey_out, buffer, TF5_BLS_SECRET_KEY_LEN);
+
+    // Extract validity from bytes 32-34 (big-endian)
+    *validity_out = ((uint32_t)buffer[32] << 16) |
+                    ((uint32_t)buffer[33] << 8) |
+                    (uint32_t)buffer[34];
+
+    // Clear buffer
+    memset(buffer, 0, TF5_IBS_SK_FILE_SIZE);
 
     // Validate by trying to derive public key (this checks the key is valid)
     uint8_t pubkey_test[TF5_TESLA_PUBKEY_LEN];

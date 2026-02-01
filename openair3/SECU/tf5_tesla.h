@@ -92,6 +92,9 @@
 #define TF5_IBS_VALIDITY_LEN   3     // 24-bit minutes since epoch
 #define TF5_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
 
+// gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
+#define TF5_IBS_SK_FILE_SIZE   (TF5_BLS_SECRET_KEY_LEN + TF5_IBS_VALIDITY_LEN)  // 35 bytes
+
 // Domain Separation Tag for H_s (identity-to-scalar hash)
 #define TF5_IBS_DST_HS        "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"
 #define TF5_IBS_DST_HS_LEN    35
@@ -585,17 +588,21 @@ int tf5_tesla_ue_verify_with_key_recovery(
  */
 
 /**
- * Load BLS secret key from raw binary file
+ * Load BLS secret key and validity period from key file
  *
- * @param filepath      Path to binary file containing BLS secret key (32 bytes)
+ * File format: 35 bytes (sk_ID [32] + gnb_key_validity_end [3, big-endian])
+ *
+ * @param filepath      Path to binary key file (35 bytes)
  * @param privkey_out   Output: 32-byte raw secret key
+ * @param validity_out  Output: key validity (minutes since 2024-01-01 00:00 UTC)
  * @return 0 on success, negative on error:
- *         -1: Cannot open file
+ *         -1: Invalid parameters or cannot open file
  *         -2: File read error or wrong size
  *         -3: Invalid key format
  */
 int tf5_tesla_load_privkey(const char *filepath,
-                           uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN]);
+                           uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN],
+                           uint32_t *validity_out);
 
 /**
  * Load BLS public key from raw binary file

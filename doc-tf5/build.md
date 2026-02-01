@@ -44,9 +44,9 @@ Core PKG (tf5-core-pkg/)
          ├── msk.bin (32B) - Master Secret Key (SECURE!)
          └── mpk.bin (96B) - Master Public Key (distribute to UEs)
 
-gNB-specific Keys (issued per Cell ID)
+gNB-specific Keys (issued per Cell ID + validity)
     │
-    └──> sk_gnb.bin (32B) - gNB Secret Key (issued by Core)
+    └──> sk_gnb.bin (35B) - gNB Secret Key (32B) + validity (3B)
 ```
 
 ### Step 1: Build Core PKG
@@ -108,29 +108,25 @@ tf5_ibs_issue <msk_path> <cell_id_hex> <validity_end> <sk_path>
 |----------|------|-------------|
 | Master secret (msk) | 32 bytes | Scalar (big-endian) |
 | Master public (mpk) | 96 bytes | G2 point (compressed) |
-| gNB secret (sk_ID) | 32 bytes | Scalar (big-endian) |
+| gNB secret (sk_ID) | 35 bytes | Scalar (32B) + validity (3B, big-endian) |
 
 Inspect generated keys with:
 ```bash
 xxd pkg_keys/msk.bin   # Should show 32 bytes
 xxd pkg_keys/mpk.bin   # Should show 96 bytes
-xxd gnb_keys/sk_gnb.bin  # Should show 32 bytes
+xxd gnb_keys/sk_gnb.bin  # Should show 35 bytes (32B sk + 3B validity)
 ```
 
 ### Required Parameters
 
-Key paths and validity **must** be specified explicitly on the command line (no defaults):
+Key paths **must** be specified explicitly on the command line (no defaults):
 
 | Component | Parameter | Description |
 |-----------|-----------|-------------|
-| gNB | `--tesla-privkey` | Path to gNB's secret key (sk_ID) from PKG |
-| gNB | `--tesla-key-validity-end` | Key validity end (minutes since 2024-01-01 00:00 UTC). **REQUIRED.** |
+| gNB | `--tesla-privkey` | Path to gNB's secret key file (35 bytes: sk_ID + validity) |
 | UE | `--tesla-core-mpk` | Path to Core's Master Public Key (MPK) |
 
-**Note**: gNB no longer needs `--tesla-pubkey` in IBS mode.
-
-**Important**: The `--tesla-key-validity-end` value on the gNB command line **must match** the gnb_key_validity_end
-used when the key was issued via `tf5_ibs_issue`. Mismatched values cause signature verification failure.
+**Note**: The validity period is embedded in the 35-byte key file (bytes 32-34, big-endian).
 
 ### Running with TESLA
 
@@ -143,13 +139,12 @@ the SIB1 BWP to 48 PRBs, insufficient for TESLA.
 # From project root
 cd /path/to/oai-tf5
 
-# Run gNB with IBS secret key and validity
+# Run gNB with IBS secret key (validity embedded in key file)
 cd cmake_targets/ran_build/build
 sudo ./nr-softmodem \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
     --rfsim \
-    --tesla-privkey /path/to/gnb_keys/sk_gnb.bin \
-    --tesla-key-validity-end 1051200
+    --tesla-privkey /path/to/gnb_keys/sk_gnb.bin
 
 # Run UE with Core's MPK (in another terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi 001010000000001 --rfsim \
@@ -171,10 +166,10 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 - Mismatch causes signature verification failure
 
 **Validity binding:**
-- The `--tesla-key-validity-end` parameter must match the gnb_key_validity_end used during key issuance
+- The validity period is embedded in the 35-byte key file (bytes 32-34, big-endian)
 - Both Cell ID and gnb_key_validity_end are hashed together: `pk_ID = H_s(Cell_ID || gnb_key_validity_end)`
-- If gnb_key_validity_end is mismatched, the derived public key differs and verification fails
-- UE also checks if the key has expired before attempting verification
+- UE extracts gnb_key_validity_end from the TESLA extension in SIB1
+- UE checks if the key has expired before attempting verification
 
 ---
 

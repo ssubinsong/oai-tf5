@@ -1187,9 +1187,9 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   // Load IBS secret key from file (issued by Core PKG)
   extern char *tesla_privkey_file;
   extern unsigned int tesla_chain_len;
-  extern unsigned int tesla_key_validity_end;
 
   uint8_t private_key[TF5_BLS_SECRET_KEY_LEN];
+  uint32_t gnb_key_validity_end;
   int rc;
 
   // Check that key path is provided (no defaults - must be explicit)
@@ -1199,35 +1199,28 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
                 "TESLA IBS: Generate with: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>\n");
   }
 
-  // Check that gnb_key_validity_end is provided (no defaults - must be explicit)
-  if (tesla_key_validity_end == 0) {
-    AssertFatal(false,
-                "TESLA IBS: --tesla-key-validity-end is required. Specify key expiration.\n"
-                "TESLA IBS: Format: minutes since 2024-01-01 00:00 UTC (same value used with tf5_ibs_issue)\n");
-  }
-
-  // Validate gnb_key_validity_end is within 24-bit range
-  AssertFatal(tesla_key_validity_end <= 0xFFFFFF,
-              "TESLA IBS: --tesla-key-validity-end=%u exceeds max (16777215)\n", tesla_key_validity_end);
-
-  // Check if key has expired
-  uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(tesla_key_validity_end);
-  uint64_t current_unix = tf5_tesla_get_wallclock_ms() / 1000;
-  AssertFatal(current_unix < expiry_unix,
-              "TESLA IBS: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n"
-              "TESLA IBS: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n",
-              tesla_key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
-
   // Initialize BLS library
   rc = tf5_tesla_bls_init();
   AssertFatal(rc == 0, "TESLA IBS: Failed to initialize BLS library (rc=%d)\n", rc);
 
-  // Load IBS secret key (sk_ID = s * H_s(cell_id) issued by Core PKG)
-  rc = tf5_tesla_load_privkey(tesla_privkey_file, private_key);
+  // Load IBS secret key and embedded validity period (35-byte file: sk + validity)
+  rc = tf5_tesla_load_privkey(tesla_privkey_file, private_key, &gnb_key_validity_end);
   AssertFatal(rc == 0,
               "TESLA IBS: Failed to load sk_ID from %s (rc=%d)\n"
               "TESLA IBS: Use tf5_ibs_issue to generate key for this gNB\n",
               tesla_privkey_file, rc);
+
+  // Validate gnb_key_validity_end is within 24-bit range
+  AssertFatal(gnb_key_validity_end <= 0xFFFFFF,
+              "TESLA IBS: gnb_key_validity_end=%u exceeds max (16777215)\n", gnb_key_validity_end);
+
+  // Check if key has expired
+  uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(gnb_key_validity_end);
+  uint64_t current_unix = tf5_tesla_get_wallclock_ms() / 1000;
+  AssertFatal(current_unix < expiry_unix,
+              "TESLA IBS: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n"
+              "TESLA IBS: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n",
+              gnb_key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
 
   // Extract NR Cell ID (36 bits) from gNB configuration
   // cellID is passed as uint64_t parameter to nr_mac_configure_sib1()
@@ -1280,14 +1273,14 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   memcpy(cc->tesla_state->gnb_cell_id, gnb_cell_id, TF5_IBS_CELL_ID_LEN);
 
   // Store key validity period (minutes since 2024-01-01)
-  cc->tesla_state->gnb_key_validity_end = tesla_key_validity_end;
+  cc->tesla_state->gnb_key_validity_end = gnb_key_validity_end;
 
   // Log validity info
-  time_t expiry_time = (time_t)tf5_ibs_gnb_key_validity_to_unix(tesla_key_validity_end);
+  time_t expiry_time = (time_t)tf5_ibs_gnb_key_validity_to_unix(gnb_key_validity_end);
   struct tm *tm_expiry = gmtime(&expiry_time);
   char expiry_str[64];
   strftime(expiry_str, sizeof(expiry_str), "%Y-%m-%d %H:%M UTC", tm_expiry);
-  LOG_I(NR_MAC, "TESLA IBS: Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, tesla_key_validity_end);
+  LOG_I(NR_MAC, "TESLA IBS: Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, gnb_key_validity_end);
 
   LOG_I(NR_MAC, "TESLA IBS: gNB initialization successful\n");
 

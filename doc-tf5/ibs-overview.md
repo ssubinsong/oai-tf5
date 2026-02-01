@@ -74,7 +74,7 @@ Core PKG
 gNB-specific Keys (issued per Cell ID + validity)
     │
     └──> sk_ID = s * H_s(Cell_ID || gnb_key_validity_end) mod r
-         └── sk_gnb.bin (32B) - gNB Secret Key (valid until expiration)
+         └── sk_gnb.bin (35B) - gNB Secret Key (32B) + validity (3B, big-endian)
 ```
 
 ---
@@ -97,13 +97,14 @@ gNB-specific Keys (issued per Cell ID + validity)
 
 ### 3. Deployment
 
-**gNB** (loads secret key and specifies validity):
+**gNB** (loads secret key with embedded validity):
 
 ```bash
 ./nr-softmodem -O gnb.conf \
-    --tesla-privkey /path/to/sk_gnb.bin \
-    --tesla-key-validity-end 1051200
+    --tesla-privkey /path/to/sk_gnb.bin
 ```
+
+The validity period is embedded in the 35-byte key file (bytes 32-34, big-endian).
 
 **UE** (loads Core's MPK):
 ```bash

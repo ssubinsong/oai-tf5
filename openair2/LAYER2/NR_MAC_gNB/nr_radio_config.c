@@ -4386,7 +4386,7 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
                               slot_t slot)
 {
   if (!cc->tesla_state || !cc->tesla_state->initialized) {
-    return;
+    AssertFatal(0, "TESLA: SIB1 TESLA state not initialized\n");
   }
 
   NR_SIB1_t *sib1 = cc->sib1->message.choice.c1->choice.systemInformationBlockType1;
