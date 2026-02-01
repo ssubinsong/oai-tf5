@@ -564,10 +564,9 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
         if (!SI_info->tesla_state->chain_bootstrapped) {
           /* === FIRST-TIME UE: IBS signature verification === */
           AssertFatal(SI_info->tesla_state->has_mpk,
-                      "TESLA IBS: Core MPK not configured - required for K_0 authentication. "
-                      "Configure it with --tesla-core-mpk (path to Core's MPK file).");
+                      "TESLA IBS: Core MPK not configured");
 
-          /* Validate wall-clock timestamp (fail fast before expensive Ed25519) */
+          /* Validate wall-clock timestamp (fail fast before expensive signature verification) */
           uint64_t ue_time_ms = tf5_tesla_get_wallclock_ms();
           if (ue_time_ms == 0) {
             LOG_E(NR_RRC, "TESLA: UE wall-clock not synced - aborting\n");
@@ -618,7 +617,6 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
             memcpy(&SI_info->tesla_state->tesla_params, &ext.tesla_params, sizeof(tf5_tesla_params_t));
             SI_info->tesla_state->chain_bootstrapped = true;
             SI_info->tesla_state->sib1_authenticated = true;
-            SI_info->tesla_state->params_received = true;
 
             /* Accept disclosed key K_{i-d} as trust anchor for future key chain verification.
              * Since the signature covers the entire auth_input (including disclosed_key),

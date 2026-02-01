@@ -591,7 +591,6 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     memcpy(state->mpk, mpk, TF5_TESLA_PUBKEY_LEN);
     state->has_mpk = true;
     state->slots_per_frame = slots_per_frame;
-    state->params_received = false;
     state->buffer_queue_count = 0;  // All queue entries initialized to 0/false by memset
 
     // Parallel authentication state (initialized by memset to 0/false)

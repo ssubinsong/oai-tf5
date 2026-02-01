@@ -147,7 +147,6 @@ typedef struct {
     bool     has_mpk;
 
     // Verification state
-    bool     params_received;
     bool     trust_anchor_valid;      // Is trust_anchor_key initialized?
     uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
     uint8_t  trust_anchor_key[16];    // Key used as anchor for chain verification

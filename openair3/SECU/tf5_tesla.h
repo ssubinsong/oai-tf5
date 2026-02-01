@@ -229,7 +229,6 @@ typedef struct {
     bool     has_mpk;                     // Is Core MPK configured?
 
     // Verification state
-    bool     params_received;         // Have we received static params?
     bool     trust_anchor_valid;      // Is trust_anchor_key initialized with authenticated key?
     uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
     uint8_t  trust_anchor_key[TF5_TESLA_KEY_LEN];  // Key used as anchor for chain verification
