@@ -55,7 +55,7 @@ typedef struct {
     // ... existing fields ...
 
     // Parallel authentication state
-    bool     k0_trusted;              // K_0 authenticated via BLS (persistent)
+    bool     chain_bootstrapped;      // TESLA chain established via IBS (persistent)
     bool     sib1_authenticated;      // Current SIB1 verified (sig OR tesla)
     bool     auth_in_progress;        // Authentication running in parallel
     bool     auth_failed;             // Authentication failed - must abort RRC
@@ -79,13 +79,13 @@ flowchart TB
 
     subgraph left["Authentication (Parallel)"]
         AUTH["Start Authentication"]
-        AUTH --> CHECK{"k0_trusted?"}
+        AUTH --> CHECK{"chain_bootstrapped?"}
         CHECK -->|"false<br/>(First-time UE)"| IBS["IBS verify"]
         CHECK -->|"true<br/>(Returning UE)"| TESLA["Wait for TESLA<br/>key disclosure"]
         IBS --> RESULT
         TESLA --> RESULT
         RESULT{"Result"}
-        RESULT -->|SUCCESS| SUCCESS["sib1_auth=true<br/>k0_trusted=true"]
+        RESULT -->|SUCCESS| SUCCESS["sib1_auth=true<br/>chain_bootstrapped=true"]
         RESULT -->|FAILED| FAILED["auth_failed=true"]
     end
 
@@ -110,7 +110,7 @@ flowchart TB
 
 **Location**: [rrc_UE.c:502-630](../openair2/RRC/NR_UE/rrc_UE.c#L502-L630) `nr_rrc_process_sib1()`
 
-### First-Time UE (k0_trusted == false)
+### First-Time UE (chain_bootstrapped == false)
 
 ```
 1. Unpack TESLA extension from lateNonCriticalExtension
@@ -126,7 +126,7 @@ flowchart TB
 4. Verify IBS signature (synchronous - fast)
    └── tf5_tesla_ibs_verify(mpk, cell_id, auth_input, signature)
    ├── SUCCESS:
-   │   └── Accept K_0: k0_trusted = true, sib1_authenticated = true
+   │   └── Chain bootstrapped: chain_bootstrapped = true, sib1_authenticated = true
    │   └── timesync_verified = true (gNB authenticated, SSB timing trusted)
    │   └── If rrcsetup_deferred: send RRCSetupComplete now
    └── FAILED:
@@ -134,7 +134,7 @@ flowchart TB
        └── nr_rrc_abort_connection() → return
 ```
 
-### Returning UE (k0_trusted == true)
+### Returning UE (chain_bootstrapped == true)
 
 Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before buffering or MAC verification.
 
@@ -180,7 +180,7 @@ if (tesla_state->auth_failed) {
     return;
 }
 
-if (tesla_state->sib1_authenticated || tesla_state->k0_trusted) {
+if (tesla_state->sib1_authenticated || tesla_state->chain_bootstrapped) {
     // Auth succeeded - include NAS in RRCSetupComplete
     rrc_ue_generate_RRCSetupComplete();
     return;
@@ -270,12 +270,12 @@ Interval i+2: verify K_{i+1} → K_i (1 hash), anchor = K_{i+1}
 
 ```c
 bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
-    // Require valid anchor (set by BLS or previous TESLA verification)
-    if (!state->last_verified_key_valid) return false;
+    // Require valid trust anchor (set by IBS signature or previous TESLA verification)
+    if (!state->trust_anchor_valid) return false;
 
-    if (key_index > state->last_verified_key_idx) {
-        // Chain from disclosed key down to anchor
-        uint32_t steps = key_index - state->last_verified_key_idx;
+    if (key_index > state->trust_anchor_idx) {
+        // Chain from disclosed key down to trust anchor
+        uint32_t steps = key_index - state->trust_anchor_idx;
         // Apply F 'steps' times and compare with anchor
         // O(1) for consecutive intervals
     }
@@ -337,10 +337,10 @@ Key Recovery:
 int tf5_tesla_ue_verify_with_key_recovery(state, disclosed_key, disclosed_interval, ...) {
     // Step 1: Find range of buffered intervals
     uint32_t earliest_buffered = find_earliest_buffered(state);
-    uint32_t verify_start = MAX(earliest_buffered, last_verified_idx + 1);
+    uint32_t verify_start = MAX(earliest_buffered, trust_anchor_idx + 1);
     uint32_t verify_end = MIN(latest_buffered, disclosed_interval);
 
-    // Step 2: Verify disclosed key chains to anchor (once)
+    // Step 2: Verify disclosed key chains to trust anchor (once)
     if (!tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval))
         return -6;  // Key chain failed
 
@@ -353,9 +353,9 @@ int tf5_tesla_ue_verify_with_key_recovery(state, disclosed_key, disclosed_interv
     for each buffered entry in [verify_start, verify_end]:
         verify_mac(entry, key_cache[entry.interval_index]);
 
-    // Step 5: Update anchor
-    state->last_verified_key = disclosed_key;
-    state->last_verified_key_idx = disclosed_interval;
+    // Step 5: Update trust anchor
+    state->trust_anchor_key = disclosed_key;
+    state->trust_anchor_idx = disclosed_interval;
 }
 ```
 

@@ -148,9 +148,9 @@ typedef struct {
 
     // Verification state
     bool     params_received;
-    bool     last_verified_key_valid;
-    uint32_t last_verified_key_idx;
-    uint8_t  last_verified_key[16];
+    bool     trust_anchor_valid;      // Is trust_anchor_key initialized?
+    uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
+    uint8_t  trust_anchor_key[16];    // Key used as anchor for chain verification
 
     // Buffered SIB1 pending verification
     struct {
@@ -166,7 +166,7 @@ typedef struct {
     bool     initialized;
 
     // Parallel authentication state
-    bool     k0_trusted;
+    bool     chain_bootstrapped;      // TESLA chain established via IBS signature
     bool     sib1_authenticated;
     bool     auth_in_progress;
     bool     auth_failed;

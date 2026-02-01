@@ -230,9 +230,9 @@ typedef struct {
 
     // Verification state
     bool     params_received;         // Have we received static params?
-    bool     last_verified_key_valid; // Is last_verified_key initialized with authenticated key?
-    uint32_t last_verified_key_idx;   // Index of last verified key
-    uint8_t  last_verified_key[TF5_TESLA_KEY_LEN];
+    bool     trust_anchor_valid;      // Is trust_anchor_key initialized with authenticated key?
+    uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
+    uint8_t  trust_anchor_key[TF5_TESLA_KEY_LEN];  // Key used as anchor for chain verification
 
     // Buffer queue for pending TESLA verification (RFC 4082 multi-packet)
     tf5_tesla_buffer_entry_t buffer_queue[TF5_TESLA_BUFFER_QUEUE_SIZE];
@@ -245,7 +245,7 @@ typedef struct {
     bool     initialized;
 
     // Parallel authentication state (for NAS gating)
-    bool     k0_trusted;              // K_0 authenticated via BLS signature (persistent across SIB1s)
+    bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
     bool     sib1_authenticated;      // SIB1 that triggered RRC setup is verified (sig OR tesla)
     bool     auth_in_progress;        // Authentication running in parallel with RACH
     bool     auth_failed;             // Authentication failed - must abort RRC

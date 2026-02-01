@@ -595,7 +595,7 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     state->buffer_queue_count = 0;  // All queue entries initialized to 0/false by memset
 
     // Parallel authentication state (initialized by memset to 0/false)
-    // k0_trusted = false (first-time UE, needs IBS signature verification)
+    // chain_bootstrapped = false (first-time UE, needs IBS signature verification)
     // sib1_authenticated = false
     // auth_in_progress = false
     // auth_failed = false
@@ -878,11 +878,11 @@ int tf5_tesla_ue_verify_all_buffered(tf5_tesla_ue_state_t *state,
         }
     }
 
-    // Update verified key anchor if at least one succeeded
+    // Update trust anchor if at least one succeeded
     if (*verified_count > 0) {
-        memcpy(state->last_verified_key, disclosed_key, TF5_TESLA_KEY_LEN);
-        state->last_verified_key_idx = key_interval;
-        state->last_verified_key_valid = true;
+        memcpy(state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
+        state->trust_anchor_idx = key_interval;
+        state->trust_anchor_valid = true;
 
         LOG_I(NR_RRC, "TESLA: Verified %d SIB1(s) for interval %u (%d failed, rrc_trigger=%d)\n",
               *verified_count, key_interval, *failed_count, *rrc_trigger_verified);
@@ -901,39 +901,39 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
     }
 
     // Check if we have a valid anchor key (set by BLS signature verification or previous TESLA verification)
-    if (!state->last_verified_key_valid) {
+    if (!state->trust_anchor_valid) {
         // No anchor yet - this should not happen if BLS signature verification ran first
         LOG_E(NR_RRC, "TESLA: No valid anchor key - cannot verify key chain\n");
         return false;
     }
 
-    // Verify by chaining to the last verified key (O(1) if consecutive intervals)
-    if (key_index > state->last_verified_key_idx) {
-        // Chain from key_index down to last_verified_key_idx
+    // Verify by chaining to the trust anchor key (O(1) if consecutive intervals)
+    if (key_index > state->trust_anchor_idx) {
+        // Chain from key_index down to trust_anchor_idx
         uint8_t computed_key[TF5_TESLA_KEY_LEN];
         memcpy(computed_key, disclosed_key, TF5_TESLA_KEY_LEN);
 
-        uint32_t steps = key_index - state->last_verified_key_idx;
+        uint32_t steps = key_index - state->trust_anchor_idx;
         for (uint32_t i = 0; i < steps; i++) {
             uint8_t next_key[TF5_TESLA_KEY_LEN];
             tf5_tesla_chain_key(computed_key, next_key);
             memcpy(computed_key, next_key, TF5_TESLA_KEY_LEN);
         }
 
-        if (memcmp(computed_key, state->last_verified_key, TF5_TESLA_KEY_LEN) == 0) {
+        if (memcmp(computed_key, state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
             LOG_D(NR_RRC, "TESLA: Key chain verified K_%u -> K_%u (%u hash ops)\n",
-                  key_index, state->last_verified_key_idx, steps);
+                  key_index, state->trust_anchor_idx, steps);
             return true;
         } else {
             LOG_E(NR_RRC, "TESLA: Key chain verification FAILED K_%u -> K_%u\n",
-                  key_index, state->last_verified_key_idx);
+                  key_index, state->trust_anchor_idx);
             return false;
         }
     }
 
-    // key_index <= last_verified_key_idx - old key, already verified transitively
+    // key_index <= trust_anchor_idx - old key, already verified transitively
     LOG_D(NR_RRC, "TESLA: Key K_%u already verified (anchor at K_%u)\n",
-          key_index, state->last_verified_key_idx);
+          key_index, state->trust_anchor_idx);
     return true;
 }
 
@@ -988,9 +988,9 @@ int tf5_tesla_ue_verify_with_key_recovery(
     // Step 3: Determine verification range
     // Lower bound: don't re-verify already verified intervals
     uint32_t verify_start = earliest_buffered;
-    if (state->last_verified_key_valid &&
-        state->last_verified_key_idx + 1 > verify_start) {
-        verify_start = state->last_verified_key_idx + 1;
+    if (state->trust_anchor_valid &&
+        state->trust_anchor_idx + 1 > verify_start) {
+        verify_start = state->trust_anchor_idx + 1;
     }
 
     // Upper bound: can't verify intervals newer than disclosed key
@@ -1091,12 +1091,12 @@ int tf5_tesla_ue_verify_with_key_recovery(
         }
     }
 
-    // Step 7: Update anchor key to highest verified interval
+    // Step 7: Update trust anchor to highest verified interval
     // This enables O(1) verification for subsequent consecutive disclosures
     if (*total_verified > 0) {
-        memcpy(state->last_verified_key, disclosed_key, TF5_TESLA_KEY_LEN);
-        state->last_verified_key_idx = disclosed_interval;
-        state->last_verified_key_valid = true;
+        memcpy(state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
+        state->trust_anchor_idx = disclosed_interval;
+        state->trust_anchor_valid = true;
 
         LOG_I(NR_RRC, "TESLA: Key recovery verified %d SIB1(s) across intervals [%u, %u] "
               "(%d failed, rrc_trigger=%d)\n",

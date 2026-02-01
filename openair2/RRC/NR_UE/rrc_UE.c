@@ -561,7 +561,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
         size_t sib1_len = (enc_rval.encoded + 7) / 8;
 
         /* Parallel authentication: First-time vs Returning UE */
-        if (!SI_info->tesla_state->k0_trusted) {
+        if (!SI_info->tesla_state->chain_bootstrapped) {
           /* === FIRST-TIME UE: IBS signature verification === */
           AssertFatal(SI_info->tesla_state->has_mpk,
                       "TESLA IBS: Core MPK not configured - required for K_0 authentication. "
@@ -614,21 +614,21 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           SI_info->tesla_state->auth_in_progress = false;
 
           if (sig_rc == 0) {
-            /* Success: Accept K_0 and mark authenticated */
+            /* Success: Chain bootstrapped - mark authenticated */
             memcpy(&SI_info->tesla_state->tesla_params, &ext.tesla_params, sizeof(tf5_tesla_params_t));
-            SI_info->tesla_state->k0_trusted = true;
+            SI_info->tesla_state->chain_bootstrapped = true;
             SI_info->tesla_state->sib1_authenticated = true;
             SI_info->tesla_state->params_received = true;
 
-            /* Accept disclosed key K_{i-d} as anchor for future key chain verification.
+            /* Accept disclosed key K_{i-d} as trust anchor for future key chain verification.
              * Since the signature covers the entire auth_input (including disclosed_key),
              * K_{i-d} is authenticated and serves as O(1) anchor instead of K_0. */
             uint32_t disclosed_interval = ext.interval_index - ext.tesla_params.disclosure_delay;
-            memcpy(SI_info->tesla_state->last_verified_key, ext.disclosed_key, TF5_TESLA_KEY_LEN);
-            SI_info->tesla_state->last_verified_key_idx = disclosed_interval;
-            SI_info->tesla_state->last_verified_key_valid = true;
+            memcpy(SI_info->tesla_state->trust_anchor_key, ext.disclosed_key, TF5_TESLA_KEY_LEN);
+            SI_info->tesla_state->trust_anchor_idx = disclosed_interval;
+            SI_info->tesla_state->trust_anchor_valid = true;
 
-            LOG_I(NR_RRC, "TESLA IBS: First-time UE - K_0 authenticated, K_%u accepted as anchor (interval %u)\n",
+            LOG_I(NR_RRC, "TESLA IBS: First-time UE - chain bootstrapped, K_%u accepted as trust anchor (interval %u)\n",
                   disclosed_interval, ext.interval_index);
 
             /* Time sync is now implicitly verified via IBS signature.
@@ -2220,7 +2220,7 @@ static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
     SI_info->tesla_state->rrcsetup_deferred = false;
     SI_info->tesla_state->auth_in_progress = false;
     SI_info->tesla_state->sib1_authenticated = false;
-    /* Note: k0_trusted and auth_failed are preserved for diagnosis */
+    /* Note: chain_bootstrapped and auth_failed are preserved for diagnosis */
   }
 
   LOG_W(NR_RRC, "[UE %ld] TESLA: Connection aborted - UE returns to IDLE\n", rrc->ue_id);
@@ -2339,7 +2339,7 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
         return;
       }
 
-      if (SI_info->tesla_state->sib1_authenticated || SI_info->tesla_state->k0_trusted) {
+      if (SI_info->tesla_state->sib1_authenticated || SI_info->tesla_state->chain_bootstrapped) {
         /* Authentication succeeded - proceed with NAS in RRCSetupComplete */
         LOG_I(NR_RRC, "TESLA: SIB1 authenticated - including NAS in RRCSetupComplete\n");
         rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
