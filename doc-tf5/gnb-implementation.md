@@ -22,8 +22,9 @@
        ├── Store static params (T_int, d, K_0, T_0, N)
        └── Store Cell ID for signature binding
 
-4. Store original SIB1 (without extension)
-   └── cc->sib1_original[], cc->sib1_original_length
+4. Encode BCCH wrapper for initial broadcast
+   └── encode_SIB_NR() -> cc->sib1_bcch_pdu[]
+   └── Note: sib1_original is populated by nr_mac_update_sib1_tesla() before first TX
 
 5. Log loaded key path
    └── LOG_I() with file path

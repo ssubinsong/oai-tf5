@@ -1172,9 +1172,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   cc->sib1 = sib1;
 
 #ifdef TF5_ENABLE_TESLA
-  // Encode original SIB1 (without TESLA extension) for signature/MAC computation
-  cc->sib1_original_length = encode_SIB_NR(sib1, cc->sib1_original, sizeof(cc->sib1_original));
-  AssertFatal(cc->sib1_original_length > 0, "could not encode original SIB1\n");
+  // Note: sib1_original will be populated by nr_mac_update_sib1_tesla() before first TX
 
   // Initialize TESLA state
   cc->tesla_state = calloc(1, sizeof(tf5_tesla_gnb_state_t));
@@ -1283,14 +1281,9 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   LOG_I(NR_MAC, "TESLA IBS: Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, gnb_key_validity_end);
 
   LOG_I(NR_MAC, "TESLA IBS: gNB initialization successful\n");
-
-  // Initial SIB1 encoding (TESLA extension will be added dynamically before each TX)
-  cc->sib1_bcch_length = cc->sib1_original_length;
-  memcpy(cc->sib1_bcch_pdu, cc->sib1_original, cc->sib1_original_length);
-#else
+#endif
   cc->sib1_bcch_length = encode_SIB_NR(sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
   AssertFatal(cc->sib1_bcch_length > 0, "could not encode SIB1\n");
-#endif
 }
 
 static bool process_addmod_bearers_cellGroupConfig(NR_UE_sched_ctrl_t *sched_ctrl, const NR_RLC_BearerConfig_t *conf)
