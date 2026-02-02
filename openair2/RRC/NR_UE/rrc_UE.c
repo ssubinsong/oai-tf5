@@ -1727,7 +1727,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
           free(ptr->SInfo.tesla_state);
           ptr->SInfo.tesla_state = NULL;
         } else {
-          uint8_t mpk[TF5_SIGN_PUBKEY_LEN];
+          uint8_t mpk[TF5_IBS_PUBKEY_LEN];
           rc = tf5_tesla_load_pubkey(params->tesla_core_mpk_file, mpk);
           if (rc == 0) {
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info

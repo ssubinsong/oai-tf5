@@ -19,57 +19,30 @@
 #define TF5_TESLA_DEFAULT_D_BOUND_US           1005    // Pre-calculated D bound (microseconds)
 #define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered
 
-#define TF5_SIGN_PUBKEY_LEN        TF5_BLS_PUBKEY_LEN  // BLS public key length (96 bytes)
-#define TF5_MAX_AUTH_INPUT    512     // Max auth input buffer size
-
-// Signature replay protection
-#define TF5_REPLAY_TIMESTAMP_LEN     8       // 64-bit Unix timestamp (ms)
-#define TF5_REPLAY_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
-
 // Sentinel value for trust_anchor_idx indicating K_{-1} (bootstrap key)
 #define TF5_TESLA_BOOTSTRAP_IDX           UINT32_MAX
 
+#define TF5_MAX_AUTH_INPUT    512     // Max auth input buffer size
+
 // Protocol version
-#define TF5_TESLA_VERSION           0x01
+#define TF5_VERSION           0x01
 
 /*
  * IBS (Identity-Based Signature) Constants
- *
- * NR Cell ID is used as the gNB identity for IBS key derivation.
- * UE derives gNB's verification key from Cell ID, validity period, and Core's MPK.
  */
-#define TF5_IBS_CELL_ID_LEN   5    // 36 bits = 5 bytes (per 3GPP TS 38.331)
-#define TF5_IBS_CELL_ID_BITS  36
-
-/*
- * Key validity period: 24 bits = 3 bytes
- * Encodes minutes since 2024-01-01 00:00:00 UTC
- * Range: 0 to 16,777,215 minutes (~31.9 years, covers until ~2056)
- *
- * Identity hash: pk_ID = H_s(Cell_ID || gnb_key_validity_end)
- */
+#define TF5_IBS_PUBKEY_LEN        TF5_BLS_PUBKEY_LEN  // BLS-IBS public key length (96 bytes)
+#define TF5_IBS_CELL_ID_LEN   5    // 36 bits = 5 bytes
 #define TF5_IBS_VALIDITY_LEN   3     // 24-bit minutes since epoch
-#define TF5_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
+#define TF5_IBS_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
 
 // gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
 #define TF5_IBS_SK_FILE_SIZE   (TF5_BLS_SECRET_KEY_LEN + TF5_IBS_VALIDITY_LEN)  // 35 bytes
 
-// Domain Separation Tag for H_s (identity-to-scalar hash)
-#define TF5_IBS_DST_HS        "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"
-#define TF5_IBS_DST_HS_LEN    35
-
-/*
- * =============================================================================
- * Common Timing Structures
- * =============================================================================
- */
+// Signature replay protection
+#define TF5_REPLAY_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
 
 /**
  * Generic PHY Timing (SFN/slot)
- *
- * Represents a point in 5G NR time. Used for T_0 reference, TX timing,
- * and RX timing throughout the TESLA module.
- * Total size: 4 bytes
  */
 typedef struct {
     uint16_t sfn;   // 2B - System Frame Number (0-1023)
@@ -79,9 +52,6 @@ typedef struct {
 
 /**
  * Buffer Entry for Pending TESLA Verification
- *
- * Per RFC 4082 Section 3.5, receivers must buffer multiple packets
- * before key disclosure. This struct represents one buffered SIB1.
  */
 typedef struct {
     uint8_t  auth_input[TF5_MAX_AUTH_INPUT];
@@ -192,7 +162,7 @@ typedef struct {
     tf5_tesla_params_t tesla_params;
 
     // Pre-provisioned Core Master Public Key (IBS mode)
-    uint8_t  mpk[TF5_SIGN_PUBKEY_LEN];  // 96B - Core's MPK = s*Q (G2 point)
+    uint8_t  mpk[TF5_IBS_PUBKEY_LEN];  // 96B - Core's MPK = s*Q (G2 point)
     bool     has_mpk;                     // Is Core MPK configured?
 
     // Verification state (trust anchor for key chain verification)
@@ -368,7 +338,7 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
-                      const uint8_t mpk[TF5_SIGN_PUBKEY_LEN],
+                      const uint8_t mpk[TF5_IBS_PUBKEY_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us);
 
@@ -572,7 +542,7 @@ int tf5_tesla_load_privkey(const char *filepath,
  *         -3: Invalid key format
  */
 int tf5_tesla_load_pubkey(const char *filepath,
-                          uint8_t pubkey_out[TF5_SIGN_PUBKEY_LEN]);
+                          uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN]);
 
 /*
  * =============================================================================
@@ -770,10 +740,10 @@ static inline uint32_t tf5_decode_gnb_key_validity_end(const uint8_t *buf) {
  * @return Minutes since 2024-01-01 00:00:00 UTC (24-bit value)
  */
 static inline uint32_t tf5_ibs_unix_to_gnb_key_validity(uint64_t unix_sec) {
-    if (unix_sec <= TF5_VALIDITY_EPOCH) {
+    if (unix_sec <= TF5_IBS_VALIDITY_EPOCH) {
         return 0;
     }
-    return (uint32_t)((unix_sec - TF5_VALIDITY_EPOCH) / 60);
+    return (uint32_t)((unix_sec - TF5_IBS_VALIDITY_EPOCH) / 60);
 }
 
 /**
@@ -783,7 +753,7 @@ static inline uint32_t tf5_ibs_unix_to_gnb_key_validity(uint64_t unix_sec) {
  * @return Unix timestamp (seconds since 1970-01-01)
  */
 static inline uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end) {
-    return TF5_VALIDITY_EPOCH + (uint64_t)gnb_key_validity_end * 60;
+    return TF5_IBS_VALIDITY_EPOCH + (uint64_t)gnb_key_validity_end * 60;
 }
 
 /*

@@ -429,7 +429,7 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
     LOG_I(NR_RRC, "TESLA: Key chain generated with %u intervals (K_{-1} bootstrap key computed)\n", chain_len);
 
     // Set TESLA parameters
-    state->params.te_version = TF5_TESLA_VERSION;
+    state->params.te_version = TF5_VERSION;
     state->params.t_int_ms = t_int_ms;
     state->params.disclosure_delay = d;
     state->params.t0 = *t0;
@@ -583,7 +583,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
  */
 
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
-                      const uint8_t mpk[TF5_SIGN_PUBKEY_LEN],
+                      const uint8_t mpk[TF5_IBS_PUBKEY_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us)
 {
@@ -594,7 +594,7 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     memset(state, 0, sizeof(*state));
 
     // Store Core's Master Public Key (IBS mode)
-    memcpy(state->mpk, mpk, TF5_SIGN_PUBKEY_LEN);
+    memcpy(state->mpk, mpk, TF5_IBS_PUBKEY_LEN);
     state->has_mpk = true;
     state->slots_per_frame = slots_per_frame;
     state->buffer_queue_count = 0;  // All queue entries initialized to 0/false by memset
@@ -1171,7 +1171,7 @@ int tf5_tesla_load_privkey(const char *filepath,
     memset(buffer, 0, TF5_IBS_SK_FILE_SIZE);
 
     // Validate by trying to derive public key (this checks the key is valid)
-    uint8_t pubkey_test[TF5_SIGN_PUBKEY_LEN];
+    uint8_t pubkey_test[TF5_IBS_PUBKEY_LEN];
     if (tf5_tesla_bls_derive_public(privkey_out, pubkey_test) != 0) {
         LOG_E(NR_RRC, "TESLA: Invalid BLS secret key format\n");
         memset(privkey_out, 0, TF5_BLS_SECRET_KEY_LEN);
@@ -1182,7 +1182,7 @@ int tf5_tesla_load_privkey(const char *filepath,
 }
 
 int tf5_tesla_load_pubkey(const char *filepath,
-                          uint8_t pubkey_out[TF5_SIGN_PUBKEY_LEN])
+                          uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN])
 {
     if (!filepath || !pubkey_out) {
         return -1;
@@ -1194,12 +1194,12 @@ int tf5_tesla_load_pubkey(const char *filepath,
         return -1;
     }
 
-    size_t n = fread(pubkey_out, 1, TF5_SIGN_PUBKEY_LEN, fp);
+    size_t n = fread(pubkey_out, 1, TF5_IBS_PUBKEY_LEN, fp);
     fclose(fp);
 
-    if (n != TF5_SIGN_PUBKEY_LEN) {
+    if (n != TF5_IBS_PUBKEY_LEN) {
         LOG_E(NR_RRC, "TESLA: Public key file has wrong size: %zu (expected %d)\n",
-              n, TF5_SIGN_PUBKEY_LEN);
+              n, TF5_IBS_PUBKEY_LEN);
         return -2;
     }
 
@@ -1207,7 +1207,7 @@ int tf5_tesla_load_pubkey(const char *filepath,
     // We just check deserialization succeeds by doing a simple sign/verify
     // A malformed public key would fail during the actual signature verification
     LOG_I(NR_RRC, "TESLA: Loaded BLS public key from %s (%d bytes)\n",
-          filepath, TF5_SIGN_PUBKEY_LEN);
+          filepath, TF5_IBS_PUBKEY_LEN);
 
     return 0;
 }
