@@ -145,6 +145,7 @@ static void print_usage(const char *prog)
     fprintf(stderr, "          Store it securely (HSM, encrypted storage).\n");
 }
 
+#ifndef TF5_IBS_NO_MAIN
 int main(int argc, char *argv[])
 {
     if (argc != 3) {
@@ -174,3 +175,4 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+#endif /* TF5_IBS_NO_MAIN */

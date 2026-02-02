@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(tf5-core-pkg C)
+project(tf5-core-pkg C CXX)
 
 set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # BLST library path - configurable via -DBLST_DIR=<path>
@@ -58,6 +59,21 @@ target_include_directories(tf5_ibs_common PUBLIC
 target_link_libraries(tf5_ibs_common PRIVATE blst)
 add_dependencies(tf5_ibs_common blst_build)
 
+# IBS full library (includes keygen and issue functions for testing)
+# Compile library functions separately from main()
+add_library(tf5_ibs_full STATIC
+    src/tf5_ibs_common.c
+    src/tf5_ibs_keygen.c
+    src/tf5_ibs_issue.c
+)
+target_include_directories(tf5_ibs_full PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${BLST_DIR}/bindings
+)
+target_compile_definitions(tf5_ibs_full PRIVATE TF5_IBS_NO_MAIN)
+target_link_libraries(tf5_ibs_full PRIVATE blst)
+add_dependencies(tf5_ibs_full blst_build)
+
 # Master keypair generation utility
 add_executable(tf5_ibs_pkg_keygen src/tf5_ibs_keygen.c)
 target_include_directories(tf5_ibs_pkg_keygen PRIVATE
@@ -82,3 +98,23 @@ install(TARGETS tf5_ibs_pkg_keygen tf5_ibs_issue
 install(FILES include/tf5_ibs_pkg.h
     DESTINATION include
 )
+
+# =============================================================================
+# Unit Tests (enabled by default, disable with -DENABLE_TESTS=OFF)
+# =============================================================================
+
+option(ENABLE_TESTS "Build unit tests" ON)
+
+if(ENABLE_TESTS)
+    message(STATUS "Building TF5 IBS PKG unit tests")
+    enable_testing()
+    find_package(GTest REQUIRED)
+
+    add_executable(test_tf5_ibs_pkg tests/test_tf5_ibs_pkg.cpp)
+    target_include_directories(test_tf5_ibs_pkg PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${BLST_DIR}/bindings
+    )
+    target_link_libraries(test_tf5_ibs_pkg PRIVATE tf5_ibs_full blst GTest::gtest)
+    add_test(NAME test_tf5_ibs_pkg COMMAND test_tf5_ibs_pkg)
+endif()

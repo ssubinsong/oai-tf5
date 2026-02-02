@@ -77,10 +77,20 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
         return -4;
     }
 
-    /* Write gNB secret key (restricted permissions) */
-    rc = write_key_file(sk_path, sk_id, TF5_IBS_GNB_SECRET_LEN, 0600);
+    /* Build combined key file: sk_id (32 bytes) + gnb_key_validity_end (3 bytes, big-endian) */
+    uint8_t key_file_data[TF5_IBS_SK_FILE_SIZE];
+    memcpy(key_file_data, sk_id, TF5_IBS_GNB_SECRET_LEN);
 
-    /* Clear sk_id from memory */
+    /* Encode validity as 3 bytes big-endian (24 bits) */
+    key_file_data[32] = (gnb_key_validity_end >> 16) & 0xFF;
+    key_file_data[33] = (gnb_key_validity_end >> 8) & 0xFF;
+    key_file_data[34] = gnb_key_validity_end & 0xFF;
+
+    /* Write combined key file (35 bytes) */
+    rc = write_key_file(sk_path, key_file_data, TF5_IBS_SK_FILE_SIZE, 0600);
+
+    /* Clear key data from memory */
+    memset(key_file_data, 0, TF5_IBS_SK_FILE_SIZE);
     memset(sk_id, 0, TF5_IBS_GNB_SECRET_LEN);
 
     if (rc != 0) {
@@ -111,7 +121,7 @@ static void print_usage(const char *prog)
     fprintf(stderr, "  msk_path               Path to master secret key file\n");
     fprintf(stderr, "  cell_id_hex            NR Cell ID as 9-character hex string (36 bits)\n");
     fprintf(stderr, "  gnb_key_validity_end   Key expiration (minutes since 2024-01-01 00:00 UTC)\n");
-    fprintf(stderr, "  sk_path                Path to save gNB secret key (32 bytes)\n\n");
+    fprintf(stderr, "  sk_path                Path to save gNB secret key (35 bytes: sk + validity)\n\n");
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  # Key valid until 2026-01-01 (1051200 minutes from 2024-01-01)\n");
     fprintf(stderr, "  %s pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_001.bin\n\n", prog);
@@ -144,6 +154,7 @@ static void print_pk_id(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN], uint32_t gnb
     memset(pk_id_bytes, 0, 32);
 }
 
+#ifndef TF5_IBS_NO_MAIN
 int main(int argc, char *argv[])
 {
     if (argc != 5) {
@@ -199,13 +210,14 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("gNB secret key issued successfully.\n");
+    printf("gNB secret key issued successfully (35 bytes: sk + validity).\n");
     printf("\n");
     printf("Next steps:\n");
     printf("  1. Securely transfer %s to the gNB\n", sk_path);
-    printf("  2. Configure gNB with: --tesla-privkey %s --tesla-gnb-key-validity-end %u\n", sk_path, gnb_key_validity_end);
+    printf("  2. Configure gNB with: --tesla-privkey %s\n", sk_path);
     printf("  3. Ensure gNB's Cell ID matches 0x%s\n", cell_id_str);
     printf("  4. Key expires: %s\n", validity_time_str);
 
     return 0;
 }
+#endif /* TF5_IBS_NO_MAIN */
