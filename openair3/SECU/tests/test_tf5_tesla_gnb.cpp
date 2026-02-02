@@ -15,6 +15,15 @@
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
+#include "common/config/config_userapi.h"
+#include "log.h"
+
+// Required by OAI logging infrastructure
+configmodule_interface_t *uniqCfg;
+void exit_function(const char *file, const char *function, const int line, const char *s, const int assert) {
+    if (assert) abort();
+    else exit(EXIT_SUCCESS);
+}
 }
 
 #include "tf5_test_vectors.h"
@@ -454,6 +463,8 @@ TEST_F(TF5GnbTest, GnbFree_UninitializedState_NoOp) {
 // ============================================================================
 
 int main(int argc, char **argv) {
+    logInit();
+    g_log->log_component[NR_RRC].level = OAILOG_WARNING;
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

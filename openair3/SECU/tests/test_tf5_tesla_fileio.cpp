@@ -16,6 +16,15 @@
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
 #include "openair3/SECU/tf5_tesla_sig.h"
+#include "common/config/config_userapi.h"
+#include "log.h"
+
+// Required by OAI logging infrastructure
+configmodule_interface_t *uniqCfg;
+void exit_function(const char *file, const char *function, const int line, const char *s, const int assert) {
+    if (assert) abort();
+    else exit(EXIT_SUCCESS);
+}
 }
 
 class TF5FileIOTest : public ::testing::Test {
@@ -152,10 +161,11 @@ TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooLarge) {
 
     int result = tf5_tesla_load_privkey(large_file.c_str(), privkey_out, &validity_out);
 
-    // The function reads exactly 35 bytes, so this should still work
-    // But it depends on implementation - it may read 35 and succeed
-    // Let's verify the actual behavior
-    EXPECT_TRUE(result == 0 || result == -2) << "Larger file handling depends on implementation";
+    // The function reads exactly 35 bytes from the file. If the read succeeds,
+    // it validates the key scalar. With garbage bytes, the scalar may be invalid.
+    // Valid results: 0 (success), -2 (wrong size), or -3 (invalid key format)
+    EXPECT_TRUE(result == 0 || result == -2 || result == -3)
+        << "Larger file may succeed, fail size check, or fail key validation";
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_NullPath) {
@@ -347,6 +357,8 @@ TEST_F(TF5FileIOTest, RoundTrip_PrivkeyValidity) {
 // ============================================================================
 
 int main(int argc, char **argv) {
+    logInit();
+    g_log->log_component[NR_RRC].level = OAILOG_WARNING;
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
