@@ -69,8 +69,7 @@ typedef struct {
 **Authentication state enum** (see [data-structures.md](data-structures.md)):
 ```c
 typedef enum {
-    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // No authentication completed
-    TF5_AUTH_STATE_IN_PROGRESS,          // Authentication pending
+    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // Not yet authenticated (defer RRCSetupComplete)
     TF5_AUTH_STATE_AUTHENTICATED,        // SIB1 successfully authenticated
     TF5_AUTH_STATE_AUTH_FAILED           // Authentication failed - abort RRC
 } tf5_tesla_auth_state_t;
@@ -108,7 +107,7 @@ flowchart TB
         RRCSETUP --> GATE{"auth_state?"}
         GATE -->|"AUTHENTICATED"| NAS["Send NAS in<br/>RRCSetupComplete"]
         GATE -->|"AUTH_FAILED"| ABORT["ABORT RRC"]
-        GATE -->|"IN_PROGRESS"| DEFER["Defer RRCSetupComplete<br/>wait for auth"]
+        GATE -->|"UNAUTHENTICATED"| DEFER["Defer RRCSetupComplete<br/>wait for auth"]
     end
 
     SUCCESS -.->|"trigger"| GATE
@@ -213,7 +212,7 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
 
 4. Buffer current SIB1 for future TESLA verification
    └── tf5_tesla_ue_buffer_sib1(..., triggered_rrc_setup)
-   └── auth_state = TF5_AUTH_STATE_IN_PROGRESS
+   └── auth_state remains UNAUTHENTICATED (defers RRCSetupComplete if RRCSetup arrives)
 
 5. Check if disclosed key available for PREVIOUSLY buffered SIB1
    └── If interval matches: tf5_tesla_ue_verify_with_key_recovery()
@@ -237,7 +236,8 @@ The RRC connection setup (bearers, cell group config) proceeds normally, but NAS
 #ifdef TF5_ENABLE_TESLA
 if (SI_info->tesla_state) {
     switch (SI_info->tesla_state->auth_state) {
-      case TF5_AUTH_STATE_IN_PROGRESS:
+      case TF5_AUTH_STATE_UNAUTHENTICATED:
+        // Auth pending (buffered, waiting for key disclosure) - defer RRCSetupComplete
         LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete\n");
         SI_info->tesla_state->rrcsetup_deferred = true;
         SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;

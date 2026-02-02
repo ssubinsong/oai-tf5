@@ -52,14 +52,14 @@ Tracks UE-side authentication progress for NAS gating:
 
 ```c
 typedef enum {
-    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // No authentication completed
-    TF5_AUTH_STATE_IN_PROGRESS,          // Authentication pending (SIB1 buffered)
+    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // Not yet authenticated (defer RRCSetupComplete)
     TF5_AUTH_STATE_AUTHENTICATED,        // SIB1 successfully authenticated
     TF5_AUTH_STATE_AUTH_FAILED           // Authentication failed - abort RRC
 } tf5_tesla_auth_state_t;
 ```
 
 Used by `tf5_tesla_ue_state_t` to coordinate RRCSetupComplete deferral.
+`UNAUTHENTICATED` means authentication is pending (either not started or SIB1 buffered waiting for key disclosure).
 
 ---
 

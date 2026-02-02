@@ -224,7 +224,6 @@ typedef struct {
 
 typedef enum {
     TF5_AUTH_STATE_UNAUTHENTICATED = 0,
-    TF5_AUTH_STATE_IN_PROGRESS,
     TF5_AUTH_STATE_AUTHENTICATED,
     TF5_AUTH_STATE_AUTH_FAILED
 } tf5_tesla_auth_state_t;

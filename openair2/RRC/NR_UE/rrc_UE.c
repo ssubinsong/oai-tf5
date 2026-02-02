@@ -560,6 +560,8 @@ static void tf5_tesla_on_auth_success(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *
 {
     tf5_tesla_ue_state_t *state = SI_info->tesla_state;
 
+    state->auth_state = TF5_AUTH_STATE_AUTHENTICATED;
+
     if (state->rrcsetup_deferred) {
         LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
         rrc_ue_generate_RRCSetupComplete(rrc, state->rrcsetup_transaction_id);
@@ -694,7 +696,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     /* Success: Bootstrap the chain */
     memcpy(&state->tesla_params, &ext->tesla_params, sizeof(tf5_tesla_params_t));
     state->chain_bootstrapped = true;
-    state->auth_state = TF5_AUTH_STATE_AUTHENTICATED;
+    // auth_state set by tf5_tesla_on_auth_success() below
 
     /* Accept disclosed key as trust anchor (signature authenticates it) */
     memcpy(state->trust_anchor_key, ext->disclosed_key, TF5_TESLA_KEY_LEN);
@@ -2427,7 +2429,7 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
     if (SI_info->tesla_state) {
 
       switch (SI_info->tesla_state->auth_state) {
-        case TF5_AUTH_STATE_IN_PROGRESS:
+        case TF5_AUTH_STATE_UNAUTHENTICATED:
           /* Authentication still in progress - defer RRCSetupComplete */
           LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete until verified\n");
           SI_info->tesla_state->rrcsetup_deferred = true;
