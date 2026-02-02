@@ -207,9 +207,6 @@ typedef struct {
     // Current state
     uint32_t current_interval;
 
-    // HFN tracking moved to NR_COMMON_channels_t (cc->hfn)
-    // gNB tracks HFN as a core feature, not TESLA-specific
-
     // IBS keys
     uint8_t  gnb_private_key[TF5_BLS_SECRET_KEY_LEN];   // 32B - sk_ID (issued by Core PKG)
     uint8_t  gnb_cell_id[TF5_IBS_CELL_ID_LEN];          // 5B - NR Cell ID (36 bits)
