@@ -89,6 +89,28 @@ RFC 4082 Section 3.6 states that d=1 "does not work" for packets sent near inter
 
 ---
 
+## Bootstrap Intervals (interval < d)
+
+During the first `d` intervals (0 to d-1), the gNB cannot disclose `K_{i-d}` because that would require a negative index. Instead, it discloses the **bootstrap key** `K_{-1} = F(K_0)`.
+
+### Chain Property
+
+Per RFC 4082 Section 3.2, `K_i = F(K_{i+1})`. Extending this relationship:
+- `K_{-1} = F(K_0)`
+- `K_n` chains to `K_{-1}` in `(n+1)` hash steps
+
+### UE Verification with Bootstrap Anchor
+
+When the UE receives a SIB1 during a bootstrap interval:
+1. The IBS signature authenticates `K_{-1}` along with all other extension fields
+2. `K_{-1}` becomes the trust anchor with `trust_anchor_idx = TF5_TESLA_BOOTSTRAP_IDX`
+3. When `K_0` is disclosed later, the UE verifies `F(K_0) == K_{-1}`
+4. Upon successful verification, the anchor is promoted to `K_0` for O(1) future verifications
+
+This maintains the security property from RFC 4082 Section 3.3: "One authenticated key of the one-way key chain."
+
+---
+
 ## Dual Authentication Mechanism
 
 TF5 implements **two authentication mechanisms**:

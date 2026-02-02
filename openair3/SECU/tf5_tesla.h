@@ -54,6 +54,9 @@
 #define TF5_TESLA_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
 #define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered per RFC 4082 multi-packet
 
+// Sentinel value for trust_anchor_idx indicating K_{-1} (bootstrap key)
+#define TF5_TESLA_BOOTSTRAP_IDX           UINT32_MAX
+
 /*
  * Default D parameter (CLI-configurable)
  *
@@ -197,6 +200,9 @@ typedef struct {
     // Key chain storage (backward chain: K_i = F(K_{i+1}))
     uint8_t  (*key_chain)[TF5_TESLA_KEY_LEN];      // Dynamically allocated
     uint32_t key_chain_len;
+
+    // Bootstrap key K_{-1} = F(K_0), disclosed during intervals 0 to d-1
+    uint8_t  k_bootstrap[TF5_TESLA_KEY_LEN];
 
     // Current state
     uint32_t current_interval;

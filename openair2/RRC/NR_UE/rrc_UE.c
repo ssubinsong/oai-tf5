@@ -697,12 +697,19 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     state->auth_state = TF5_AUTH_STATE_AUTHENTICATED;
 
     /* Accept disclosed key as trust anchor (signature authenticates it) */
-    uint32_t disclosed_interval = ext->interval_index - ext->tesla_params.disclosure_delay;
     memcpy(state->trust_anchor_key, ext->disclosed_key, TF5_TESLA_KEY_LEN);
-    state->trust_anchor_idx = disclosed_interval;
 
-    LOG_I(NR_RRC, "TESLA IBS: First-time UE - chain bootstrapped, K_%u as trust anchor (interval %u)\n",
-          disclosed_interval, ext->interval_index);
+    if (ext->interval_index < ext->tesla_params.disclosure_delay) {
+        // Bootstrap case: disclosed_key is K_{-1}
+        state->trust_anchor_idx = TF5_TESLA_BOOTSTRAP_IDX;
+        LOG_I(NR_RRC, "TESLA IBS: First-time UE - bootstrap K_{-1} as anchor (interval %u)\n",
+              ext->interval_index);
+    } else {
+        // Normal case: disclosed_key is K_{i-d}
+        state->trust_anchor_idx = ext->interval_index - ext->tesla_params.disclosure_delay;
+        LOG_I(NR_RRC, "TESLA IBS: First-time UE - K_%u as anchor (interval %u)\n",
+              state->trust_anchor_idx, ext->interval_index);
+    }
 
     tf5_tesla_on_auth_success(rrc, SI_info);
     return TF5_VERIFY_OK;

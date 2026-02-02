@@ -420,9 +420,13 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
         tf5_tesla_chain_key(state->key_chain[i + 1], state->key_chain[i]);
     }
 
+    // Compute bootstrap key K_{-1} = F(K_0) for disclosure during intervals 0 to d-1
+    // Per RFC 4082 Section 3.2: K_i = F(K_{i+1}), extending to K_{-1} = F(K_0)
+    tf5_tesla_chain_key(state->key_chain[0], state->k_bootstrap);
+
     // K_0 is the root commitment (stored in key_chain[0], not in tesla params)
     // Note: root_key removed from tesla_params - disclosed_key serves as anchor
-    LOG_I(NR_RRC, "TESLA: Key chain generated with %u intervals\n", chain_len);
+    LOG_I(NR_RRC, "TESLA: Key chain generated with %u intervals (K_{-1} bootstrap key computed)\n", chain_len);
 
     // Set TESLA parameters
     state->params.te_version = TF5_TESLA_VERSION;
@@ -506,9 +510,11 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
                state->key_chain[disclosed_idx],
                TF5_TESLA_KEY_LEN);
     } else {
-        // Not enough intervals have passed to disclose a key
-        // Use zeros as placeholder
-        memset(ext->disclosed_key, 0, TF5_TESLA_KEY_LEN);
+        // Bootstrap case (interval < d): disclose K_{-1}
+        // Per RFC 4082 Section 3.3: receiver needs one authenticated chain key
+        memcpy(ext->disclosed_key, state->k_bootstrap, TF5_TESLA_KEY_LEN);
+        LOG_D(NR_RRC, "TESLA: Bootstrap interval %u < d=%u, disclosing K_{-1}\n",
+              interval, disclosure_delay);
     }
 
     // Set wall-clock timestamp for signature replay protection
@@ -897,7 +903,33 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
         return false;
     }
 
-    // Verify by chaining to the trust anchor key (O(1) if consecutive intervals)
+    // Bootstrap anchor case: anchor is K_{-1}
+    if (state->trust_anchor_idx == TF5_TESLA_BOOTSTRAP_IDX) {
+        // Verify: F^{key_index+1}(disclosed_key) == K_{-1}
+        // Chain from key_index down to K_0 (key_index steps), then K_0 -> K_{-1} (+1 step)
+        uint8_t computed_key[TF5_TESLA_KEY_LEN];
+        memcpy(computed_key, disclosed_key, TF5_TESLA_KEY_LEN);
+
+        uint32_t steps = key_index + 1;  // +1 for K_0 -> K_{-1}
+        for (uint32_t i = 0; i < steps; i++) {
+            uint8_t next_key[TF5_TESLA_KEY_LEN];
+            tf5_tesla_chain_key(computed_key, next_key);
+            memcpy(computed_key, next_key, TF5_TESLA_KEY_LEN);
+        }
+
+        if (memcmp(computed_key, state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
+            LOG_D(NR_RRC, "TESLA: Key chain verified K_%u -> K_{-1} (%u hash ops)\n",
+                  key_index, steps);
+            // Promote to normal anchor for O(1) future verifications
+            memcpy(state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
+            state->trust_anchor_idx = key_index;
+            return true;
+        }
+        LOG_E(NR_RRC, "TESLA: Key chain verification FAILED K_%u -> K_{-1}\n", key_index);
+        return false;
+    }
+
+    // Normal case: verify by chaining to the trust anchor key (O(1) if consecutive intervals)
     if (key_index > state->trust_anchor_idx) {
         // Chain from key_index down to trust_anchor_idx
         uint8_t computed_key[TF5_TESLA_KEY_LEN];
