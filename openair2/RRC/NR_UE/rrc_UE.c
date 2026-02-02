@@ -744,7 +744,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
     tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);
 
     // Should trigger rrc if not rrcsetup_deferred and the buffer is empty
-    bool should_trigger_rrc = !state->rrcsetup_deferred && state->buffer_queue_count == 0
+    bool should_trigger_rrc = !state->rrcsetup_deferred && state->buffer_queue_count == 0;
 
     tf5_tesla_ue_buffer_sib1(state,
                               mac_auth_input, mac_auth_len,
@@ -845,8 +845,10 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef TF5_ENABLE_TESLA
-  if (SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTHENTICATED || SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTH_FAILED) // The UE has verified SIB1 successfully before but has to re-verify for some reason. Therfore, set state to unauthenticated
-    SI_info->tesla_state->auth_state = TF5_AUTH_STATE_UNAUTHENTICATED; 
+  if (SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTHENTICATED || SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTH_FAILED) { // The UE has verified SIB1 successfully before but has to re-verify for some reason. Therfore, set state to unauthenticated
+    SI_info->tesla_state->auth_state = TF5_AUTH_STATE_UNAUTHENTICATED;
+    // Preserve chain_bootstrapped/trust anchor across re-verification.
+  }
   tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
   if (tesla_rc < 0) {
     tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);

@@ -1230,15 +1230,6 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   LOG_I(NR_MAC, "TESLA IBS: Loaded sk_ID from: %s\n", tesla_privkey_file);
   LOG_I(NR_MAC, "TESLA IBS: Cell ID: 0x%09llx (36 bits)\n", (unsigned long long)cellID);
 
-  // Log sk_ID for verification (first 16 bytes in hex)
-  {
-    char hex_buf[33];
-    for (int i = 0; i < 16; i++) {
-      sprintf(&hex_buf[i*2], "%02x", private_key[i]);
-    }
-    LOG_I(NR_MAC, "TESLA IBS: sk_ID (first 16 bytes hex): %s...\n", hex_buf);
-  }
-
   // T_int = 20ms (CORESET pattern 1, per 3GPP TS 38.331)
   uint16_t t_int_ms = 20;
 
