@@ -181,13 +181,13 @@ int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
 
 /* Encode tesla params (11 bytes) to buffer
  * Note: T_0 now included in wire format (authenticated by signature)
- * Note: root_key removed - disclosed_key serves as trusted anchor */
+ * Note: root_key removed - key_disclosure serves as trusted anchor */
 static size_t tf5_encode_tesla_params(uint8_t *buf,
                                        const tf5_tesla_params_t *p)
 {
     size_t offset = 0;
     tf5_encode_u16_be(buf + offset, p->t_int_ms); offset += 2;
-    buf[offset++] = p->disclosure_delay;
+    buf[offset++] = p->d;
     /* T_0 now transmitted in wire format */
     tf5_encode_u16_be(buf + offset, p->t0.sfn); offset += 2;
     tf5_encode_u16_be(buf + offset, p->t0.slot); offset += 2;
@@ -197,13 +197,13 @@ static size_t tf5_encode_tesla_params(uint8_t *buf,
 
 /* Decode tesla params (11 bytes) from buffer
  * Note: T_0 now included in wire format (authenticated by signature)
- * Note: root_key removed - disclosed_key serves as trusted anchor */
+ * Note: root_key removed - key_disclosure serves as trusted anchor */
 static size_t tf5_decode_tesla_params(const uint8_t *buf,
                                        tf5_tesla_params_t *p)
 {
     size_t offset = 0;
     p->t_int_ms = tf5_decode_u16_be(buf + offset); offset += 2;
-    p->disclosure_delay = buf[offset++];
+    p->d = buf[offset++];
     /* T_0 now decoded from wire format */
     p->t0.sfn = tf5_decode_u16_be(buf + offset); offset += 2;
     p->t0.slot = tf5_decode_u16_be(buf + offset); offset += 2;
@@ -270,7 +270,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
     tf5_encode_u32_be(out + offset, interval_index);
     offset += 4;
 
-    // Append disclosed_key (16 bytes)
+    // Append key_disclosure (16 bytes)
     memcpy(out + offset, disclosed_key, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
@@ -306,15 +306,15 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     offset += tf5_encode_tesla_params(buf + offset, &ext->tesla_params);
 
     // gNB key validity end (3 bytes) - key expiration (minutes since 2024-01-01)
-    tf5_encode_gnb_key_validity_end(buf + offset, ext->gnb_key_validity_end);
+    tf5_encode_gnb_key_validity_end(buf + offset, ext->validity_end);
     offset += TF5_IBS_VALIDITY_LEN;
 
     // Interval index (4 bytes)
-    tf5_encode_u32_be(buf + offset, ext->interval_index);
+    tf5_encode_u32_be(buf + offset, ext->i);
     offset += 4;
 
     // Disclosed key (16 bytes)
-    memcpy(buf + offset, ext->disclosed_key, TF5_TESLA_KEY_LEN);
+    memcpy(buf + offset, ext->key_disclosure, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
     // Timestamp (8 bytes) - for signature replay protection
@@ -322,7 +322,7 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     offset += 8;
 
     // Signature (48 bytes - BLS)
-    memcpy(buf + offset, ext->gnb_signature, TF5_TESLA_SIG_LEN);
+    memcpy(buf + offset, ext->signature, TF5_TESLA_SIG_LEN);
     offset += TF5_TESLA_SIG_LEN;
 
     // TESLA tag (16 bytes)
@@ -356,15 +356,15 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     offset += tf5_decode_tesla_params(buf + offset, &ext->tesla_params);
 
     // gNB key validity end (3 bytes) - key expiration (minutes since 2024-01-01)
-    ext->gnb_key_validity_end = tf5_decode_gnb_key_validity_end(buf + offset);
+    ext->validity_end = tf5_decode_gnb_key_validity_end(buf + offset);
     offset += TF5_IBS_VALIDITY_LEN;
 
     // Interval index (4 bytes)
-    ext->interval_index = tf5_decode_u32_be(buf + offset);
+    ext->i = tf5_decode_u32_be(buf + offset);
     offset += 4;
 
     // Disclosed key (16 bytes)
-    memcpy(ext->disclosed_key, buf + offset, TF5_TESLA_KEY_LEN);
+    memcpy(ext->key_disclosure, buf + offset, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
     // Timestamp (8 bytes) - for signature replay protection
@@ -372,7 +372,7 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     offset += 8;
 
     // Signature (48 bytes - BLS)
-    memcpy(ext->gnb_signature, buf + offset, TF5_TESLA_SIG_LEN);
+    memcpy(ext->signature, buf + offset, TF5_TESLA_SIG_LEN);
     offset += TF5_TESLA_SIG_LEN;
 
     // TESLA tag (16 bytes)
@@ -388,7 +388,7 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
  * =============================================================================
  */
 
-int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
+int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
                        uint16_t t_int_ms,
                        uint8_t d,
                        uint32_t chain_len,
@@ -403,7 +403,7 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
     memset(state, 0, sizeof(*state));
 
     // Store IBS secret key (sk_ID issued by Core PKG)
-    memcpy(state->gnb_private_key, private_key, TF5_BLS_SECRET_KEY_LEN);
+    memcpy(state->private_key, private_key, TF5_BLS_SECRET_KEY_LEN);
 
     // Note: In IBS mode, Cell ID is set by the caller (config.c) after init
     // Public key is derived from Cell ID and Core's MPK by the verifier (UE)
@@ -433,17 +433,16 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
     tf5_tesla_chain_key(state->key_chain[0], state->k_bootstrap);
 
     // K_0 is the root commitment (stored in key_chain[0], not in tesla params)
-    // Note: root_key removed from tesla_params - disclosed_key serves as anchor
+    // Note: root_key removed from tesla_params - key_disclosure serves as anchor
     LOG_I(NR_RRC, "TESLA: Key chain generated with %u intervals (K_{-1} bootstrap key computed)\n", chain_len);
 
     // Set TESLA parameters
-    state->params.t_int_ms = t_int_ms;
-    state->params.disclosure_delay = d;
-    state->params.t0 = *t0;
-    state->params.chain_len = chain_len;
+    state->tesla_params.t_int_ms = t_int_ms;
+    state->tesla_params.d = d;
+    state->tesla_params.t0 = *t0;
+    state->tesla_params.chain_len = chain_len;
 
     state->slots_per_frame = slots_per_frame;
-    state->current_interval = 0;
     state->initialized = true;
 
     LOG_I(NR_RRC, "TESLA IBS: gNB initialized - T_int=%ums, d=%u, T_0=SFN%u.%u\n",
@@ -452,7 +451,7 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
     return 0;
 }
 
-void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state)
+void tf5_tesla_gnb_free(tf5_gnb_state_t *state)
 {
     if (state) {
         if (state->key_chain) {
@@ -460,12 +459,12 @@ void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state)
             memset(state->key_chain, 0, state->key_chain_len * TF5_TESLA_KEY_LEN);
             free(state->key_chain);
         }
-        memset(state->gnb_private_key, 0, 32);
+        memset(state->private_key, 0, 32);
         memset(state, 0, sizeof(*state));
     }
 }
 
-uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
+uint32_t tf5_tesla_gnb_get_interval(tf5_gnb_state_t *state,
                                     uint16_t sfn,
                                     uint16_t slot)
 {
@@ -474,12 +473,12 @@ uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
     }
 
     tf5_tesla_slot_time_t current = tf5_slot_time_make(sfn, slot);
-    return tf5_tesla_get_interval_index(&current, &state->params.t0,
-                                        state->params.t_int_ms,
+    return tf5_tesla_get_interval_index(&current, &state->tesla_params.t0,
+                                        state->tesla_params.t_int_ms,
                                         state->slots_per_frame);
 }
 
-int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
+int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
                                     uint16_t sfn,
                                     uint16_t slot,
                                     const uint8_t *original_sib1,
@@ -501,26 +500,26 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
     }
 
     // Copy TESLA params (includes T_0)
-    memcpy(&ext->tesla_params, &state->params, sizeof(state->params));
+    memcpy(&ext->tesla_params, &state->tesla_params, sizeof(state->tesla_params));
     ext->te_version = TF5_VERSION;
 
     // Set key validity period (minutes since 2024-01-01)
-    ext->gnb_key_validity_end = state->gnb_key_validity_end;
+    ext->validity_end = state->key_validity_end;
 
     // Set interval index
-    ext->interval_index = interval;
+    ext->i = interval;
 
     // Set disclosed key K_{i-d}
-    uint8_t disclosure_delay = state->params.disclosure_delay;
+    uint8_t disclosure_delay = state->tesla_params.d;
     if (interval >= disclosure_delay) {
         uint32_t disclosed_idx = interval - disclosure_delay;
-        memcpy(ext->disclosed_key,
+        memcpy(ext->key_disclosure,
                state->key_chain[disclosed_idx],
                TF5_TESLA_KEY_LEN);
     } else {
         // Bootstrap case (interval < d): disclose K_{-1}
         // Per RFC 4082 Section 3.3: receiver needs one authenticated chain key
-        memcpy(ext->disclosed_key, state->k_bootstrap, TF5_TESLA_KEY_LEN);
+        memcpy(ext->key_disclosure, state->k_bootstrap, TF5_TESLA_KEY_LEN);
         LOG_D(NR_RRC, "TESLA: Bootstrap interval %u < d=%u, disclosing K_{-1}\n",
               interval, disclosure_delay);
     }
@@ -539,9 +538,9 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
                                             original_sib1, sib1_len,
                                             ext->te_version,
                                             &ext->tesla_params,
-                                            ext->gnb_key_validity_end,
-                                            ext->interval_index,
-                                            ext->disclosed_key,
+                                            ext->validity_end,
+                                            ext->i,
+                                            ext->key_disclosure,
                                             ext->timestamp_ms);
     if (rc != 0) {
         LOG_E(NR_RRC, "TESLA: Failed to build signature auth input\n");
@@ -549,9 +548,9 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
     }
 
     // Compute BLS signature over full content
-    rc = tf5_tesla_bls_sign(state->gnb_private_key,
+    rc = tf5_tesla_bls_sign(state->private_key,
                             sig_auth_input, sig_auth_input_len,
-                            ext->gnb_signature);
+                            ext->signature);
     if (rc != 0) {
         LOG_E(NR_RRC, "TESLA: Failed to compute signature\n");
         return -4;
@@ -562,7 +561,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
     size_t mac_auth_input_len;
     rc = tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                         original_sib1, sib1_len,
-                                        ext->gnb_key_validity_end);
+                                        ext->validity_end);
     if (rc != 0) {
         LOG_E(NR_RRC, "TESLA: Failed to build MAC auth input\n");
         return -5;
@@ -576,8 +575,6 @@ int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
         LOG_E(NR_RRC, "TESLA: Failed to compute tag\n");
         return -6;
     }
-
-    state->current_interval = interval;
 
     LOG_D(NR_RRC, "TESLA: Prepared extension for interval %u (SFN%u.%u)\n",
           interval, sfn, slot);
@@ -682,9 +679,9 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
     // Safe if: x < i + d
     // This means the sender hasn't yet disclosed K_i
     // Note: interval_index comes from ext (claimed interval from sender)
-    //       disclosure_delay comes from cached state (authenticated)
-    uint32_t i = ext->interval_index;
-    uint8_t d = state->tesla_params.disclosure_delay;
+    //       d comes from cached state (authenticated)
+    uint32_t i = ext->i;
+    uint8_t d = state->tesla_params.d;
 
     bool safe = (x < i + d);
 
@@ -725,8 +722,8 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
             break;  // Use first invalid slot
         }
         // Track oldest entry with same interval (for overflow handling)
-        if (state->buffer_queue[i].interval_index == interval_index) {
-            uint32_t entry_time = state->buffer_queue[i].interval_index;
+        if (state->buffer_queue[i].rx_interval_index == interval_index) {
+            uint32_t entry_time = state->buffer_queue[i].rx_interval_index;
             if (entry_time < oldest_same_interval_time) {
                 oldest_same_interval_time = entry_time;
                 oldest_same_interval_slot = i;
@@ -744,14 +741,14 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
             // Buffer full with different intervals - drop oldest overall
             uint32_t oldest_time = UINT32_MAX;
             for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
-                uint32_t entry_time = state->buffer_queue[i].interval_index;
+                uint32_t entry_time = state->buffer_queue[i].rx_interval_index;
                 if (entry_time < oldest_time) {
                     oldest_time = entry_time;
                     target_slot = i;
                 }
             }
             LOG_W(NR_RRC, "TESLA: Buffer full - dropping oldest entry (interval %u)\n",
-                  state->buffer_queue[target_slot].interval_index);
+                  state->buffer_queue[target_slot].rx_interval_index);
         }
     }
 
@@ -759,7 +756,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
     tf5_tesla_buffer_entry_t *entry = &state->buffer_queue[target_slot];
     memcpy(entry->auth_input, auth_input, auth_input_len);
     entry->auth_input_len = auth_input_len;
-    entry->interval_index = interval_index;
+    entry->rx_interval_index = interval_index;
     memcpy(entry->tag, tag, TF5_TESLA_TAG_LEN);
     entry->valid = true;
     entry->triggered_rrc_setup = triggered_rrc_setup;
@@ -811,7 +808,7 @@ int tf5_tesla_ue_verify_all_buffered(tf5_tesla_ue_state_t *state,
     bool has_entries = false;
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
         if (state->buffer_queue[i].valid &&
-            state->buffer_queue[i].interval_index == key_interval) {
+            state->buffer_queue[i].rx_interval_index == key_interval) {
             has_entries = true;
             break;
         }
@@ -834,7 +831,7 @@ int tf5_tesla_ue_verify_all_buffered(tf5_tesla_ue_state_t *state,
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
         tf5_tesla_buffer_entry_t *entry = &state->buffer_queue[i];
 
-        if (!entry->valid || entry->interval_index != key_interval) {
+        if (!entry->valid || entry->rx_interval_index != key_interval) {
             continue;
         }
 
@@ -911,7 +908,7 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
 
     // Bootstrap anchor case: anchor is K_{-1}
     if (state->trust_anchor_idx == TF5_TESLA_BOOTSTRAP_IDX) {
-        // Verify: F^{key_index+1}(disclosed_key) == K_{-1}
+        // Verify: F^{key_index+1}(key_disclosure) == K_{-1}
         // Chain from key_index down to K_0 (key_index steps), then K_0 -> K_{-1} (+1 step)
         uint8_t computed_key[TF5_TESLA_KEY_LEN];
         memcpy(computed_key, disclosed_key, TF5_TESLA_KEY_LEN);
@@ -990,7 +987,7 @@ int tf5_tesla_ue_verify_with_key_recovery(
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
         if (state->buffer_queue[i].valid) {
             has_buffered_entries = true;
-            uint32_t interval = state->buffer_queue[i].interval_index;
+            uint32_t interval = state->buffer_queue[i].rx_interval_index;
             if (interval < earliest_buffered) {
                 earliest_buffered = interval;
             }
@@ -1049,7 +1046,7 @@ int tf5_tesla_ue_verify_with_key_recovery(
     // Index 0 = key for verify_start, Index N-1 = key for disclosed_interval
     uint8_t key_cache[TF5_TESLA_BUFFER_QUEUE_SIZE + 3][TF5_TESLA_KEY_LEN];
 
-    // Start with disclosed_key at highest index
+    // Start with key_disclosure at highest index
     memcpy(key_cache[num_intervals - 1], disclosed_key, TF5_TESLA_KEY_LEN);
 
     // Derive backwards: K_i = F(K_{i+1})
@@ -1068,7 +1065,7 @@ int tf5_tesla_ue_verify_with_key_recovery(
             continue;
         }
 
-        uint32_t interval = entry->interval_index;
+        uint32_t interval = entry->rx_interval_index;
 
         // Skip if outside verifiable range
         if (interval < verify_start || interval > verify_end) {

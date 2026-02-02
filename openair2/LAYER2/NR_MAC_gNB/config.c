@@ -1173,7 +1173,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
 
 #ifdef TF5_ENABLE_TESLA
   // Initialize TESLA state
-  cc->tesla_state = calloc(1, sizeof(tf5_tesla_gnb_state_t));
+  cc->tesla_state = calloc(1, sizeof(tf5_gnb_state_t));
   AssertFatal(cc->tesla_state != NULL, "Failed to allocate TESLA state\n");
 
   // Get slots per frame from numerology
@@ -1256,11 +1256,8 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
                           slots_per_frame);
   AssertFatal(rc == 0, "TESLA IBS: Failed to initialize (rc=%d)\n", rc);
 
-  // Store Cell ID in TESLA state (for IBS mode)
-  memcpy(cc->tesla_state->gnb_cell_id, gnb_cell_id, TF5_IBS_CELL_ID_LEN);
-
   // Store key validity period (minutes since 2024-01-01)
-  cc->tesla_state->gnb_key_validity_end = gnb_key_validity_end;
+  cc->tesla_state->key_validity_end = gnb_key_validity_end;
 
   // Log validity info
   time_t expiry_time = (time_t)tf5_ibs_gnb_key_validity_to_unix(gnb_key_validity_end);

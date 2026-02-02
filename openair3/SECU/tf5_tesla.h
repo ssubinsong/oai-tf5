@@ -56,7 +56,7 @@ typedef struct {
 typedef struct {
     uint8_t  auth_input[TF5_MAX_AUTH_INPUT];
     size_t   auth_input_len;
-    uint32_t interval_index;
+    uint32_t rx_interval_index;
     uint8_t  tag[TF5_TESLA_TAG_LEN];
     bool     valid;                  // Entry contains valid data
     bool     triggered_rrc_setup;    // This SIB1 triggered the current RRC session
@@ -72,16 +72,10 @@ static inline tf5_tesla_slot_time_t tf5_slot_time_make(uint16_t sfn,
 
 /*
  * TESLA Parameters
- *
- * These parameters are constant for the lifetime of a key chain.
- * Wire format size: 11 bytes (T_0 now transmitted directly)
- *
- * Note: root_key (K_0) is not included here. Since every SIB1 is signed,
- * the disclosed_key serves as a trusted anchor for key chain verification.
  */
 typedef struct {
     uint16_t t_int_ms;             // 2B - Interval duration in ms (e.g., 20ms)
-    uint8_t  disclosure_delay;     // 1B - Key disclosure delay d (e.g., 1)
+    uint8_t  d;     // 1B - Key disclosure delay d (e.g., 1)
     tf5_tesla_slot_time_t t0;      // 4B - T_0: interval 0 start (transmitted in wire format)
     uint32_t chain_len;            // 4B - Number of intervals N
 } tf5_tesla_params_t;
@@ -89,28 +83,15 @@ typedef struct {
 
 /*
  * Complete TESLA Extension Payload
- *
- * This structure represents the complete TESLA data appended to SIB1
- * via lateNonCriticalExtension.
- *
- * Signature authenticates: SIB1 || te_version || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
- * MAC authenticates:       SIB1 || gnb_key_validity_end (per RFC 4082)
- *
- * Wire format size: 107 bytes (with BLS signatures)
- *   te_version(1) + tesla_params(11) + gnb_key_validity_end(3) + interval_index(4) +
- *   disclosed_key(16) + timestamp_ms(8) + gnb_signature(48) + tesla_tag(16)
- *
- * Note: T_0 is transmitted in tesla_params (authenticated by signature)
- * Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
  */
 typedef struct {
-    uint8_t                    te_version;                    // 1B - Protocol version
-    tf5_tesla_params_t         tesla_params;                  // 11B (wire) - includes T_0
-    uint32_t                   gnb_key_validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
-    uint32_t                   interval_index;                // 4B - Current interval i
-    uint8_t                    disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
+    uint8_t                    te_version;                    // 1B - TESLA-for-5G Protocol version
+    tf5_tesla_params_t         tesla_params;                  // TESLA parameters
+    uint32_t                   i;                // 4B - Current interval i
+    uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
+    uint32_t                   validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint64_t                   timestamp_ms;                  // 8B - Unix epoch timestamp (ms) for replay protection
-    uint8_t                    gnb_signature[TF5_TESLA_SIG_LEN]; // 48B - BLS signature
+    uint8_t                    signature[TF5_TESLA_SIG_LEN]; // 48B - BLS signature
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_tesla_extension_t;
 
@@ -120,29 +101,23 @@ typedef struct {
  * Maintains the key chain and parameters for TESLA authentication on gNB.
  */
 typedef struct {
-    tf5_tesla_params_t params;
+    tf5_tesla_params_t tesla_params;
 
-    // Key chain storage (backward chain: K_i = F(K_{i+1}))
+    // Key chain storage
     uint8_t  (*key_chain)[TF5_TESLA_KEY_LEN];      // Dynamically allocated
+    uint8_t  k_bootstrap[TF5_TESLA_KEY_LEN];        // Bootstrap key K_{-1} = F(K_0), disclosed during intervals 0 to d-1
     uint32_t key_chain_len;
 
-    // Bootstrap key K_{-1} = F(K_0), disclosed during intervals 0 to d-1
-    uint8_t  k_bootstrap[TF5_TESLA_KEY_LEN];
-
-    // Current state
-    uint32_t current_interval;
-
     // IBS keys
-    uint8_t  gnb_private_key[TF5_BLS_SECRET_KEY_LEN];   // 32B - sk_ID (issued by Core PKG)
-    uint8_t  gnb_cell_id[TF5_IBS_CELL_ID_LEN];          // 5B - NR Cell ID (36 bits)
-    uint32_t gnb_key_validity_end;                      // Key expiration (minutes since 2024-01-01)
+    uint8_t  private_key[TF5_BLS_SECRET_KEY_LEN];   // 32B - sk_ID (issued by Core PKG)
+    uint32_t key_validity_end;                      // Key expiration (minutes since 2024-01-01)
 
     // Slots per frame (depends on numerology)
     uint16_t slots_per_frame;
 
     // Initialization flag
     bool     initialized;
-} tf5_tesla_gnb_state_t;
+} tf5_gnb_state_t;
 
 typedef enum {
     TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // Initial - no SIB1 processed yet
@@ -154,8 +129,6 @@ typedef enum {
 
 /*
  * UE-side TESLA State
- *
- * Maintains state for TESLA verification on UE.
  */
 typedef struct {
     tf5_tesla_params_t tesla_params;
@@ -168,7 +141,7 @@ typedef struct {
     uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
     uint8_t  trust_anchor_key[TF5_TESLA_KEY_LEN];  // Key used as anchor for chain verification
 
-    // Buffer queue for pending TESLA verification (RFC 4082 multi-packet)
+    // Buffer queue for pending TESLA verification
     tf5_tesla_buffer_entry_t buffer_queue[TF5_TESLA_BUFFER_QUEUE_SIZE];
     uint8_t buffer_queue_count;  // Number of valid entries in queue
 
@@ -213,7 +186,7 @@ typedef struct {
  * @param slots_per_frame Number of slots per frame
  * @return 0 on success, negative on error
  */
-int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
+int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
                        uint16_t t_int_ms,
                        uint8_t d,
                        uint32_t chain_len,
@@ -226,7 +199,7 @@ int tf5_tesla_gnb_init(tf5_tesla_gnb_state_t *state,
  *
  * @param state         Pointer to gNB TESLA state structure
  */
-void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state);
+void tf5_tesla_gnb_free(tf5_gnb_state_t *state);
 
 /**
  * Get current interval index from HFN/SFN/slot
@@ -236,7 +209,7 @@ void tf5_tesla_gnb_free(tf5_tesla_gnb_state_t *state);
  * @param slot          Current slot
  * @return Current interval index
  */
-uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
+uint32_t tf5_tesla_gnb_get_interval(tf5_gnb_state_t *state,
                                     uint16_t sfn,
                                     uint16_t slot);
 
@@ -246,7 +219,7 @@ uint32_t tf5_tesla_gnb_get_interval(tf5_tesla_gnb_state_t *state,
  * Constructs the data to be MAC'd (per RFC 4082):
  * original_SIB1 || gnb_key_validity_end
  *
- * Note: interval_index and disclosed_key are NOT included in MAC input.
+ * Note: interval_index and key_disclosure are NOT included in MAC input.
  * Note: tesla_params excluded - authenticated by signature.
  *
  * @param out           Output buffer
@@ -266,7 +239,7 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
  * Build signature authentication input buffer
  *
  * Constructs the data to be signed:
- * original_SIB1 || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
+ * original_SIB1 || tesla_params || gnb_key_validity_end || interval_index || key_disclosure || timestamp_ms
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
@@ -304,7 +277,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
  * @param ext           Output: complete TESLA extension
  * @return 0 on success, negative on error
  */
-int tf5_tesla_gnb_prepare_extension(tf5_tesla_gnb_state_t *state,
+int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
                                     uint16_t sfn,
                                     uint16_t slot,
                                     const uint8_t *original_sib1,
@@ -486,7 +459,7 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
  * previous disclosed keys, so even if packets are lost, we will still be
  * able to verify buffered, safe packets from earlier time intervals."
  *
- * This function derives intermediate keys from disclosed_key down to the
+ * This function derives intermediate keys from key_disclosure down to the
  * earliest buffered interval and verifies all pending entries.
  *
  * @param state              Pointer to UE TESLA state structure

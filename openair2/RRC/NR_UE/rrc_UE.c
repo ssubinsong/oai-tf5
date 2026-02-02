@@ -613,16 +613,16 @@ static tf5_verify_result_t tf5_tesla_unpack_and_validate(const NR_SIB1_t *sib1,
     }
 
     LOG_D(NR_RRC, "TESLA: Unpacked extension, interval=%u, t_int=%u ms, d=%u, validity=%u\n",
-          ext->interval_index, ext->tesla_params.t_int_ms,
-          ext->tesla_params.disclosure_delay, ext->gnb_key_validity_end);
+          ext->i, ext->tesla_params.t_int_ms,
+          ext->tesla_params.d, ext->validity_end);
 
     /* Check key expiration */
-    uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(ext->gnb_key_validity_end);
+    uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(ext->validity_end);
     uint64_t ue_time_sec = tf5_tesla_get_wallclock_ms() / 1000;
 
     if (ue_time_sec >= expiry_unix) {
         LOG_E(NR_RRC, "TESLA: gNB key EXPIRED (validity_end=%u, expiry=%lu, now=%lu)\n",
-              ext->gnb_key_validity_end, (unsigned long)expiry_unix, (unsigned long)ue_time_sec);
+              ext->validity_end, (unsigned long)expiry_unix, (unsigned long)ue_time_sec);
         return TF5_VERIFY_FAIL_KEY_EXPIRED;
     }
 
@@ -671,9 +671,9 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
                                     sib1_buf, sib1_len,
                                     ext->te_version,
                                     &ext->tesla_params,
-                                    ext->gnb_key_validity_end,
-                                    ext->interval_index,
-                                    ext->disclosed_key,
+                                    ext->validity_end,
+                                    ext->i,
+                                    ext->key_disclosure,
                                     ext->timestamp_ms);
 
     /* Extract Cell ID for IBS verification */
@@ -683,9 +683,9 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     /* Perform IBS signature verification */
     int sig_rc = tf5_tesla_ibs_verify(state->mpk,
                                        cell_id,
-                                       ext->gnb_key_validity_end,
+                                       ext->validity_end,
                                        sig_auth_input, sig_auth_len,
-                                       ext->gnb_signature);
+                                       ext->signature);
 
     if (sig_rc != 0) {
         LOG_E(NR_RRC, "TESLA: Signature verification FAILED (rc=%d)\n", sig_rc);
@@ -698,18 +698,18 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     // auth_state set by tf5_tesla_on_auth_success() below
 
     /* Accept disclosed key as trust anchor (signature authenticates it) */
-    memcpy(state->trust_anchor_key, ext->disclosed_key, TF5_TESLA_KEY_LEN);
+    memcpy(state->trust_anchor_key, ext->key_disclosure, TF5_TESLA_KEY_LEN);
 
-    if (ext->interval_index < ext->tesla_params.disclosure_delay) {
-        // Bootstrap case: disclosed_key is K_{-1}
+    if (ext->i < ext->tesla_params.d) {
+        // Bootstrap case: key_disclosure is K_{-1}
         state->trust_anchor_idx = TF5_TESLA_BOOTSTRAP_IDX;
         LOG_I(NR_RRC, "TESLA IBS: First-time UE - bootstrap K_{-1} as anchor (interval %u)\n",
-              ext->interval_index);
+              ext->i);
     } else {
-        // Normal case: disclosed_key is K_{i-d}
-        state->trust_anchor_idx = ext->interval_index - ext->tesla_params.disclosure_delay;
+        // Normal case: key_disclosure is K_{i-d}
+        state->trust_anchor_idx = ext->i - ext->tesla_params.d;
         LOG_I(NR_RRC, "TESLA IBS: First-time UE - K_%u as anchor (interval %u)\n",
-              state->trust_anchor_idx, ext->interval_index);
+              state->trust_anchor_idx, ext->i);
     }
 
     tf5_tesla_on_auth_success(rrc, SI_info);
@@ -746,7 +746,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
     size_t mac_auth_len = 0;
     tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
                                     sib1_buf, sib1_len,
-                                    ext->gnb_key_validity_end);
+                                    ext->validity_end);
 
     /* Step 2: Buffer current SIB1 */
     tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);
@@ -757,7 +757,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 
     tf5_tesla_ue_buffer_sib1(state,
                               mac_auth_input, mac_auth_len,
-                              ext->interval_index,
+                              ext->i,
                               ext->tesla_tag,
                               &buffer_rx_time,
                               should_trigger_rrc);
@@ -769,16 +769,16 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 
     /* Step 3: Verify buffered SIB1s with disclosed key (key recovery) */
     if (state->buffer_queue_count == 0 ||
-        ext->interval_index <= state->tesla_params.disclosure_delay) {
+        ext->i <= state->tesla_params.d) {
         return TF5_VERIFY_PENDING;
     }
 
-    uint32_t disclosed_interval = ext->interval_index - state->tesla_params.disclosure_delay;
+    uint32_t disclosed_interval = ext->i - state->tesla_params.d;
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger_verified = false;
 
     int verify_rc = tf5_tesla_ue_verify_with_key_recovery(state,
-                                                           ext->disclosed_key,
+                                                           ext->key_disclosure,
                                                            disclosed_interval,
                                                            &verified_count,
                                                            &failed_count,
