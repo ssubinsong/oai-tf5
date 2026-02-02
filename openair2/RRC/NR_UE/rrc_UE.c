@@ -618,7 +618,7 @@ static tf5_verify_result_t tf5_tesla_unpack_and_validate(const NR_SIB1_t *sib1,
 
     /* Check key expiration */
     uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(ext->validity_end);
-    uint64_t ue_time_sec = tf5_tesla_get_wallclock_ms() / 1000;
+    uint64_t ue_time_sec = tf5_rp_get_wallclock_ms() / 1000;
 
     if (ue_time_sec >= expiry_unix) {
         LOG_E(NR_RRC, "TESLA: gNB key EXPIRED (validity_end=%u, expiry=%lu, now=%lu)\n",
@@ -644,13 +644,13 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     AssertFatal(state->has_mpk, "TESLA IBS: Core MPK not configured");
 
     /* Validate wall-clock (fail fast before expensive crypto) */
-    uint64_t ue_time_ms = tf5_tesla_get_wallclock_ms();
+    uint64_t ue_time_ms = tf5_rp_get_wallclock_ms();
     if (ue_time_ms == 0) {
         LOG_E(NR_RRC, "TESLA: UE wall-clock not synced\n");
         return TF5_VERIFY_FAIL_NO_CLOCK;
     }
 
-    int ts_rc = tf5_tesla_validate_timestamp(ue_time_ms,
+    int ts_rc = tf5_rp_validate_timestamp(ue_time_ms,
                                               ext->timestamp_ms,
                                               state->timestamp_window_ms);
     if (ts_rc != 0) {

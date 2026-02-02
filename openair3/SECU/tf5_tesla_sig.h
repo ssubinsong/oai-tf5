@@ -109,8 +109,8 @@ int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
 #endif
 
 /* IBS Key validity period: 24 bits = 3 bytes (minutes since 2024-01-01) */
-#ifndef TF5_IBS_VALIDITY_LEN
-#define TF5_IBS_VALIDITY_LEN  3
+#ifndef TF5_VALIDITY_PERIOD_LEN
+#define TF5_VALIDITY_PERIOD_LEN  3
 #endif
 
 /**

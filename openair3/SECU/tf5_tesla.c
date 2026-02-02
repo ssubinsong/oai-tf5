@@ -136,37 +136,26 @@ int tf5_rp_validate_timestamp(uint64_t ue_time_ms,
  * =============================================================================
  */
 
-/*
- * Internal helpers for encoding/decoding static params and timesync info.
- * These consolidate duplicated serialization logic.
- */
-
-/* Encode tesla params (11 bytes) to buffer
- * Note: T_0 now included in wire format (authenticated by signature)
- * Note: root_key removed - key_disclosure serves as trusted anchor */
+/* Encode tesla params to buffer */
 static size_t tf5_encode_tesla_params(uint8_t *buf,
                                        const tf5_tesla_params_t *p)
 {
     size_t offset = 0;
     tf5_encode_u16_be(buf + offset, p->t_int_ms); offset += 2;
     buf[offset++] = p->d;
-    /* T_0 now transmitted in wire format */
     tf5_encode_u16_be(buf + offset, p->t0.sfn); offset += 2;
     tf5_encode_u16_be(buf + offset, p->t0.slot); offset += 2;
     tf5_encode_u32_be(buf + offset, p->chain_len); offset += 4;
     return offset;  /* Always 11 */
 }
 
-/* Decode tesla params (11 bytes) from buffer
- * Note: T_0 now included in wire format (authenticated by signature)
- * Note: root_key removed - key_disclosure serves as trusted anchor */
+/* Decode tesla params (11 bytes) from buffer */
 static size_t tf5_decode_tesla_params(const uint8_t *buf,
                                        tf5_tesla_params_t *p)
 {
     size_t offset = 0;
     p->t_int_ms = tf5_decode_u16_be(buf + offset); offset += 2;
     p->d = buf[offset++];
-    /* T_0 now decoded from wire format */
     p->t0.sfn = tf5_decode_u16_be(buf + offset); offset += 2;
     p->t0.slot = tf5_decode_u16_be(buf + offset); offset += 2;
     p->chain_len = tf5_decode_u32_be(buf + offset); offset += 4;
@@ -189,9 +178,9 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
     memcpy(out + offset, original_sib1, sib1_len);
     offset += sib1_len;
 
-    // 2. gNB key validity end (3 bytes) - key expiration (minutes since 2024-01-01)
+    // 2. gNB key validity end
     tf5_encode_gnb_key_validity_end(out + offset, gnb_key_validity_end);
-    offset += TF5_IBS_VALIDITY_LEN;
+    offset += TF5_VALIDITY_PERIOD_LEN;
 
     *out_len = offset;
     return 0;
@@ -205,7 +194,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    const tf5_tesla_params_t *tesla_params,
                                    uint32_t gnb_key_validity_end,
                                    uint32_t interval_index,
-                                   const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
+                                   const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
                                    uint32_t timestamp_ms)
 {
     if (!out || !out_len || !original_sib1 || !tesla_params || !disclosed_key) {
@@ -225,7 +214,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
     // Append te_version (1 byte)
     out[offset++] = te_version;
 
-    // Append tesla_params (11 bytes, includes T_0) - only in signature input, not MAC
+    // Append tesla_params (11 bytes)
     offset += tf5_encode_tesla_params(out + offset, tesla_params);
 
     // Append interval_index (4 bytes)
@@ -233,7 +222,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
     offset += 4;
 
     // Append key_disclosure (16 bytes)
-    memcpy(out + offset, disclosed_key, TF5_TESLA_KEY_LEN);
+    memcpy(out + offset, key_disclosure, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
     // Append timestamp_ms (3 bytes) - for signature replay protection
@@ -253,7 +242,6 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     }
 
     // Total size: 1 + 11 + 3 + 4 + 16 + 3 + 48 + 16 = 102 bytes (with BLS signatures)
-    // Note: T_0 now included in tesla_params (11 bytes)
     const size_t required_len = 102;
     if (buf_len < required_len) {
         return -2;
@@ -264,12 +252,12 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     // TESLA version (1 byte)
     buf[offset++] = ext->te_version;
 
-    // TESLA params (11 bytes) - includes T_0
+    // TESLA params (11 bytes)
     offset += tf5_encode_tesla_params(buf + offset, &ext->tesla_params);
 
     // gNB key validity end (3 bytes) - key expiration (minutes since 2024-01-01)
     tf5_encode_gnb_key_validity_end(buf + offset, ext->validity_end);
-    offset += TF5_IBS_VALIDITY_LEN;
+    offset += TF5_VALIDITY_PERIOD_LEN;
 
     // Interval index (4 bytes)
     tf5_encode_u32_be(buf + offset, ext->i);
@@ -303,7 +291,6 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     }
 
     // Total size: 1 + 11 + 3 + 4 + 16 + 3 + 48 + 16 = 102 bytes (with BLS signatures)
-    // Note: T_0 now included in tesla_params (11 bytes)
     const size_t required_len = 102;
     if (buf_len < required_len) {
         return -2;
@@ -319,7 +306,7 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
 
     // gNB key validity end (3 bytes) - key expiration (minutes since 2024-01-01)
     ext->validity_end = tf5_decode_gnb_key_validity_end(buf + offset);
-    offset += TF5_IBS_VALIDITY_LEN;
+    offset += TF5_VALIDITY_PERIOD_LEN;
 
     // Interval index (4 bytes)
     ext->i = tf5_decode_u32_be(buf + offset);
