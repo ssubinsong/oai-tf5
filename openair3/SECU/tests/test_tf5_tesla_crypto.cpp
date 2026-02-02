@@ -16,7 +16,10 @@
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
-#include "openair3/SECU/sha_256_hmac.h"
+#include "common/utils/ds/byte_array.h"
+
+// Forward declare sha_256 only (sha_256_hmac.h has VLA syntax incompatible with C++)
+void sha_256(byte_array_t data, uint8_t out[32]);
 }
 
 #include "tf5_test_vectors.h"

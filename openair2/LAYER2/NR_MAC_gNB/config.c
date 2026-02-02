@@ -1218,15 +1218,6 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
               "TESLA IBS: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n",
               gnb_key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
 
-  // Extract NR Cell ID (36 bits) from gNB configuration
-  // cellID is passed as uint64_t parameter to nr_mac_configure_sib1()
-  uint8_t gnb_cell_id[TF5_IBS_CELL_ID_LEN];
-  gnb_cell_id[0] = (cellID >> 28) & 0xFF;
-  gnb_cell_id[1] = (cellID >> 20) & 0xFF;
-  gnb_cell_id[2] = (cellID >> 12) & 0xFF;
-  gnb_cell_id[3] = (cellID >> 4) & 0xFF;
-  gnb_cell_id[4] = (cellID << 4) & 0xF0;  // 4 padding bits in lower nibble
-
   LOG_I(NR_MAC, "TESLA IBS: Loaded sk_ID from: %s\n", tesla_privkey_file);
   LOG_I(NR_MAC, "TESLA IBS: Cell ID: 0x%09llx (36 bits)\n", (unsigned long long)cellID);
 
