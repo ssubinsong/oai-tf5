@@ -689,19 +689,12 @@ uint32_t tf5_tesla_get_interval_index(const tf5_tesla_slot_time_t *current,
                                       uint16_t t_int_ms,
                                       uint16_t slots_per_frame);
 
-/*
- * =============================================================================
- * HFN (Hyper-Frame Number) Helpers
- * =============================================================================
- */
-
 /**
  * Compute absolute slot count from timing struct
  *
  * This handles the full time range without wraparound issues.
- * HFN increments each time SFN wraps from 1023 to 0.
  *
- * @param time           Timing struct (HFN/SFN/slot)
+ * @param time           Timing struct (SFN/slot)
  * @param slots_per_frame Number of slots per frame
  * @return Absolute slot count since SFN=0, slot=0
  */

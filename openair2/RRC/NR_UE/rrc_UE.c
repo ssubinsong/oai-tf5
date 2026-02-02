@@ -730,15 +730,13 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 
     LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
 
-    /* Mark auth in progress if not yet authenticated */
-    if (!state->sib1_authenticated) {
-        state->auth_in_progress = true;
-    }
+    DevAssert(!state->sib1_authenticated);
+
+    state->auth_in_progress = true;
 
     /* Step 1 (RFC 4082 3.5): Safe packet test FIRST */
-    /* CRITICAL: Must use actual RX timing, not TX timing from signed extension */
     if (!tf5_tesla_ue_safe_packet_test(state, ext, rx_frame, rx_slot)) {
-        LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - possible replay attack, skipping SIB1\n");
+        LOG_W(NR_RRC, "TESLA: Safe packet test FAILED; Skipping SIB1\n");
         return TF5_VERIFY_SKIP_UNSAFE;
     }
 

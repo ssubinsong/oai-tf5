@@ -652,10 +652,9 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
         return false;
     }
 
-    // RFC 4082 Section 3.5: Safe packet test
-    // Step 1: Record local time T (in absolute slots)
-    tf5_tesla_slot_time_t local_time = tf5_slot_time_make(rx_sfn, rx_slot);
-    uint64_t t_abs_slots = tf5_tesla_absolute_slots(&local_time, state->slots_per_frame);
+    // Step 1: Record rx time T (in absolute slots)
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(rx_sfn, rx_slot);
+    uint64_t t_abs_slots = tf5_tesla_absolute_slots(&rx_time, state->slots_per_frame);
 
     // Step 2: Compute upper bound on sender's clock: t_j = T + D_t
     // Convert D from microseconds to slots (ceiling division for upper bound)
