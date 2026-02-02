@@ -591,7 +591,8 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
                       const uint8_t mpk[TF5_IBS_PUBKEY_LEN],
                       uint16_t slots_per_frame,
-                      uint32_t d_bound_us)
+                      uint32_t d_bound_us,
+                      uint64_t timestamp_window_ms)
 {
     if (!state || !mpk) {
         return -1;
@@ -611,7 +612,9 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     // rrcsetup_transaction_id = 0
 
     // Timestamp validation for signature replay protection
-    state->timestamp_window_ms = TF5_REPLAY_DEFAULT_TIME_WINDOW_MS;
+    state->timestamp_window_ms = (timestamp_window_ms == 0)
+                                     ? TF5_REPLAY_DEFAULT_TIME_WINDOW_MS
+                                     : timestamp_window_ms;
 
     // D parameter (CLI-configured)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)

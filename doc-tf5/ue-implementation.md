@@ -17,13 +17,15 @@ nrUE_params_t *params = get_nrUE_params();
 uint8_t mpk[96];
 int rc = tf5_tesla_load_pubkey(params->tesla_core_mpk_file, mpk);
 if (rc == 0) {
-    tf5_tesla_ue_init(SI_info->tesla_state, mpk, slots_per_frame, params->tesla_d_bound_us);
+    tf5_tesla_ue_init(SI_info->tesla_state, mpk, slots_per_frame,
+                      params->tesla_d_bound_us, params->signature_timestamp_window_ms);
 }
 ```
 
 **Command-line parameters**:
 - `--tesla-core-mpk <path>` - Path to Core's Master Public Key (MPK) file (96 bytes)
 - `--tesla-d-bound <microseconds>` - D bound for safe packet test (default: 1005)
+- `--signature-timestamp-window-ms <milliseconds>` - Signature timestamp replay window (default: 60000)
 
 Generate MPK with: `./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin`
 

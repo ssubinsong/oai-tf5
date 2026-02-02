@@ -1734,9 +1734,11 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info
             uint16_t slots_per_frame = 20;
             tf5_tesla_ue_init(ptr->SInfo.tesla_state, mpk, slots_per_frame,
-                              params->tesla_d_bound_us);
-            LOG_I(NR_RRC, "TESLA IBS: Loaded Core MPK from %s (D=%u us)\n",
-                  params->tesla_core_mpk_file, params->tesla_d_bound_us);
+                              params->tesla_d_bound_us,
+                              params->signature_timestamp_window_ms);
+            LOG_I(NR_RRC, "TESLA IBS: Loaded Core MPK from %s (D=%u us, window=%u ms)\n",
+                  params->tesla_core_mpk_file, params->tesla_d_bound_us,
+                  params->signature_timestamp_window_ms);
             // Log MPK for verification (first 32 bytes)
             char hex_buf[65];
             for (int j = 0; j < 32; j++) {

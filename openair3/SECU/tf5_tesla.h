@@ -132,6 +132,7 @@ typedef enum {
  */
 typedef struct {
     tf5_tesla_params_t tesla_params;
+    uint32_t d_bound_us;              // D bound for safe packet test (microseconds)
 
     // Pre-provisioned Core Master Public Key (IBS mode)
     uint8_t  mpk[TF5_IBS_PUBKEY_LEN];  // 96B - Core's MPK = s*Q (G2 point)
@@ -145,25 +146,13 @@ typedef struct {
     tf5_tesla_buffer_entry_t buffer_queue[TF5_TESLA_BUFFER_QUEUE_SIZE];
     uint8_t buffer_queue_count;  // Number of valid entries in queue
 
-    // Slots per frame (depends on numerology)
-    uint16_t slots_per_frame;
-
-    // Initialization flag
-    bool     initialized;
-
-    // Parallel authentication state (for NAS gating)
+    uint16_t slots_per_frame; // Slots per frame (depends on numerology)
+    bool     initialized; // Initialization flag
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
-    tf5_tesla_auth_state_t auth_state;
+    tf5_tesla_auth_state_t auth_state; // Current authentication state
+    uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete (used when auth_state == RRCSETUP_DEFERRED)
+    uint64_t timestamp_window_ms;     // Timestamp window for signature replay protection (default 60000ms)
 
-    // Saved transaction ID for deferred RRCSetupComplete (used when auth_state == RRCSETUP_DEFERRED)
-    uint8_t  rrcsetup_transaction_id;
-
-    // Timestamp validation for signature replay protection
-    uint64_t timestamp_window_ms;     // Acceptable time window (default 60000ms)
-
-    // D parameter (CLI-configured, used by receiver)
-    // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
-    uint32_t d_bound_us;              // D bound for safe packet test (microseconds)
 } tf5_tesla_ue_state_t;
 
 /*

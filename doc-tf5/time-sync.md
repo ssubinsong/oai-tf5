@@ -287,7 +287,7 @@ Note: Initial time sync verification is now implicit. Once the gNB is authentica
 | Function | File | Purpose |
 |----------|------|---------|
 | `tf5_tesla_ue_safe_packet_test()` | `openair3/SECU/tf5_tesla.c` | Safe packet test (uses D) |
-| `tf5_tesla_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize UE with D parameter |
+| `tf5_tesla_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize UE with D and timestamp window |
 | `nr_rrc_process_sib1()` | `openair2/RRC/NR_UE/rrc_UE.c` | SIB1 processing with time sync |
 
 ### 10.7 Configuration
@@ -301,6 +301,17 @@ D is configured via command-line option:
 # Custom D value (e.g., for challenging RF environments)
 ./nr-uesoftmodem --tesla-core-mpk /path/to/mpk.bin \
     --tesla-d-bound 2000
+```
+
+Timestamp replay window is configured via command-line option:
+
+```bash
+# Using default window (60000ms)
+./nr-uesoftmodem --tesla-core-mpk /path/to/mpk.bin
+
+# Custom window value
+./nr-uesoftmodem --tesla-core-mpk /path/to/mpk.bin \
+    --signature-timestamp-window-ms 30000
 ```
 
 ### 10.8 Parameter Rationale
