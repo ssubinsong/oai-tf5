@@ -142,9 +142,10 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 
 | Component | File | Description |
 |-----------|------|-------------|
-| Core PKG | `tf5-core-pkg/src/tf5_ibs_keygen.c` | Master keypair generation |
-| Core PKG | `tf5-core-pkg/src/tf5_ibs_issue.c` | gNB key issuance |
-| Core PKG | `tf5-core-pkg/src/tf5_ibs_common.c` | H_s hash function |
+| Core PKG | `openair3/SECU/core-pkg/tf5_ibs_keygen.c` | Master keypair generation |
+| Core PKG | `openair3/SECU/core-pkg/tf5_ibs_issue.c` | gNB key issuance |
+| Shared | `openair3/SECU/tf5_ibs_common.c` | H_s hash function, file I/O |
+| Shared | `openair3/SECU/tf5_ibs_pkg.h` | IBS API header |
 | gNB | `openair3/SECU/tf5_tesla_sig.c` | Signing (unchanged from BLS) |
 | UE | `openair3/SECU/tf5_tesla_sig.c` | IBS verification |
 | UE | `openair2/RRC/NR_UE/rrc_UE.c` | Cell ID extraction |

@@ -109,4 +109,18 @@ target_link_libraries(test_tf5_tesla_fileio PRIVATE ${TF5_TEST_LIBS})
 target_compile_definitions(test_tf5_tesla_fileio PRIVATE ${TF5_TEST_COMPILE_DEFS})
 add_test(NAME test_tf5_tesla_fileio COMMAND test_tf5_tesla_fileio)
 
+# -----------------------------------------------------------------------------
+# IBS PKG tests (Core PKG key generation/issuance)
+# -----------------------------------------------------------------------------
+add_executable(test_tf5_ibs_pkg test_tf5_ibs_pkg.cpp)
+add_dependencies(tests test_tf5_ibs_pkg)
+add_dependencies(tf5_tests test_tf5_ibs_pkg)
+target_include_directories(test_tf5_ibs_pkg PRIVATE
+    ${OPENAIR3_DIR}/SECU
+    ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/blst/bindings
+)
+target_link_libraries(test_tf5_ibs_pkg PRIVATE SECURITY blst GTest::gtest)
+target_compile_definitions(test_tf5_ibs_pkg PRIVATE ${TF5_TEST_COMPILE_DEFS})
+add_test(NAME test_tf5_ibs_pkg COMMAND test_tf5_ibs_pkg)
+
 endif(ENABLE_TESTS)

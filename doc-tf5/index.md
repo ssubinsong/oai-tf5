@@ -27,6 +27,7 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 - [Protocol Design](protocol.md) - Key chains, time intervals, disclosure delay, dual authentication
 - [Cryptographic Primitives](cryptography.md) - Algorithms, key derivation, MAC computation
 - [Identity-Based Signatures](ibs-overview.md) - IBS scheme, Core PKG, key issuance workflow
+- [PKG Cryptography](pkg-cryptography.md) - Core PKG key generation and BLS12-381 implementation details
 
 ### Data Structures
 - [Data Structures](data-structures.md) - Static/dynamic parameters, extension format, state structures
