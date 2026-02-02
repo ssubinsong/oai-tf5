@@ -56,7 +56,6 @@ typedef struct {
 
     // Parallel authentication state
     bool     chain_bootstrapped;      // TESLA chain established via IBS (persistent)
-    bool     sib1_authenticated;      // Current SIB1 verified (sig OR tesla)
     bool     auth_failed;             // Authentication failed - must abort RRC
     bool     rrcsetup_deferred;       // RRCSetupComplete deferred waiting for auth
     uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete
@@ -171,7 +170,7 @@ typedef enum {
 4. Verify IBS signature (synchronous - fast)
    └── tf5_tesla_ibs_verify(mpk, cell_id, auth_input, signature)
    ├── SUCCESS:
-   │   └── Chain bootstrapped: chain_bootstrapped = true, sib1_authenticated = true (gNB authenticated, SSB timing trusted)
+   │   └── Chain bootstrapped: chain_bootstrapped = true, auth_state = TF5_TESLA_AUTH_SUCCESS (gNB authenticated, SSB timing trusted)
    │   └── If rrcsetup_deferred: send RRCSetupComplete now
    └── FAILED:
        └── auth_failed = true
@@ -196,12 +195,12 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
 
 4. Buffer current SIB1 for future TESLA verification
    └── tf5_tesla_ue_buffer_sib1()
-   └── sib1_authenticated = false (until verified)
+   └── auth_state = TF5_AUTH_STATE_UNAUTHENTICATED (until verified)
 
 5. Check if disclosed key available for PREVIOUSLY buffered SIB1
    └── If interval matches: tf5_tesla_ue_verify_buffered()
        ├── SUCCESS:
-       │   └── sib1_authenticated = true
+       │   └── auth_state = TF5_TESLA_AUTH_SUCCESS
        │   └── If rrcsetup_deferred: send RRCSetupComplete now
        └── FAILED:
            └── auth_failed = true
@@ -223,7 +222,7 @@ if (tesla_state->auth_failed) {
     return;
 }
 
-if (tesla_state->sib1_authenticated || tesla_state->chain_bootstrapped) {
+if (tesla_state->auth_state == TF5_TESLA_AUTH_SUCCESS) {
     // Auth succeeded - include NAS in RRCSetupComplete
     rrc_ue_generate_RRCSetupComplete();
     return;

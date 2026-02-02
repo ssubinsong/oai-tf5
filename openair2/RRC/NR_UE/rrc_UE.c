@@ -549,7 +549,7 @@ static void tf5_tesla_on_auth_failure(NR_UE_RRC_INST_t *rrc,
     const char *reason = (idx >= 1 && idx <= 7) ? result_names[idx] : "unknown";
 
     LOG_E(NR_RRC, "TESLA: Verification failed (%s) - aborting RRC\n", reason);
-    SI_info->tesla_state->auth_failed = true;
+    SI_info->tesla_state->auth_state = TF5_AUTH_STATE_AUTH_FAILED;
     nr_rrc_abort_connection(rrc, gNB_index);
 }
 
@@ -694,7 +694,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     /* Success: Bootstrap the chain */
     memcpy(&state->tesla_params, &ext->tesla_params, sizeof(tf5_tesla_params_t));
     state->chain_bootstrapped = true;
-    state->sib1_authenticated = true;
+    state->auth_state = TF5_AUTH_STATE_AUTHENTICATED;
 
     /* Accept disclosed key as trust anchor (signature authenticates it) */
     uint32_t disclosed_interval = ext->interval_index - ext->tesla_params.disclosure_delay;
@@ -727,8 +727,6 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 
     LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
 
-    DevAssert(!state->sib1_authenticated);
-
     /* Step 1 (RFC 4082 3.5): Safe packet test FIRST */
     if (!tf5_tesla_ue_safe_packet_test(state, ext, rx_frame, rx_slot)) {
         LOG_W(NR_RRC, "TESLA: Safe packet test FAILED; Skipping SIB1\n");
@@ -744,7 +742,9 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 
     /* Step 2: Buffer current SIB1 */
     tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);
-    bool should_trigger_rrc = !state->rrcsetup_deferred;
+
+    // Should trigger rrc if not rrcsetup_deferred and the buffer is empty
+    bool should_trigger_rrc = !state->rrcsetup_deferred && state->buffer_queue_count == 0
 
     tf5_tesla_ue_buffer_sib1(state,
                               mac_auth_input, mac_auth_len,
@@ -845,6 +845,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef TF5_ENABLE_TESLA
+  if (SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTHENTICATED || SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTH_FAILED) // The UE has verified SIB1 successfully before but has to re-verify for some reason. Therfore, set state to unauthenticated
+    SI_info->tesla_state->auth_state = TF5_AUTH_STATE_UNAUTHENTICATED; 
   tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
   if (tesla_rc < 0) {
     tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);
@@ -2299,11 +2301,7 @@ static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
   nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
 
   /* Clear TESLA pending state */
-  if (SI_info->tesla_state) {
-    SI_info->tesla_state->rrcsetup_deferred = false;
-    SI_info->tesla_state->sib1_authenticated = false;
-    /* Note: chain_bootstrapped and auth_failed are preserved for diagnosis */
-  }
+  SI_info->tesla_state->auth_state = TF5_AUTH_STATE_AUTH_FAILED;
 
   LOG_W(NR_RRC, "[UE %ld] TESLA: Connection aborted - UE returns to IDLE\n", rrc->ue_id);
 }
@@ -2414,26 +2412,23 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
     NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
 
     if (SI_info->tesla_state) {
-      if (SI_info->tesla_state->auth_failed) {
-        /* Authentication already failed - abort RRC (should not reach here normally) */
-        LOG_E(NR_RRC, "TESLA: Auth failed but RRCSetup received - aborting\n");
-        nr_rrc_abort_connection(rrc, gNB_index);
-        return;
-      }
 
-      if (SI_info->tesla_state->sib1_authenticated || SI_info->tesla_state->chain_bootstrapped) {
-        /* Authentication succeeded - proceed with NAS in RRCSetupComplete */
-        LOG_I(NR_RRC, "TESLA: SIB1 authenticated - including NAS in RRCSetupComplete\n");
-        rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
-        return;
+      switch (SI_info->tesla_state->auth_state) {
+        case TF5_AUTH_STATE_IN_PROGRESS:
+          /* Authentication still in progress - defer RRCSetupComplete */
+          LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete until verified\n");
+          SI_info->tesla_state->rrcsetup_deferred = true;
+          SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
+          return;
+        case TF5_AUTH_STATE_AUTHENTICATED:
+          /* Authentication succeeded - proceed with NAS in RRCSetupComplete */
+          LOG_I(NR_RRC, "TESLA: SIB1 authenticated - including NAS in RRCSetupComplete\n");
+          rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
+          return;
+        default:
+          // Should not reach here
+          DevAssert(false, "should not reach here!!\n");
       }
-
-      /* Authentication still in progress - defer RRCSetupComplete */
-      LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete until verified\n");
-      SI_info->tesla_state->rrcsetup_deferred = true;
-      SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
-      return;
-    }
   }
 #endif
 

@@ -216,6 +216,13 @@ typedef struct {
     bool     initialized;
 } tf5_tesla_gnb_state_t;
 
+typedef enum {
+    TF5_AUTH_STATE_UNAUTHENTICATED = 0,
+    TF5_AUTH_STATE_IN_PROGRESS,
+    TF5_AUTH_STATE_AUTHENTICATED,
+    TF5_AUTH_STATE_AUTH_FAILED
+} tf5_tesla_auth_state_t;
+
 /*
  * UE-side TESLA State
  *
@@ -244,10 +251,7 @@ typedef struct {
 
     // Parallel authentication state (for NAS gating)
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
-    bool     sib1_authenticated;      // SIB1 that triggered RRC setup is verified (sig OR tesla)
-    bool     auth_failed;             // Authentication failed - must abort RRC
-    bool     nas_pending;             // NAS waiting for authentication to complete
-    uint64_t auth_start_time;         // When authentication started (ms, for timeout)
+    tf5_tesla_auth_state_t auth_state;
 
     // Deferred RRCSetupComplete (when auth is pending at RRCSetup time)
     bool     rrcsetup_deferred;       // RRCSetupComplete deferred waiting for auth
