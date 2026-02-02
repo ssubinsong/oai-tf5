@@ -23,6 +23,46 @@ Used for T_0 reference, TX timing, and RX timing throughout the TESLA module.
 
 ---
 
+## Buffer Entry Structure
+
+Per RFC 4082 Section 3.5, receivers must buffer multiple packets before key disclosure.
+This struct represents one buffered SIB1:
+
+```c
+typedef struct {
+    uint8_t  auth_input[TF5_TESLA_MAX_AUTH_INPUT];  // 512B - MAC input data
+    size_t   auth_input_len;
+    uint32_t interval_index;
+    uint8_t  tag[TF5_TESLA_TAG_LEN];                // 16B - Received TESLA tag
+    tf5_tesla_slot_time_t rx_time;   // RX timing (SFN/slot when received)
+    bool     valid;                  // Entry contains valid data
+    bool     triggered_rrc_setup;    // This SIB1 triggered the current RRC session
+} tf5_tesla_buffer_entry_t;
+```
+
+**Fields**:
+- `valid`: Indicates this buffer slot contains a pending SIB1
+- `triggered_rrc_setup`: Marks the SIB1 that triggered the current RRC session (for NAS gating)
+
+---
+
+## Authentication State Enum
+
+Tracks UE-side authentication progress for NAS gating:
+
+```c
+typedef enum {
+    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // No authentication completed
+    TF5_AUTH_STATE_IN_PROGRESS,          // Authentication pending (SIB1 buffered)
+    TF5_AUTH_STATE_AUTHENTICATED,        // SIB1 successfully authenticated
+    TF5_AUTH_STATE_AUTH_FAILED           // Authentication failed - abort RRC
+} tf5_tesla_auth_state_t;
+```
+
+Used by `tf5_tesla_ue_state_t` to coordinate RRCSetupComplete deferral.
+
+---
+
 ## TESLA Parameters (12 bytes wire format)
 
 Parameters constant for the lifetime of a key chain.
@@ -142,42 +182,45 @@ typedef struct {
 typedef struct {
     tf5_tesla_params_t tesla_params;
 
-    // Pre-provisioned core MPK
-    uint8_t  mpk[96];  // BLS public key (G2)
-    bool     has_mpk;
+    // Pre-provisioned Core Master Public Key (IBS mode)
+    uint8_t  mpk[TF5_TESLA_PUBKEY_LEN];  // 96B - Core's MPK = s*Q (G2 point)
+    bool     has_mpk;                     // Is Core MPK configured?
 
     // Verification state (trust anchor for key chain verification)
-    // Note: chain_bootstrapped indicates trust anchor is valid
-    uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
-    uint8_t  trust_anchor_key[16];    // Key used as anchor for chain verification
+    uint32_t trust_anchor_idx;                        // Interval index of the trust anchor key
+    uint8_t  trust_anchor_key[TF5_TESLA_KEY_LEN];     // Key used as anchor for chain verification
 
-    // Buffered SIB1 pending verification
-    struct {
-        uint8_t  auth_input[512];
-        size_t   auth_input_len;
-        uint32_t interval_index;
-        uint8_t  tag[16];
-        tf5_tesla_slot_time_t rx_time;  // RX timing (SFN/slot)
-        bool     pending;
-    } buffer;
+    // Buffer queue for pending TESLA verification (RFC 4082 multi-packet)
+    tf5_tesla_buffer_entry_t buffer_queue[TF5_TESLA_BUFFER_QUEUE_SIZE];  // Array of 4
+    uint8_t buffer_queue_count;  // Number of valid entries in queue
 
+    // Slots per frame (depends on numerology)
     uint16_t slots_per_frame;
+
+    // Initialization flag
     bool     initialized;
 
-    // Parallel authentication state
-    bool     chain_bootstrapped;      // TESLA chain established via IBS signature
+    // Parallel authentication state (for NAS gating)
+    bool     chain_bootstrapped;       // TESLA chain established via IBS signature (persistent)
+    tf5_tesla_auth_state_t auth_state; // Current authentication state
 
-    // Deferred RRCSetupComplete
-    bool     rrcsetup_deferred;
-    uint8_t  rrcsetup_transaction_id;
+    // Deferred RRCSetupComplete (when auth is pending at RRCSetup time)
+    bool     rrcsetup_deferred;        // RRCSetupComplete deferred waiting for auth
+    uint8_t  rrcsetup_transaction_id;  // Saved transaction ID for deferred RRCSetupComplete
 
-    // Timestamp validation
-    uint64_t timestamp_window_ms;
+    // Timestamp validation for signature replay protection
+    uint64_t timestamp_window_ms;      // Acceptable time window (default 60000ms)
 
-    // D parameter (CLI-configured)
-    uint32_t d_bound_us;  // D bound for safe packet test (microseconds)
+    // D parameter (CLI-configured, used by receiver)
+    // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
+    uint32_t d_bound_us;               // D bound for safe packet test (microseconds)
 } tf5_tesla_ue_state_t;
 ```
+
+**Key changes from single-buffer to queue-based design:**
+- `buffer_queue[4]`: Supports RFC 4082 multi-packet buffering (up to 4 pending SIB1s)
+- `buffer_queue_count`: Tracks number of valid entries
+- `auth_state`: Enum for tracking authentication progress (replaces implicit state)
 
 ---
 

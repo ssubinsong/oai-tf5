@@ -6,7 +6,7 @@
 
 ## Initialization
 
-**Location**: [rrc_UE.c:1651-1694](../openair2/RRC/NR_UE/rrc_UE.c#L1651-L1694)
+**Location**: [rrc_UE.c:1691-1737](../openair2/RRC/NR_UE/rrc_UE.c#L1691-L1737)
 
 ```c
 // Allocate TESLA state
@@ -17,13 +17,15 @@ nrUE_params_t *params = get_nrUE_params();
 uint8_t mpk[96];
 int rc = tf5_tesla_load_pubkey(params->tesla_core_mpk_file, mpk);
 if (rc == 0) {
-    tf5_tesla_ue_init(SI_info->tesla_state, mpk, slots_per_frame);
+    tf5_tesla_ue_init(SI_info->tesla_state, mpk, slots_per_frame, params->tesla_d_bound_us);
 }
 ```
 
-**Command-line parameter**: `--tesla-core-mpk <path>`
-- Path to Core's Master Public Key (MPK) file (96 bytes)
-- Generate with: `./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin`
+**Command-line parameters**:
+- `--tesla-core-mpk <path>` - Path to Core's Master Public Key (MPK) file (96 bytes)
+- `--tesla-d-bound <microseconds>` - D bound for safe packet test (default: 1005)
+
+Generate MPK with: `./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin`
 
 **Note**: In IBS mode, UEs need only the **Core's Master Public Key (MPK)**, not individual gNB public keys. The same MPK file can verify signatures from any gNB whose key was issued by the Core PKG.
 
@@ -41,25 +43,37 @@ If authentication fails, the RRC connection is aborted before any NAS message is
 
 ### UE Types
 
-| UE Type | Has K_0? | Authentication Method | Timing |
-|---------|----------|----------------------|--------|
+| UE Type | Has Trust Anchor? | Authentication Method | Timing |
+|---------|-------------------|----------------------|--------|
 | First-time | No | IBS signature | Immediate (fast) |
 | Returning | Yes | TESLA MAC | Delayed (waits for key disclosure) |
 
 ### State Fields for Parallel Authentication
 
-**Location**: [tf5_tesla.h:140-187](../openair3/SECU/tf5_tesla.h#L140-L187)
+**Location**: [tf5_tesla.h:231-266](../openair3/SECU/tf5_tesla.h#L231-L266)
 
 ```c
 typedef struct {
     // ... existing fields ...
 
-    // Parallel authentication state
-    bool     chain_bootstrapped;      // TESLA chain established via IBS (persistent)
-    bool     auth_failed;             // Authentication failed - must abort RRC
-    bool     rrcsetup_deferred;       // RRCSetupComplete deferred waiting for auth
-    uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete
+    // Parallel authentication state (for NAS gating)
+    bool     chain_bootstrapped;       // TESLA chain established via IBS (persistent)
+    tf5_tesla_auth_state_t auth_state; // Current authentication state
+
+    // Deferred RRCSetupComplete
+    bool     rrcsetup_deferred;        // RRCSetupComplete deferred waiting for auth
+    uint8_t  rrcsetup_transaction_id;  // Saved transaction ID
 } tf5_tesla_ue_state_t;
+```
+
+**Authentication state enum** (see [data-structures.md](data-structures.md)):
+```c
+typedef enum {
+    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // No authentication completed
+    TF5_AUTH_STATE_IN_PROGRESS,          // Authentication pending
+    TF5_AUTH_STATE_AUTHENTICATED,        // SIB1 successfully authenticated
+    TF5_AUTH_STATE_AUTH_FAILED           // Authentication failed - abort RRC
+} tf5_tesla_auth_state_t;
 ```
 
 ---
@@ -83,18 +97,18 @@ flowchart TB
         IBS --> RESULT
         TESLA --> RESULT
         RESULT{"Result"}
-        RESULT -->|SUCCESS| SUCCESS["sib1_auth=true<br/>chain_bootstrapped=true"]
-        RESULT -->|FAILED| FAILED["auth_failed=true"]
+        RESULT -->|SUCCESS| SUCCESS["auth_state=AUTHENTICATED<br/>chain_bootstrapped=true"]
+        RESULT -->|FAILED| FAILED["auth_state=AUTH_FAILED"]
     end
 
     subgraph right["RACH/RRC Setup (Parallel)"]
         RACH["Proceed to Random Access"]
         RACH --> MSGS["MSG1 → MSG2 → MSG3 → MSG4"]
         MSGS --> RRCSETUP["RRCSetup received<br/>SRB1 established"]
-        RRCSETUP --> GATE{"Auth done?"}
-        GATE -->|"YES + SUCCESS"| NAS["Send NAS in<br/>RRCSetupComplete"]
-        GATE -->|"YES + FAILED"| ABORT["ABORT RRC"]
-        GATE -->|"NO (pending)"| DEFER["Defer RRCSetupComplete<br/>wait for auth"]
+        RRCSETUP --> GATE{"auth_state?"}
+        GATE -->|"AUTHENTICATED"| NAS["Send NAS in<br/>RRCSetupComplete"]
+        GATE -->|"AUTH_FAILED"| ABORT["ABORT RRC"]
+        GATE -->|"IN_PROGRESS"| DEFER["Defer RRCSetupComplete<br/>wait for auth"]
     end
 
     SUCCESS -.->|"trigger"| GATE
@@ -114,25 +128,28 @@ The main `nr_rrc_process_sib1()` function delegates TESLA verification to a clea
 
 ```c
 #ifdef TF5_ENABLE_TESLA
-  tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, gNB_index, rx_frame, rx_slot);
+  tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
   if (tesla_rc < 0) {
-    tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);
+    tf5_tesla_on_auth_failure(rrc, SI_info, tesla_rc);
     return;
   }
 #endif
 ```
 
+**Note**: `gNB_index` parameter was removed from `tf5_tesla_verify_sib1()`.
+
 ### Helper Functions
 
-| Function | Purpose |
-|----------|---------|
-| `tf5_tesla_verify_sib1()` | Main entry point with early returns |
-| `tf5_tesla_unpack_and_validate()` | Unpack extension + key expiry check |
-| `tf5_tesla_encode_sib1_for_auth()` | Re-encode SIB1 without extension |
-| `tf5_tesla_verify_firsttime()` | IBS signature path (first-time UE) |
-| `tf5_tesla_verify_returning()` | TESLA MAC path (returning UE, RFC 4082) |
-| `tf5_tesla_on_auth_success()` | Send deferred RRCSetupComplete |
-| `tf5_tesla_on_auth_failure()` | Mark failed + abort RRC |
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `tf5_tesla_verify_sib1()` | rrc_UE.c:796 | Main entry point with early returns |
+| `tf5_tesla_unpack_and_validate()` | rrc_UE.c | Unpack extension + key expiry check |
+| `tf5_tesla_encode_sib1_for_auth()` | rrc_UE.c:573 | Re-encode SIB1 without extension |
+| `tf5_tesla_verify_firsttime()` | rrc_UE.c | IBS signature path (first-time UE) |
+| `tf5_tesla_verify_returning()` | rrc_UE.c | TESLA MAC path (returning UE, RFC 4082) |
+| `tf5_tesla_on_auth_success()` | rrc_UE.c | Send deferred RRCSetupComplete |
+| `tf5_tesla_on_auth_failure()` | rrc_UE.c | Mark failed + abort RRC |
+| `tf5_extract_cell_id_from_sib1()` | rrc_UE.c:499 | Extract Cell ID from SIB1 |
 
 ### Result Codes
 
@@ -168,12 +185,13 @@ typedef enum {
    └── tf5_extract_cell_id_from_sib1(sib1, cell_id)
 
 4. Verify IBS signature (synchronous - fast)
-   └── tf5_tesla_ibs_verify(mpk, cell_id, auth_input, signature)
+   └── tf5_tesla_ue_verify_signature(state, cell_id, gnb_key_validity_end, auth_input, auth_len, signature)
    ├── SUCCESS:
-   │   └── Chain bootstrapped: chain_bootstrapped = true, auth_state = TF5_TESLA_AUTH_SUCCESS (gNB authenticated, SSB timing trusted)
+   │   └── Chain bootstrapped: chain_bootstrapped = true
+   │   └── auth_state = TF5_AUTH_STATE_AUTHENTICATED
    │   └── If rrcsetup_deferred: send RRCSetupComplete now
    └── FAILED:
-       └── auth_failed = true
+       └── auth_state = TF5_AUTH_STATE_AUTH_FAILED
        └── nr_rrc_abort_connection() → return
 ```
 
@@ -194,16 +212,16 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
        (tesla_params authenticated via BLS signature during first-time verification)
 
 4. Buffer current SIB1 for future TESLA verification
-   └── tf5_tesla_ue_buffer_sib1()
-   └── auth_state = TF5_AUTH_STATE_UNAUTHENTICATED (until verified)
+   └── tf5_tesla_ue_buffer_sib1(..., triggered_rrc_setup)
+   └── auth_state = TF5_AUTH_STATE_IN_PROGRESS
 
 5. Check if disclosed key available for PREVIOUSLY buffered SIB1
-   └── If interval matches: tf5_tesla_ue_verify_buffered()
+   └── If interval matches: tf5_tesla_ue_verify_with_key_recovery()
        ├── SUCCESS:
-       │   └── auth_state = TF5_TESLA_AUTH_SUCCESS
+       │   └── auth_state = TF5_AUTH_STATE_AUTHENTICATED
        │   └── If rrcsetup_deferred: send RRCSetupComplete now
        └── FAILED:
-           └── auth_failed = true
+           └── auth_state = TF5_AUTH_STATE_AUTH_FAILED
            └── nr_rrc_abort_connection() → return
 ```
 
@@ -211,39 +229,42 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
 
 ## NAS Gating in RRCSetup Processing
 
-**Location**: [rrc_UE.c:2128](../openair2/RRC/NR_UE/rrc_UE.c#L2128) `nr_rrc_process_rrcsetup()`
+**Location**: [rrc_UE.c:2360](../openair2/RRC/NR_UE/rrc_UE.c#L2360) `nr_rrc_process_rrcsetup()`
 
-The RRC connection setup (bearers, cell group config) proceeds normally, but NAS message transmission is gated on authentication:
+The RRC connection setup (bearers, cell group config) proceeds normally, but NAS message transmission is gated on authentication state:
 
 ```c
-if (tesla_state->auth_failed) {
-    // Should not reach here normally - abort
-    nr_rrc_abort_connection();
-    return;
+#ifdef TF5_ENABLE_TESLA
+if (SI_info->tesla_state) {
+    switch (SI_info->tesla_state->auth_state) {
+      case TF5_AUTH_STATE_IN_PROGRESS:
+        LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete\n");
+        SI_info->tesla_state->rrcsetup_deferred = true;
+        SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
+        return;  // Wait for auth to complete
+      case TF5_AUTH_STATE_AUTHENTICATED:
+        LOG_I(NR_RRC, "TESLA: SIB1 authenticated - proceeding with RRCSetupComplete\n");
+        rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
+        return;
+      default:
+        DevAssert(false, "Unexpected auth state in RRCSetup processing");
+    }
 }
-
-if (tesla_state->auth_state == TF5_TESLA_AUTH_SUCCESS) {
-    // Auth succeeded - include NAS in RRCSetupComplete
-    rrc_ue_generate_RRCSetupComplete();
-    return;
-}
-
-// Auth in progress - defer RRCSetupComplete
-tesla_state->rrcsetup_deferred = true;
-tesla_state->rrcsetup_transaction_id = Transaction_id;
-// RRCSetupComplete will be sent when auth completes
+#endif
 ```
+
+**State reset before verification**: Before calling `tf5_tesla_verify_sib1()`, the auth_state is reset to `TF5_AUTH_STATE_UNAUTHENTICATED` if it was previously `AUTHENTICATED` or `AUTH_FAILED` (see [rrc_UE.c:848-849](../openair2/RRC/NR_UE/rrc_UE.c#L848-L849)).
 
 ---
 
 ## RRC Connection Abort
 
-**Location**: [rrc_UE.c:2037](../openair2/RRC/NR_UE/rrc_UE.c#L2037) `nr_rrc_abort_connection()`
+**Location**: [rrc_UE.c:2274](../openair2/RRC/NR_UE/rrc_UE.c#L2274) `nr_rrc_abort_connection()`
 
 Called when TESLA authentication fails (signature or MAC verification):
 
 ```c
-static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
+static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc)
 {
     // Stop timers (SIB1, T300, T301, T319)
     // Reset RRC state to IDLE
@@ -259,7 +280,7 @@ static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
 
 ## Safe Packet Test
 
-**Source**: [tf5_tesla.c:571](../openair3/SECU/tf5_tesla.c#L571) `tf5_tesla_ue_safe_packet_test()`
+**Source**: [tf5_tesla.c:641](../openair3/SECU/tf5_tesla.c#L641) `tf5_tesla_ue_safe_packet_test()`
 
 The safe packet test determines if a message could have been forged by an attacker who saw a key disclosure:
 
@@ -284,7 +305,7 @@ bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
 
 ## Key Chain Verification (O(1) Optimization)
 
-**Source**: [tf5_tesla.c:722](../openair3/SECU/tf5_tesla.c#L722) `tf5_tesla_ue_verify_key_chain()`
+**Source**: [tf5_tesla.c:884](../openair3/SECU/tf5_tesla.c#L884) `tf5_tesla_ue_verify_key_chain()`
 
 Key chain verification is called automatically by `tf5_tesla_ue_verify_buffered()` before MAC verification.
 This ensures disclosed keys are cryptographically validated against a trusted anchor key.
@@ -408,6 +429,24 @@ int tf5_tesla_ue_verify_with_key_recovery(state, disclosed_key, disclosed_interv
 - **Space**: O(buffer_size) for key cache (stack allocated, bounded by `TF5_TESLA_BUFFER_QUEUE_SIZE`)
 
 In practice with `d=1` and `buffer_size=4`, this is at most 5-6 key derivations per verification.
+
+---
+
+## Buffer Entry: triggered_rrc_setup Field
+
+Each buffer entry includes a `triggered_rrc_setup` field to track which SIB1 initiated the current RRC session:
+
+```c
+typedef struct {
+    // ... other fields ...
+    bool triggered_rrc_setup;    // This SIB1 triggered the current RRC session
+} tf5_tesla_buffer_entry_t;
+```
+
+This enables:
+- Tracking whether the RRC-initiating SIB1 was successfully authenticated
+- Proper handling of deferred RRCSetupComplete when verification completes
+- `rrc_trigger_verified` output from `tf5_tesla_ue_verify_with_key_recovery()`
 
 ---
 
