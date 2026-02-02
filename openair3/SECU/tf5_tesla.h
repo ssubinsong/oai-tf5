@@ -245,7 +245,6 @@ typedef struct {
     // Parallel authentication state (for NAS gating)
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
     bool     sib1_authenticated;      // SIB1 that triggered RRC setup is verified (sig OR tesla)
-    bool     auth_in_progress;        // Authentication running in parallel with RACH
     bool     auth_failed;             // Authentication failed - must abort RRC
     bool     nas_pending;             // NAS waiting for authentication to complete
     uint64_t auth_start_time;         // When authentication started (ms, for timeout)

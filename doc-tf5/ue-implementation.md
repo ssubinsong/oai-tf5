@@ -57,7 +57,6 @@ typedef struct {
     // Parallel authentication state
     bool     chain_bootstrapped;      // TESLA chain established via IBS (persistent)
     bool     sib1_authenticated;      // Current SIB1 verified (sig OR tesla)
-    bool     auth_in_progress;        // Authentication running in parallel
     bool     auth_failed;             // Authentication failed - must abort RRC
     bool     rrcsetup_deferred;       // RRCSetupComplete deferred waiting for auth
     uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete
@@ -207,7 +206,6 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
        └── FAILED:
            └── auth_failed = true
            └── nr_rrc_abort_connection() → return
-   └── If no key yet: auth_in_progress = true (keep waiting)
 ```
 
 ---

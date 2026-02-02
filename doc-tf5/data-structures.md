@@ -167,7 +167,6 @@ typedef struct {
     // Parallel authentication state
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature
     bool     sib1_authenticated;
-    bool     auth_in_progress;
     bool     auth_failed;
     bool     nas_pending;
     uint64_t auth_start_time;

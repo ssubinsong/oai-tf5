@@ -680,14 +680,11 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     tf5_extract_cell_id_from_sib1(sib1, cell_id);
 
     /* Perform IBS signature verification */
-    AssertFatal(!state->auth_in_progress, "TESLA: Concurrent authentication detected");
-    state->auth_in_progress = true;
     int sig_rc = tf5_tesla_ibs_verify(state->mpk,
                                        cell_id,
                                        ext->gnb_key_validity_end,
                                        sig_auth_input, sig_auth_len,
                                        ext->gnb_signature);
-    state->auth_in_progress = false;
 
     if (sig_rc != 0) {
         LOG_E(NR_RRC, "TESLA: Signature verification FAILED (rc=%d)\n", sig_rc);
@@ -732,8 +729,6 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 
     DevAssert(!state->sib1_authenticated);
 
-    state->auth_in_progress = true;
-
     /* Step 1 (RFC 4082 3.5): Safe packet test FIRST */
     if (!tf5_tesla_ue_safe_packet_test(state, ext, rx_frame, rx_slot)) {
         LOG_W(NR_RRC, "TESLA: Safe packet test FAILED; Skipping SIB1\n");
@@ -749,9 +744,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 
     /* Step 2: Buffer current SIB1 */
     tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);
-    bool should_trigger_rrc = !state->rrcsetup_deferred &&
-                              !state->sib1_authenticated &&
-                              !state->auth_in_progress;
+    bool should_trigger_rrc = !state->rrcsetup_deferred;
 
     tf5_tesla_ue_buffer_sib1(state,
                               mac_auth_input, mac_auth_len,
@@ -782,8 +775,6 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
               verified_count);
 
         if (rrc_trigger_verified) {
-            state->sib1_authenticated = true;
-            state->auth_in_progress = false;
             tf5_tesla_on_auth_success(rrc, SI_info);
         }
         return TF5_VERIFY_OK;
@@ -2310,7 +2301,6 @@ static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
   /* Clear TESLA pending state */
   if (SI_info->tesla_state) {
     SI_info->tesla_state->rrcsetup_deferred = false;
-    SI_info->tesla_state->auth_in_progress = false;
     SI_info->tesla_state->sib1_authenticated = false;
     /* Note: chain_bootstrapped and auth_failed are preserved for diagnosis */
   }

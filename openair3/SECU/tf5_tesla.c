@@ -596,7 +596,6 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     // Parallel authentication state (initialized by memset to 0/false)
     // chain_bootstrapped = false (first-time UE, needs IBS signature verification)
     // sib1_authenticated = false
-    // auth_in_progress = false
     // auth_failed = false
     // nas_pending = false
     // auth_start_time = 0
