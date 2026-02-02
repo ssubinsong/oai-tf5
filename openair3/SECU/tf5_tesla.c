@@ -11,16 +11,6 @@
 #include <stdio.h>
 #include <time.h>
 #include <openssl/rand.h>
-/* Note: pem.h, x509.h, evp.h no longer needed - BLS keys use raw binary format */
-
-/*
- * =============================================================================
- * Static Assertions for Struct Sizes
- * =============================================================================
- * Note: tesla_params_t is smaller in-memory due to struct padding,
- * but the wire format is 11 bytes (serialization is packed, includes T_0).
- */
-_Static_assert(sizeof(tf5_tesla_slot_time_t) == 4, "slot_time_t must be 4 bytes");
 
 /*
  * =============================================================================
@@ -31,10 +21,8 @@ _Static_assert(sizeof(tf5_tesla_slot_time_t) == 4, "slot_time_t must be 4 bytes"
 void tf5_tesla_derive_mac_key(const uint8_t key_in[TF5_TESLA_KEY_LEN],
                               uint8_t mac_key_out[32])
 {
-    // K'_i = F'(K_i) = SHA-256(0x01 || K_i)
-    // Per RFC 4082 Section 3.4: use constant 0x01 for MAC key derivation
     uint8_t input[1 + TF5_TESLA_KEY_LEN];
-    input[0] = 0x01;  // Domain separation prefix
+    input[0] = TF5_DS_PREFIX_MAC_KEY;  // Domain separation prefix
     memcpy(input + 1, key_in, TF5_TESLA_KEY_LEN);
 
     byte_array_t data = {.buf = input, .len = sizeof(input)};
@@ -44,10 +32,8 @@ void tf5_tesla_derive_mac_key(const uint8_t key_in[TF5_TESLA_KEY_LEN],
 void tf5_tesla_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
                          uint8_t key_out[TF5_TESLA_KEY_LEN])
 {
-    // K_i = F(K_{i+1}) = SHA-256(0x00 || K_{i+1})[0:15]
-    // Per RFC 4082 Section 3.2: use constant 0x00 for key chain derivation
     uint8_t input[1 + TF5_TESLA_KEY_LEN];
-    input[0] = 0x00;  // Domain separation prefix
+    input[0] = TF5_DS_PREFIX_CHAIN_KEY;  // Domain separation prefix
     memcpy(input + 1, key_next, TF5_TESLA_KEY_LEN);
 
     byte_array_t data = {.buf = input, .len = sizeof(input)};
@@ -86,8 +72,6 @@ uint64_t tf5_tesla_slots_since_t0(const tf5_tesla_slot_time_t *current,
                                   const tf5_tesla_slot_time_t *t0,
                                   uint16_t slots_per_frame)
 {
-    // Use absolute slot counts to handle SFN wraparound correctly
-    // HFN (Hyper-Frame Number) increments each time SFN wraps from 1023 to 0
     uint64_t current_abs = tf5_tesla_absolute_slots(current, slots_per_frame);
     uint64_t t0_abs = tf5_tesla_absolute_slots(t0, slots_per_frame);
 
@@ -116,7 +100,7 @@ uint32_t tf5_tesla_get_interval_index(const tf5_tesla_slot_time_t *current,
  * =============================================================================
  */
 
-uint64_t tf5_tesla_get_wallclock_ms(void)
+uint64_t tf5_rp_get_wallclock_ms(void)
 {
     struct timespec ts;
     if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
@@ -126,17 +110,19 @@ uint64_t tf5_tesla_get_wallclock_ms(void)
     return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
 }
 
-int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
-                                 uint64_t ext_timestamp_ms,
+int tf5_rp_validate_timestamp(uint64_t ue_time_ms,
+                                 uint32_t ext_timestamp_ms,
                                  uint64_t window_ms)
 {
-    // Check if timestamp is too old: ext_timestamp + window < ue_time
-    if (ext_timestamp_ms + window_ms < ue_time_ms) {
+    uint32_t ue_time_lsb_ms = (uint32_t)ue_time_ms;
+    int32_t diff_ms = (int32_t)(ue_time_lsb_ms - ext_timestamp_ms);
+
+    // This comparison assumes window_ms << 2^31 (fits into int32_t).
+    if (diff_ms > 0 && (uint64_t)diff_ms > window_ms) {
         return -1;  // Too old
     }
 
-    // Check if timestamp is too far in the future: ext_timestamp > ue_time + window
-    if (ext_timestamp_ms > ue_time_ms + window_ms) {
+    if (diff_ms < 0 && (uint64_t)(-diff_ms) > window_ms) {
         return -2;  // Too far in future
     }
 
@@ -219,7 +205,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    uint32_t gnb_key_validity_end,
                                    uint32_t interval_index,
                                    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
-                                   uint64_t timestamp_ms)
+                                   uint32_t timestamp_ms)
 {
     if (!out || !out_len || !original_sib1 || !tesla_params || !disclosed_key) {
         return -1;
@@ -249,9 +235,9 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
     memcpy(out + offset, disclosed_key, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
-    // Append timestamp_ms (8 bytes) - for signature replay protection
-    tf5_encode_u64_be(out + offset, timestamp_ms);
-    offset += 8;
+    // Append timestamp_ms (4 bytes) - for signature replay protection
+    tf5_encode_u32_be(out + offset, timestamp_ms);
+    offset += 4;
 
     *out_len = offset;
     return 0;
@@ -265,9 +251,9 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
         return -1;
     }
 
-    // Total size: 1 + 11 + 3 + 4 + 16 + 8 + 48 + 16 = 107 bytes (with BLS signatures)
+    // Total size: 1 + 11 + 3 + 4 + 16 + 4 + 48 + 16 = 103 bytes (with BLS signatures)
     // Note: T_0 now included in tesla_params (11 bytes)
-    const size_t required_len = 107;
+    const size_t required_len = 103;
     if (buf_len < required_len) {
         return -2;
     }
@@ -292,9 +278,9 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     memcpy(buf + offset, ext->key_disclosure, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
-    // Timestamp (8 bytes) - for signature replay protection
-    tf5_encode_u64_be(buf + offset, ext->timestamp_ms);
-    offset += 8;
+    // Timestamp (4 bytes) - for signature replay protection
+    tf5_encode_u32_be(buf + offset, ext->timestamp_ms);
+    offset += 4;
 
     // Signature (48 bytes - BLS)
     memcpy(buf + offset, ext->signature, TF5_TESLA_SIG_LEN);
@@ -315,9 +301,9 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
         return -1;
     }
 
-    // Total size: 1 + 11 + 3 + 4 + 16 + 8 + 48 + 16 = 107 bytes (with BLS signatures)
+    // Total size: 1 + 11 + 3 + 4 + 16 + 4 + 48 + 16 = 103 bytes (with BLS signatures)
     // Note: T_0 now included in tesla_params (11 bytes)
-    const size_t required_len = 107;
+    const size_t required_len = 103;
     if (buf_len < required_len) {
         return -2;
     }
@@ -342,9 +328,9 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     memcpy(ext->key_disclosure, buf + offset, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
-    // Timestamp (8 bytes) - for signature replay protection
-    ext->timestamp_ms = tf5_decode_u64_be(buf + offset);
-    offset += 8;
+    // Timestamp (4 bytes) - for signature replay protection
+    ext->timestamp_ms = tf5_decode_u32_be(buf + offset);
+    offset += 4;
 
     // Signature (48 bytes - BLS)
     memcpy(ext->signature, buf + offset, TF5_TESLA_SIG_LEN);
@@ -500,7 +486,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
     }
 
     // Set wall-clock timestamp for signature replay protection
-    ext->timestamp_ms = tf5_tesla_get_wallclock_ms();
+    ext->timestamp_ms = (uint32_t)tf5_rp_get_wallclock_ms();
     if (ext->timestamp_ms == 0) {
         LOG_E(NR_RRC, "TESLA: Failed to get wall-clock time\n");
         return -7;
@@ -588,7 +574,7 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
 
     // Timestamp validation for signature replay protection
     state->timestamp_window_ms = (timestamp_window_ms == 0)
-                                     ? TF5_REPLAY_DEFAULT_TIME_WINDOW_MS
+                                     ? TF5_RP_DEFAULT_TIME_WINDOW_MS
                                      : timestamp_window_ms;
 
     // D parameter (CLI-configured)

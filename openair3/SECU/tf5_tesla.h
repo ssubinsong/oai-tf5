@@ -27,6 +27,11 @@
 // Protocol version
 #define TF5_VERSION           0x01
 
+// Domain separation prefixes for hash operations
+#define TF5_DS_PREFIX_CHAIN_KEY  0x00
+#define TF5_DS_PREFIX_MAC_KEY    0x01
+#define TF5_DS_PREFIX_COMMITMENT  0x02
+
 /*
  * IBS (Identity-Based Signature) Constants
  */
@@ -39,7 +44,7 @@
 #define TF5_IBS_SK_FILE_SIZE   (TF5_BLS_SECRET_KEY_LEN + TF5_IBS_VALIDITY_LEN)  // 35 bytes
 
 // Signature replay protection
-#define TF5_REPLAY_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
+#define TF5_RP_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
 
 /**
  * Generic PHY Timing (SFN/slot)
@@ -90,7 +95,7 @@ typedef struct {
     uint32_t                   i;                // 4B - Current interval i
     uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                   validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
-    uint64_t                   timestamp_ms;                  // 8B - Unix epoch timestamp (ms) for replay protection
+    uint32_t                   timestamp_ms;                  // 4B - Unix epoch timestamp LSB (ms) for replay protection
     uint8_t                    signature[TF5_TESLA_SIG_LEN]; // 48B - BLS signature
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_tesla_extension_t;
@@ -239,7 +244,7 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
  * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @param interval_index Current interval index
  * @param disclosed_key Disclosed key K_{i-d}
- * @param timestamp_ms  Wall-clock timestamp (ms since Unix epoch) for replay protection
+ * @param timestamp_ms  Wall-clock timestamp LSB (ms since Unix epoch) for replay protection
  * @return 0 on success, negative on error
  */
 int tf5_tesla_build_sig_auth_input(uint8_t *out,
@@ -251,7 +256,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    uint32_t gnb_key_validity_end,
                                    uint32_t interval_index,
                                    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
-                                   uint64_t timestamp_ms);
+                                   uint32_t timestamp_ms);
 
 /**
  * Update dynamic parameters and compute signature/tag
@@ -298,12 +303,14 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
  * @param mpk           Pre-provisioned Core Master Public Key (96 bytes)
  * @param slots_per_frame Number of slots per frame
  * @param d_bound_us    D bound for safe packet test (microseconds)
+ * @param timestamp_window_ms Timestamp window for signature replay protection (ms)
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
                       const uint8_t mpk[TF5_IBS_PUBKEY_LEN],
                       uint16_t slots_per_frame,
-                      uint32_t d_bound_us);
+                      uint32_t d_bound_us,
+                      uint64_t timestamp_window_ms);
 
 /**
  * Free TESLA state resources on UE
@@ -733,7 +740,7 @@ static inline uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validit
  *
  * @return Current time in milliseconds, or 0 on error
  */
-uint64_t tf5_tesla_get_wallclock_ms(void);
+uint64_t tf5_rp_get_wallclock_ms(void);
 
 /**
  * Validate wall-clock timestamp against local time
@@ -742,12 +749,12 @@ uint64_t tf5_tesla_get_wallclock_ms(void);
  * This prevents signature replay attacks using old captured SIB1 messages.
  *
  * @param ue_time_ms      UE's current wall-clock time (ms since epoch)
- * @param ext_timestamp_ms Timestamp from received extension
+ * @param ext_timestamp_ms Timestamp LSB from received extension
  * @param window_ms       Acceptable time window in milliseconds
  * @return 0 if valid, -1 if too old, -2 if too far in future
  */
-int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
-                                 uint64_t ext_timestamp_ms,
+int tf5_rp_validate_timestamp(uint64_t ue_time_ms,
+                                 uint32_t ext_timestamp_ms,
                                  uint64_t window_ms);
 
 #endif /* ENABLE_TF5 */
