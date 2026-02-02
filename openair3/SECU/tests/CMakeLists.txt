@@ -119,7 +119,7 @@ target_include_directories(test_tf5_ibs_pkg PRIVATE
     ${OPENAIR3_DIR}/SECU
     ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/blst/bindings
 )
-target_link_libraries(test_tf5_ibs_pkg PRIVATE SECURITY blst GTest::gtest)
+target_link_libraries(test_tf5_ibs_pkg PRIVATE tf5_ibs_pkg SECURITY blst GTest::gtest)
 target_compile_definitions(test_tf5_ibs_pkg PRIVATE ${TF5_TEST_COMPILE_DEFS})
 add_test(NAME test_tf5_ibs_pkg COMMAND test_tf5_ibs_pkg)
 

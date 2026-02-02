@@ -1,10 +1,21 @@
 # TF5 IBS PKG (Private Key Generator) Utilities
-# Only builds executables - shared code is in parent SECURITY library
+# Shared code is in parent SECURITY library
 if(ENABLE_TF5)
 
 message(STATUS "Building TF5 IBS PKG utilities")
 
 set(BLST_DIR ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/blst)
+
+# PKG library (for testing) - includes keygen and issue functions
+add_library(tf5_ibs_pkg STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/tf5_ibs_keygen.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tf5_ibs_issue.c
+)
+target_include_directories(tf5_ibs_pkg PUBLIC
+    ${OPENAIR3_DIR}/SECU
+    ${BLST_DIR}/bindings)
+target_compile_definitions(tf5_ibs_pkg PRIVATE TF5_IBS_NO_MAIN)
+target_link_libraries(tf5_ibs_pkg PRIVATE SECURITY blst)
 
 # Master keypair generation utility
 add_executable(tf5_ibs_pkg_keygen ${CMAKE_CURRENT_SOURCE_DIR}/tf5_ibs_keygen.c)
