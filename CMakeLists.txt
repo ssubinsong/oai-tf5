@@ -538,9 +538,9 @@ add_boolean_option(RRC_DEFAULT_RAB_IS_AM       ON   "set the LTE RLC mode to AM 
 ##########################
 # TESLA-FOR-5G OPTIONS
 ##########################
-add_boolean_option(TF5_ENABLE_TESLA            OFF  "Enable TESLA broadcast authentication for SIB1 (fake base station protection)" ON)
-if(TF5_ENABLE_TESLA)
-  add_definitions(-DTF5_ENABLE_TESLA)
+add_boolean_option(ENABLE_TF5            OFF  "Enable TESLA broadcast authentication for SIB1 (fake base station protection)" ON)
+if(ENABLE_TF5)
+  add_definitions(-DENABLE_TF5)
 endif()
 
 # add the binary tree to the search path for include files
@@ -648,7 +648,7 @@ set(SECURITY_SRC
   )
 
 # TESLA broadcast authentication sources
-if(TF5_ENABLE_TESLA)
+if(ENABLE_TF5)
   list(APPEND SECURITY_SRC
     ${OPENAIR3_DIR}/SECU/tf5_tesla.c
     ${OPENAIR3_DIR}/SECU/tf5_tesla_sig.c
@@ -673,7 +673,7 @@ target_include_directories(SECURITY PRIVATE ${OPENAIR_DIR}/common/utils/ds/)
 target_link_libraries(SECURITY PRIVATE ${OpenSSL_LIBRARIES})
 
 # Add blst library includes and link when TESLA is enabled
-if(TF5_ENABLE_TESLA)
+if(ENABLE_TF5)
   target_include_directories(SECURITY PRIVATE ${BLST_DIR}/bindings)
   target_link_libraries(SECURITY PRIVATE blst)
 

@@ -1,7 +1,7 @@
 #ifndef TF5_TESLA_H
 #define TF5_TESLA_H
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -147,7 +147,7 @@ typedef struct {
     uint8_t buffer_queue_count;  // Number of valid entries in queue
 
     uint16_t slots_per_frame; // Slots per frame (depends on numerology)
-    bool     initialized; // Initialization flag
+    bool initialized; // Initialization flag
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
     tf5_tesla_auth_state_t auth_state; // Current authentication state
     uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete (used when auth_state == RRCSETUP_DEFERRED)
@@ -750,6 +750,6 @@ int tf5_tesla_validate_timestamp(uint64_t ue_time_ms,
                                  uint64_t ext_timestamp_ms,
                                  uint64_t window_ms);
 
-#endif /* TF5_ENABLE_TESLA */
+#endif /* ENABLE_TF5 */
 
 #endif /* TF5_TESLA_H */

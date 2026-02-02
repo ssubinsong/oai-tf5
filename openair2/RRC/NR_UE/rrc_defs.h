@@ -65,7 +65,7 @@
 #include "common/utils/nr/nr_common.h"
 #include "notified_fifo.h"
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 #include "openair3/SECU/tf5_tesla.h"
 #endif
 
@@ -162,7 +162,7 @@ typedef struct UE_RRC_SI_INFO_NR_s {
   int sib19_periodicity;
   int sib19_windowposition;
   int si_windowlength;
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
   tf5_tesla_ue_state_t *tesla_state;
 #endif
 } NR_UE_RRC_SI_INFO;

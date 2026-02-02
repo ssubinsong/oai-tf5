@@ -47,7 +47,7 @@
 #include "common/utils/ds/byte_array.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_configuration.h"
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 #include "openair3/SECU/tf5_tesla.h"
 #endif
 
@@ -331,7 +331,7 @@ typedef struct {
   /// Max prach length in slots
   int prach_len;
   nr_prach_info_t prach_info;
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
   /// TESLA broadcast authentication state
   tf5_gnb_state_t *tesla_state;
   /// Original SIB1 (without TESLA extension) for MAC computation

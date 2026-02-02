@@ -8,7 +8,7 @@
 
 **Location**: [config.c:1120-1282](../openair2/LAYER2/NR_MAC_gNB/config.c#L1120-L1282)
 
-The initialization is performed in `nr_mac_configure_sib1()` within the `#ifdef TF5_ENABLE_TESLA` block:
+The initialization is performed in `nr_mac_configure_sib1()` within the `#ifdef ENABLE_TF5` block:
 
 ```
 1. Allocate TESLA state
@@ -125,7 +125,7 @@ Called from scheduler before each SIB1 transmission:
 **Location**: [gNB_scheduler_bch.c:601-606](../openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_bch.c#L601-L606)
 
 ```c
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
       // Update TESLA extension with current frame/slot before transmission
       if (cc->tesla_state && cc->tesla_state->initialized) {
         nr_mac_update_sib1_tesla(gNB_mac, cc, frameP, slotP);
@@ -150,7 +150,7 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
 Fields added to `NR_COMMON_channels_t`:
 
 ```c
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
   /// TESLA broadcast authentication state
   tf5_tesla_gnb_state_t *tesla_state;
   /// Original SIB1 (without TESLA extension) for MAC computation

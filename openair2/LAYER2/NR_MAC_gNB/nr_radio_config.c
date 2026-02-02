@@ -47,7 +47,7 @@
 #include "uper_encoder.h"
 #include "utils.h"
 #include "xer_encoder.h"
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 #include "openair3/SECU/tf5_tesla.h"
 #include "common/ran_context.h"
 #include "openair2/RRC/NR/nr_rrc_defs.h"
@@ -4366,7 +4366,7 @@ int encode_measgap_config(const measgap_config_t *c, uint8_t *buf)
   return (int)((enc_rval_mgc.encoded + 7) >> 3);
 }
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 /**
  * Update SIB1 with TESLA authentication extension
  *
@@ -4450,4 +4450,4 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
   LOG_D(NR_MAC, "TESLA: Updated SIB1 for frame %d slot %d (interval %u, len=%d)\n",
         frame, slot, ext.i, cc->sib1_bcch_length);
 }
-#endif /* TF5_ENABLE_TESLA */
+#endif /* ENABLE_TF5 */

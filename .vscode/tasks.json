@@ -10,7 +10,7 @@
                 "--ninja",
                 "--gNB",
                 "-w", "SIMU",
-                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+                "--cmake-opt", "-DENABLE_TF5=ON"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/cmake_targets"
@@ -48,7 +48,7 @@
                 "--ninja",
                 "--nrUE",
                 "-w", "SIMU",
-                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+                "--cmake-opt", "-DENABLE_TF5=ON"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/cmake_targets"
@@ -82,7 +82,7 @@
                 "--gNB",
                 "--nrUE",
                 "-w", "SIMU",
-                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+                "--cmake-opt", "-DENABLE_TF5=ON"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/cmake_targets"
@@ -110,7 +110,7 @@
                 "--gNB",
                 "-w", "SIMU",
                 "-g", "Debug",
-                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+                "--cmake-opt", "-DENABLE_TF5=ON"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/cmake_targets"
@@ -138,7 +138,7 @@
                 "--nrUE",
                 "-w", "SIMU",
                 "-g", "Debug",
-                "--cmake-opt", "-DTF5_ENABLE_TESLA=ON"
+                "--cmake-opt", "-DENABLE_TF5=ON"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/cmake_targets"

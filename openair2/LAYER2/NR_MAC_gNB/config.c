@@ -48,7 +48,7 @@
 #include "T.h"
 #include "asn_internal.h"
 #include "assertions.h"
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 #include "openair3/SECU/tf5_tesla.h"
 #include "openair3/SECU/tf5_tesla_sig.h"
 #endif
@@ -1109,7 +1109,7 @@ void prepare_du_configuration_update(gNB_MAC_INST *mac,
   mac->mac_rrc.gnb_du_configuration_update(&update);
 }
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 /**
  * Calculate the first SIB1 transmission occasion (T_0 for TESLA)
  *
@@ -1160,7 +1160,7 @@ static void tf5_get_first_sib1_occasion(gNB_MAC_INST *nrmac, uint16_t *out_sfn, 
   *out_sfn = type0_PDCCH_CSS_config.sfn_c;  // 0 or 1 (first even or odd frame)
   *out_slot = type0_PDCCH_CSS_config.n_0;
 }
-#endif // TF5_ENABLE_TESLA
+#endif // ENABLE_TF5
 
 void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t cellID, int tac)
 {
@@ -1171,7 +1171,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   NR_BCCH_DL_SCH_Message_t *sib1 = get_SIB1_NR(scc, plmn, cellID, tac, &nrmac->radio_config);
   cc->sib1 = sib1;
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
   // Initialize TESLA state
   cc->tesla_state = calloc(1, sizeof(tf5_gnb_state_t));
   AssertFatal(cc->tesla_state != NULL, "Failed to allocate TESLA state\n");

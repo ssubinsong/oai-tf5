@@ -29,7 +29,7 @@
 In `NR_COMMON_channels_t`:
 
 ```c
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
   tf5_tesla_gnb_state_t *tesla_state;
   uint8_t sib1_original[TF5_TESLA_MAX_SIB1_LEN];
   size_t sib1_original_length;
@@ -45,7 +45,7 @@ In `NR_COMMON_channels_t`:
 In `NR_UE_RRC_SI_INFO`:
 
 ```c
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
   tf5_tesla_ue_state_t *tesla_state;
 #endif
 ```

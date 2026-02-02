@@ -29,7 +29,7 @@
 #ifndef TF5_TESLA_SIG_H
 #define TF5_TESLA_SIG_H
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 
 #include <stdint.h>
 #include <stddef.h>
@@ -160,6 +160,6 @@ int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
                                   uint32_t gnb_key_validity_end,
                                   uint8_t scalar_out[TF5_BLS_SECRET_KEY_LEN]);
 
-#endif /* TF5_ENABLE_TESLA */
+#endif /* ENABLE_TF5 */
 
 #endif /* TF5_TESLA_SIG_H */

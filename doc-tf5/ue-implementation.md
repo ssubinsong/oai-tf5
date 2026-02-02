@@ -130,7 +130,7 @@ flowchart TB
 The main `nr_rrc_process_sib1()` function delegates TESLA verification to a clean dispatcher:
 
 ```c
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
   tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
   if (tesla_rc < 0) {
     tf5_tesla_on_auth_failure(rrc, SI_info, tesla_rc);
@@ -237,7 +237,7 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
 The RRC connection setup (bearers, cell group config) proceeds normally, but NAS message transmission is gated on authentication state:
 
 ```c
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 if (SI_info->tesla_state) {
     switch (SI_info->tesla_state->auth_state) {
       case TF5_AUTH_STATE_UNAUTHENTICATED:

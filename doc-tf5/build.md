@@ -9,12 +9,12 @@
 In `CMakeLists.txt`:
 
 ```cmake
-option(TF5_ENABLE_TESLA
+option(ENABLE_TF5
        "Enable TESLA broadcast authentication for SIB1 (fake base station protection)"
        OFF)
 
-if(TF5_ENABLE_TESLA)
-  add_definitions(-DTF5_ENABLE_TESLA)
+if(ENABLE_TF5)
+  add_definitions(-DENABLE_TF5)
 endif()
 ```
 
@@ -25,7 +25,7 @@ endif()
 **Build gNB and UE with TESLA enabled**:
 ```bash
 cd cmake_targets
-./build_oai --ninja --gNB --nrUE -w SIMU --cmake-opt -DTF5_ENABLE_TESLA=ON
+./build_oai --ninja --gNB --nrUE -w SIMU --cmake-opt -DENABLE_TF5=ON
 ```
 
 ---

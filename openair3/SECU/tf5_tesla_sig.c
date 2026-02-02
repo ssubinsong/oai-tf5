@@ -26,7 +26,7 @@
  * Minimal-signature-size variant: Signatures in G1 (48 bytes), Public keys in G2 (96 bytes).
  */
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 
 #include "tf5_tesla_sig.h"
 #include "common/utils/LOG/log.h"
@@ -370,4 +370,4 @@ int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBKEY_LEN],
     return 0;
 }
 
-#endif /* TF5_ENABLE_TESLA */
+#endif /* ENABLE_TF5 */

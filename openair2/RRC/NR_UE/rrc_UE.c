@@ -59,7 +59,7 @@
 #include "nr_pdcp/nr_pdcp_oai_api.h"
 #include "openair3/SECU/secu_defs.h"
 #include "openair3/SECU/key_nas_deriver.h"
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 #include "openair3/SECU/tf5_tesla.h"
 #endif
 
@@ -486,7 +486,7 @@ static void get_sib19_schedinfo(NR_UE_RRC_SI_INFO *SI_info, NR_SI_SchedulingInfo
   }
 }
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 /* Forward declarations for TESLA parallel authentication */
 static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const uint8_t Transaction_id);
 static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index);
@@ -858,7 +858,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
     xer_fprint(stdout, &asn_DEF_NR_SIB1, (const void *) sib1);
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
   if (SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTHENTICATED || SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTH_FAILED) { // The UE has verified SIB1 successfully before but has to re-verify for some reason. Therfore, set state to unauthenticated
     SI_info->tesla_state->auth_state = TF5_AUTH_STATE_UNAUTHENTICATED;
     // Preserve chain_bootstrapped/trust anchor across re-verification.
@@ -1708,7 +1708,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
     ptr->l3_measurements.ssb_filter_coeff_rsrp = 1.0f;
     ptr->l3_measurements.csi_RS_filter_coeff_rsrp = 1.0f;
     init_SI_timers(&ptr->SInfo);
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
     ptr->SInfo.tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
     if (ptr->SInfo.tesla_state) {
       nrUE_params_t *params = get_nrUE_params();
@@ -2285,7 +2285,7 @@ static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const 
   nr_pdcp_data_req_srb(rrc->ue_id, srb_id, 0, size, buffer, deliver_pdu_srb_rlc, NULL);
 }
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 /**
  * Abort RRC connection due to TESLA authentication failure
  *
@@ -2418,7 +2418,7 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
   // resetting the RA trigger state after receiving MSG4 with RRCSetup
   rrc->ra_trigger = RA_NOT_RUNNING;
 
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
   /* NAS Gating: Check TESLA authentication status before sending NAS (SUCI protection)
    * Security: NAS Registration Request must NOT be sent until SIB1 is authenticated */
   {

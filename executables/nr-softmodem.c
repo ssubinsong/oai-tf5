@@ -103,7 +103,7 @@ unsigned int mmapped_dma=0;
 uint64_t downlink_frequency[MAX_NUM_CCs][4];
 int32_t uplink_frequency_offset[MAX_NUM_CCs][4];
 char *uecap_file;
-#ifdef TF5_ENABLE_TESLA
+#ifdef ENABLE_TF5
 char *tesla_privkey_file = NULL;
 char *tesla_pubkey_file = NULL;
 unsigned int tesla_chain_len;
