@@ -44,3 +44,17 @@ add_dependencies(tests test_tf5_tesla_e2e)
 target_link_libraries(test_tf5_tesla_e2e PRIVATE SECURITY GTest::gtest blst)
 target_compile_definitions(test_tf5_tesla_e2e PRIVATE ${TF5_TEST_COMPILE_DEFS})
 add_test(NAME test_tf5_tesla_e2e COMMAND ./test_tf5_tesla_e2e)
+
+# Timing and replay protection tests
+add_executable(test_tf5_tesla_timing test_tf5_tesla_timing.cpp)
+add_dependencies(tests test_tf5_tesla_timing)
+target_link_libraries(test_tf5_tesla_timing PRIVATE SECURITY GTest::gtest blst)
+target_compile_definitions(test_tf5_tesla_timing PRIVATE ${TF5_TEST_COMPILE_DEFS})
+add_test(NAME test_tf5_tesla_timing COMMAND ./test_tf5_tesla_timing)
+
+# File I/O tests
+add_executable(test_tf5_tesla_fileio test_tf5_tesla_fileio.cpp)
+add_dependencies(tests test_tf5_tesla_fileio)
+target_link_libraries(test_tf5_tesla_fileio PRIVATE SECURITY GTest::gtest blst)
+target_compile_definitions(test_tf5_tesla_fileio PRIVATE ${TF5_TEST_COMPILE_DEFS})
+add_test(NAME test_tf5_tesla_fileio COMMAND ./test_tf5_tesla_fileio)

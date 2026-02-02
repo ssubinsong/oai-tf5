@@ -25,7 +25,7 @@ endif()
 **Build gNB and UE with TESLA enabled**:
 ```bash
 cd cmake_targets
-./build_oai --ninja --gNB --nrUE -w SIMU --cmake-opt -DENABLE_TF5=ON
+./build_oai --ninja --gNB --nrUE --cmake-opt -DENABLE_TF5=ON
 ```
 
 ---
@@ -192,8 +192,7 @@ TF5 includes comprehensive unit tests using Google Test (GTest) framework.
 
 ```bash
 cd cmake_targets
-./build_oai -c -C --ninja --gNB -w USRP --build-lib all \
-    --cmake-opt "-DENABLE_TESTS=ON -DENABLE_TF5=ON"
+./build_oai --ninja --gNB --nrUE --cmake-opt "-DENABLE_TESTS=ON -DENABLE_TF5=ON"
 ```
 
 **Required CMake options:**
@@ -243,12 +242,14 @@ ctest -N
 
 | Test Suite | File | Coverage |
 |------------|------|----------|
-| `test_tf5_tesla_crypto` | `test_tf5_tesla_crypto.cpp` | Key chain (`tf5_tesla_chain_key`), MAC key derivation (`tf5_tesla_derive_mac_key`), tag computation (`tf5_tesla_compute_tag`) |
+| `test_tf5_tesla_crypto` | `test_tf5_tesla_crypto.cpp` | SHA-256 (`sha_256`), key chain (`tf5_tesla_chain_key`), MAC key derivation (`tf5_tesla_derive_mac_key`), tag computation (`tf5_tesla_compute_tag`), auth input builders (`tf5_tesla_build_mac_auth_input`, `tf5_tesla_build_sig_auth_input`) |
 | `test_tf5_tesla_gnb` | `test_tf5_tesla_gnb.cpp` | gNB init, interval calculation, extension preparation, resource cleanup |
-| `test_tf5_tesla_ue` | `test_tf5_tesla_ue.cpp` | UE init, safe packet test, SIB1 buffering, key chain verification, buffered verification, key recovery |
+| `test_tf5_tesla_ue` | `test_tf5_tesla_ue.cpp` | UE init, safe packet test, SIB1 buffering, key chain verification, buffered verification, key recovery, IBS signature verification (`tf5_tesla_ue_verify_signature`), legacy buffered verification (`tf5_tesla_ue_verify_buffered`) |
 | `test_tf5_tesla_serial` | `test_tf5_tesla_serial.cpp` | Extension pack/unpack (102-byte format), big-endian encoding helpers |
 | `test_tf5_tesla_bls` | `test_tf5_tesla_bls.cpp` | BLS keygen, sign, verify; IBS hash-to-scalar, IBS verification |
 | `test_tf5_tesla_e2e` | `test_tf5_tesla_e2e.cpp` | Full gNB→UE flow, tamper detection, key recovery scenarios |
+| `test_tf5_tesla_timing` | `test_tf5_tesla_timing.cpp` | Timing utilities (`tf5_tesla_slots_since_t0`, `tf5_tesla_get_interval_index`), replay protection (`tf5_rp_get_wallclock_ms`, `tf5_rp_validate_timestamp`) |
+| `test_tf5_tesla_fileio` | `test_tf5_tesla_fileio.cpp` | Key file I/O (`tf5_tesla_load_privkey`, `tf5_tesla_load_pubkey`) |
 
 ### Test Files Location
 
@@ -263,5 +264,7 @@ openair3/SECU/tests/
 ├── test_tf5_tesla_ue.cpp       # UE function tests
 ├── test_tf5_tesla_serial.cpp   # Serialization tests
 ├── test_tf5_tesla_bls.cpp      # BLS signature tests
-└── test_tf5_tesla_e2e.cpp      # Integration tests
+├── test_tf5_tesla_e2e.cpp      # Integration tests
+├── test_tf5_tesla_timing.cpp   # Timing and replay protection tests
+└── test_tf5_tesla_fileio.cpp   # Key file I/O tests
 ```

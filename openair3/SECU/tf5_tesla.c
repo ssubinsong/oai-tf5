@@ -197,7 +197,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
                                    uint32_t timestamp_ms)
 {
-    if (!out || !out_len || !original_sib1 || !tesla_params || !disclosed_key) {
+    if (!out || !out_len || !original_sib1 || !tesla_params || !key_disclosure) {
         return -1;
     }
 

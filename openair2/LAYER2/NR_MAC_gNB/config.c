@@ -1212,7 +1212,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
 
   // Check if key has expired
   uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(gnb_key_validity_end);
-  uint64_t current_unix = tf5_tesla_get_wallclock_ms() / 1000;
+  uint64_t current_unix = tf5_rp_get_wallclock_ms() / 1000;
   AssertFatal(current_unix < expiry_unix,
               "TESLA IBS: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n"
               "TESLA IBS: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n",

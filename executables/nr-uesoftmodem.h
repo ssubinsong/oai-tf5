@@ -54,7 +54,7 @@ extern uint16_t ue_id_g;
 #define CMDLINE_TESLA_PARAMS_UE \
   {"tesla-core-mpk",               CONFIG_HLP_TESLA_CORE_MPK,   0,              .strptr=&nrUE_params.tesla_core_mpk_file,         .defstrval=NULL,  TYPE_STRING, 0}, \
   {"tesla-d-bound",                CONFIG_HLP_TESLA_D_BOUND,    0,              .uptr=&nrUE_params.tesla_d_bound_us,              .defuintval=TF5_TESLA_DEFAULT_D_BOUND_US, TYPE_UINT,   0}, \
-  {"signature-timestamp-window-ms", CONFIG_HLP_TESLA_TS_WINDOW, 0,              .uptr=&nrUE_params.signature_timestamp_window_ms, .defuintval=TF5_REPLAY_DEFAULT_TIME_WINDOW_MS, TYPE_UINT, 0},
+  {"signature-timestamp-window-ms", CONFIG_HLP_TESLA_TS_WINDOW, 0,              .uptr=&nrUE_params.signature_timestamp_window_ms, .defuintval=TF5_RP_DEFAULT_TIME_WINDOW_MS, TYPE_UINT, 0},
 #else
 #define CMDLINE_TESLA_PARAMS_UE
 #endif

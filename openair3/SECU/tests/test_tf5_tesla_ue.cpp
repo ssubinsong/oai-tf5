@@ -9,6 +9,8 @@
  * - tf5_tesla_ue_verify_key_chain(): Key chain integrity verification
  * - tf5_tesla_ue_verify_all_buffered(): Buffered entry verification
  * - tf5_tesla_ue_verify_with_key_recovery(): Key recovery for lost disclosures
+ * - tf5_tesla_ue_verify_signature(): IBS signature verification
+ * - tf5_tesla_ue_verify_buffered(): Legacy single-entry verification
  */
 
 #include <gtest/gtest.h>
@@ -588,6 +590,321 @@ TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
 
     EXPECT_EQ(0, ret) << "Key recovery should succeed";
     EXPECT_EQ(1, total_verified) << "One entry should be verified via key recovery";
+}
+
+// ============================================================================
+// IBS Signature Verification Tests (tf5_tesla_ue_verify_signature)
+// ============================================================================
+
+class TF5UeSignatureTest : public TF5UeTest {
+protected:
+    // Valid IBS keypair for signature tests
+    uint8_t ibs_sk[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t ibs_mpk[TF5_IBS_PUBKEY_LEN];
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
+    uint32_t validity_end;
+
+    void SetUp() override {
+        TF5UeTest::SetUp();
+
+        // Use test vector keys
+        memcpy(ibs_sk, tf5_test::TV_BLS_SECRET_KEY, TF5_BLS_SECRET_KEY_LEN);
+
+        // Derive the MPK (for IBS, MPK = s*Q where s is master secret)
+        int rc = tf5_tesla_bls_derive_public(ibs_sk, ibs_mpk);
+        ASSERT_EQ(0, rc) << "Failed to derive MPK in test setup";
+
+        // Set up test cell ID and validity
+        memset(cell_id, 0, TF5_IBS_CELL_ID_LEN);
+        cell_id[0] = 0x12;
+        cell_id[1] = 0x34;
+        cell_id[2] = 0x56;
+        cell_id[3] = 0x78;
+        cell_id[4] = 0x9A;  // 36-bit cell ID
+
+        validity_end = 1051200;  // 2 years
+    }
+
+    // Helper to initialize UE with the test MPK
+    int initUeWithTestMpk() {
+        return tf5_tesla_ue_init(&ue_state, ibs_mpk, tf5_test::TV_SLOTS_PER_FRAME,
+                                  TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+    }
+
+    // Helper to create a valid IBS signature
+    void createValidSignature(const uint8_t* auth_input, size_t auth_input_len,
+                              uint8_t signature_out[TF5_TESLA_SIG_LEN]) {
+        // For IBS: sk_ID = H_s(cell_id || validity) * msk
+        // We need to use the IBS signing function
+        int rc = tf5_tesla_bls_sign(ibs_sk, auth_input, auth_input_len, signature_out);
+        ASSERT_EQ(0, rc) << "Failed to create signature";
+    }
+};
+
+TEST_F(TF5UeSignatureTest, VerifySignature_ValidIBS_ReturnsZero) {
+    ASSERT_EQ(0, initUeWithTestMpk());
+
+    const char auth_input[] = "test authentication input for IBS signature";
+    uint8_t signature[TF5_TESLA_SIG_LEN];
+
+    // Create a valid signature
+    createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
+
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, cell_id, validity_end,
+                                             (const uint8_t*)auth_input, strlen(auth_input),
+                                             signature);
+
+    EXPECT_EQ(0, ret) << "Valid IBS signature should verify successfully";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_TamperedData_Fails) {
+    ASSERT_EQ(0, initUeWithTestMpk());
+
+    const char auth_input[] = "original authentication input";
+    uint8_t signature[TF5_TESLA_SIG_LEN];
+
+    // Create signature over original data
+    createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
+
+    // Verify with tampered data
+    const char tampered_input[] = "tampered authentication input";
+
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, cell_id, validity_end,
+                                             (const uint8_t*)tampered_input, strlen(tampered_input),
+                                             signature);
+
+    EXPECT_NE(0, ret) << "Tampered data should fail verification";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_TamperedSignature_Fails) {
+    ASSERT_EQ(0, initUeWithTestMpk());
+
+    const char auth_input[] = "test authentication input";
+    uint8_t signature[TF5_TESLA_SIG_LEN];
+
+    // Create a valid signature
+    createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
+
+    // Tamper with the signature
+    signature[0] ^= 0xFF;
+    signature[10] ^= 0xFF;
+
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, cell_id, validity_end,
+                                             (const uint8_t*)auth_input, strlen(auth_input),
+                                             signature);
+
+    EXPECT_NE(0, ret) << "Tampered signature should fail verification";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_WrongCellId_Fails) {
+    ASSERT_EQ(0, initUeWithTestMpk());
+
+    const char auth_input[] = "test authentication input";
+    uint8_t signature[TF5_TESLA_SIG_LEN];
+
+    // Create a valid signature
+    createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
+
+    // Use wrong cell ID
+    uint8_t wrong_cell_id[TF5_IBS_CELL_ID_LEN] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
+
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, wrong_cell_id, validity_end,
+                                             (const uint8_t*)auth_input, strlen(auth_input),
+                                             signature);
+
+    EXPECT_NE(0, ret) << "Wrong cell ID should fail verification";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_WrongValidity_Fails) {
+    ASSERT_EQ(0, initUeWithTestMpk());
+
+    const char auth_input[] = "test authentication input";
+    uint8_t signature[TF5_TESLA_SIG_LEN];
+
+    // Create a valid signature
+    createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
+
+    // Use wrong validity
+    uint32_t wrong_validity = 999999;
+
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, cell_id, wrong_validity,
+                                             (const uint8_t*)auth_input, strlen(auth_input),
+                                             signature);
+
+    EXPECT_NE(0, ret) << "Wrong validity should fail verification";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_WrongMpk_Fails) {
+    // Initialize UE with wrong MPK
+    uint8_t wrong_mpk[TF5_IBS_PUBKEY_LEN];
+    memset(wrong_mpk, 0x99, TF5_IBS_PUBKEY_LEN);
+
+    int init_ret = tf5_tesla_ue_init(&ue_state, wrong_mpk, tf5_test::TV_SLOTS_PER_FRAME,
+                                      TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+    ASSERT_EQ(0, init_ret);
+
+    const char auth_input[] = "test authentication input";
+    uint8_t signature[TF5_TESLA_SIG_LEN];
+
+    // Create signature with correct key
+    createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
+
+    // Verify with wrong MPK - should fail
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, cell_id, validity_end,
+                                             (const uint8_t*)auth_input, strlen(auth_input),
+                                             signature);
+
+    EXPECT_NE(0, ret) << "Wrong MPK should fail verification";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_NullState_ReturnsError) {
+    const char auth_input[] = "test";
+    uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
+
+    int ret = tf5_tesla_ue_verify_signature(nullptr, cell_id, validity_end,
+                                             (const uint8_t*)auth_input, strlen(auth_input),
+                                             signature);
+
+    EXPECT_LT(ret, 0) << "Null state should return error";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_NullCellId_ReturnsError) {
+    ASSERT_EQ(0, initUeWithTestMpk());
+
+    const char auth_input[] = "test";
+    uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
+
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, nullptr, validity_end,
+                                             (const uint8_t*)auth_input, strlen(auth_input),
+                                             signature);
+
+    EXPECT_LT(ret, 0) << "Null cell_id should return error";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_NullAuthInput_ReturnsError) {
+    ASSERT_EQ(0, initUeWithTestMpk());
+
+    uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
+
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, cell_id, validity_end,
+                                             nullptr, 10, signature);
+
+    EXPECT_LT(ret, 0) << "Null auth_input should return error";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_NullSignature_ReturnsError) {
+    ASSERT_EQ(0, initUeWithTestMpk());
+
+    const char auth_input[] = "test";
+
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, cell_id, validity_end,
+                                             (const uint8_t*)auth_input, strlen(auth_input),
+                                             nullptr);
+
+    EXPECT_LT(ret, 0) << "Null signature should return error";
+}
+
+TEST_F(TF5UeSignatureTest, VerifySignature_UninitializedState_ReturnsError) {
+    // Don't initialize state
+    const char auth_input[] = "test";
+    uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
+
+    int ret = tf5_tesla_ue_verify_signature(&ue_state, cell_id, validity_end,
+                                             (const uint8_t*)auth_input, strlen(auth_input),
+                                             signature);
+
+    EXPECT_LT(ret, 0) << "Uninitialized state should return error";
+}
+
+// ============================================================================
+// Legacy Single-Entry Verification Tests (tf5_tesla_ue_verify_buffered)
+// ============================================================================
+
+TEST_F(TF5UeTest, VerifyBuffered_Success) {
+    ASSERT_EQ(0, initUeDefault());
+    ASSERT_EQ(0, initGnbDefault(100));
+
+    // Generate a valid extension
+    tf5_tesla_extension_t ext;
+    const char sib1[] = "Test SIB1 for verify_buffered";
+    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+
+    // Set up UE
+    ue_state.tesla_params = ext.tesla_params;
+    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+
+    // Build MAC auth input and buffer
+    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
+    size_t mac_auth_input_len;
+    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
+                                   (const uint8_t*)sib1, strlen(sib1),
+                                   gnb_state.key_validity_end);
+
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len,
+                             ext.i, ext.tesla_tag, &rx_time, false);
+
+    // Use legacy verify_buffered function
+    int ret = tf5_tesla_ue_verify_buffered(&ue_state, gnb_state.key_chain[ext.i], ext.i);
+
+    EXPECT_EQ(0, ret) << "Legacy verify_buffered should succeed with valid entry";
+}
+
+TEST_F(TF5UeTest, VerifyBuffered_InvalidTag_Fails) {
+    ASSERT_EQ(0, initUeDefault());
+    ASSERT_EQ(0, initGnbDefault(100));
+
+    // Set up UE with trust anchor
+    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+    ue_state.tesla_params.t_int_ms = tf5_test::TV_EXT_T_INT_MS;
+    ue_state.tesla_params.d = tf5_test::TV_EXT_D;
+
+    // Buffer entry with invalid tag
+    const char auth_input[] = "test auth input";
+    uint8_t fake_tag[TF5_TESLA_TAG_LEN] = {0xDE, 0xAD, 0xBE, 0xEF};
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input),
+                             5, fake_tag, &rx_time, false);
+
+    int ret = tf5_tesla_ue_verify_buffered(&ue_state, gnb_state.key_chain[5], 5);
+
+    EXPECT_LT(ret, 0) << "Legacy verify_buffered should fail with invalid tag";
+}
+
+TEST_F(TF5UeTest, VerifyBuffered_NoMatchingEntry_Fails) {
+    ASSERT_EQ(0, initUeDefault());
+    ASSERT_EQ(0, initGnbDefault(100));
+
+    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+
+    // Buffer entry for interval 5
+    const char auth_input[] = "test";
+    uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input),
+                             5, tag, &rx_time, false);
+
+    // Try to verify interval 10 (no entry exists)
+    int ret = tf5_tesla_ue_verify_buffered(&ue_state, gnb_state.key_chain[10], 10);
+
+    EXPECT_LT(ret, 0) << "Should return error when no matching entry exists";
+}
+
+TEST_F(TF5UeTest, VerifyBuffered_NullState_ReturnsError) {
+    uint8_t key[TF5_TESLA_KEY_LEN] = {0};
+
+    int ret = tf5_tesla_ue_verify_buffered(nullptr, key, 5);
+
+    EXPECT_LT(ret, 0) << "Null state should return error";
+}
+
+TEST_F(TF5UeTest, VerifyBuffered_NullKey_ReturnsError) {
+    ASSERT_EQ(0, initUeDefault());
+
+    int ret = tf5_tesla_ue_verify_buffered(&ue_state, nullptr, 5);
+
+    EXPECT_LT(ret, 0) << "Null disclosed_key should return error";
 }
 
 // ============================================================================
