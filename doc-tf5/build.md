@@ -181,3 +181,87 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 | blst | BLS12-381 IBS signatures (pk-in-G2 mode) |
 
 The blst library (Supranational) is included as a submodule at `cmake_targets/third_party/blst/`.
+
+---
+
+## Unit Testing
+
+TF5 includes comprehensive unit tests using Google Test (GTest) framework.
+
+### Build with Tests Enabled
+
+```bash
+cd cmake_targets
+./build_oai -c -C --ninja --gNB -w USRP --build-lib all \
+    --cmake-opt "-DENABLE_TESTS=ON -DENABLE_TF5=ON"
+```
+
+**Required CMake options:**
+| Option | Description |
+|--------|-------------|
+| `ENABLE_TESTS=ON` | Enables test target and CTest |
+| `ENABLE_TF5=ON` | Enables TESLA authentication code |
+
+### Run All TF5 Tests
+
+```bash
+cd cmake_targets/ran_build/build
+
+# Build and run all tests
+ninja tests
+ctest -V
+```
+
+### Run Specific Test Suites
+
+```bash
+cd cmake_targets/ran_build/build
+
+# Run individual test executables
+./test_tf5_tesla_crypto    # Cryptographic primitives
+./test_tf5_tesla_gnb       # gNB functions
+./test_tf5_tesla_ue        # UE functions
+./test_tf5_tesla_serial    # Serialization (pack/unpack)
+./test_tf5_tesla_bls       # BLS signatures
+./test_tf5_tesla_e2e       # End-to-end integration
+```
+
+### Run Tests with CTest Filters
+
+```bash
+# Run only TF5 tests
+ctest -R tf5
+
+# Run with verbose output
+ctest -R tf5 -V
+
+# List available tests
+ctest -N
+```
+
+### Test Coverage
+
+| Test Suite | File | Coverage |
+|------------|------|----------|
+| `test_tf5_tesla_crypto` | `test_tf5_tesla_crypto.cpp` | Key chain (`tf5_tesla_chain_key`), MAC key derivation (`tf5_tesla_derive_mac_key`), tag computation (`tf5_tesla_compute_tag`) |
+| `test_tf5_tesla_gnb` | `test_tf5_tesla_gnb.cpp` | gNB init, interval calculation, extension preparation, resource cleanup |
+| `test_tf5_tesla_ue` | `test_tf5_tesla_ue.cpp` | UE init, safe packet test, SIB1 buffering, key chain verification, buffered verification, key recovery |
+| `test_tf5_tesla_serial` | `test_tf5_tesla_serial.cpp` | Extension pack/unpack (102-byte format), big-endian encoding helpers |
+| `test_tf5_tesla_bls` | `test_tf5_tesla_bls.cpp` | BLS keygen, sign, verify; IBS hash-to-scalar, IBS verification |
+| `test_tf5_tesla_e2e` | `test_tf5_tesla_e2e.cpp` | Full gNB→UE flow, tamper detection, key recovery scenarios |
+
+### Test Files Location
+
+Tests are located in `openair3/SECU/tests/`:
+
+```
+openair3/SECU/tests/
+├── CMakeLists.txt              # Test build configuration
+├── tf5_test_vectors.h          # Known-answer test vectors
+├── test_tf5_tesla_crypto.cpp   # Crypto primitive tests
+├── test_tf5_tesla_gnb.cpp      # gNB function tests
+├── test_tf5_tesla_ue.cpp       # UE function tests
+├── test_tf5_tesla_serial.cpp   # Serialization tests
+├── test_tf5_tesla_bls.cpp      # BLS signature tests
+└── test_tf5_tesla_e2e.cpp      # Integration tests
+```

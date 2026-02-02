@@ -681,6 +681,11 @@ if(ENABLE_TF5)
   add_executable(tf5_bls_keygen ${OPENAIR3_DIR}/SECU/tf5_bls_keygen.c)
   target_include_directories(tf5_bls_keygen PRIVATE ${BLST_DIR}/bindings)
   target_link_libraries(tf5_bls_keygen PRIVATE blst)
+
+  # TF5 TESLA unit tests
+  if(ENABLE_TESTS)
+    add_subdirectory(${OPENAIR3_DIR}/SECU/tests ${CMAKE_CURRENT_BINARY_DIR}/openair3/SECU/tests)
+  endif()
 endif()
 
 # Physical Channel Procedures Scheduling
