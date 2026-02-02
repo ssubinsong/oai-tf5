@@ -854,6 +854,10 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
     tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);
     return;
   }
+  if (tesla_rc == TF5_VERIFY_PENDING || tesla_rc == TF5_VERIFY_SKIP_UNSAFE) {
+    LOG_W(NR_RRC, "TESLA: SIB1 auth pending/unsafe - deferring SIB1 acceptance\n");
+    return;
+  }
 #endif
 
   nr_timer_start(&SI_info->sib1_timer);
