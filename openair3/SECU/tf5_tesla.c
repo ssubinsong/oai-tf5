@@ -599,9 +599,9 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
     state->slots_per_frame = slots_per_frame;
     state->buffer_queue_count = 0;  // All queue entries initialized to 0/false by memset
 
-    // Parallel authentication state (initialized by memset to 0/false)
+    // Parallel authentication state (initialized by memset to 0)
     // chain_bootstrapped = false (first-time UE, needs IBS signature verification)
-    // rrcsetup_deferred = false
+    // auth_state = TF5_AUTH_STATE_UNAUTHENTICATED (0)
     // rrcsetup_transaction_id = 0
 
     // Timestamp validation for signature replay protection

@@ -223,9 +223,11 @@ typedef struct {
 } tf5_tesla_gnb_state_t;
 
 typedef enum {
-    TF5_AUTH_STATE_UNAUTHENTICATED = 0,
-    TF5_AUTH_STATE_AUTHENTICATED,
-    TF5_AUTH_STATE_AUTH_FAILED
+    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // Initial - no SIB1 processed yet
+    TF5_AUTH_STATE_BUFFERED,             // SIB1 buffered, RACH/RRC proceeding
+    TF5_AUTH_STATE_RRCSETUP_DEFERRED,    // RRCSetup received while auth pending
+    TF5_AUTH_STATE_AUTHENTICATED,        // Auth succeeded
+    TF5_AUTH_STATE_AUTH_FAILED           // Auth failed
 } tf5_tesla_auth_state_t;
 
 /*
@@ -258,9 +260,8 @@ typedef struct {
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
     tf5_tesla_auth_state_t auth_state;
 
-    // Deferred RRCSetupComplete (when auth is pending at RRCSetup time)
-    bool     rrcsetup_deferred;       // RRCSetupComplete deferred waiting for auth
-    uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete
+    // Saved transaction ID for deferred RRCSetupComplete (used when auth_state == RRCSETUP_DEFERRED)
+    uint8_t  rrcsetup_transaction_id;
 
     // Timestamp validation for signature replay protection
     uint64_t timestamp_window_ms;     // Acceptable time window (default 60000ms)

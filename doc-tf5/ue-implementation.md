@@ -60,16 +60,17 @@ typedef struct {
     bool     chain_bootstrapped;       // TESLA chain established via IBS (persistent)
     tf5_tesla_auth_state_t auth_state; // Current authentication state
 
-    // Deferred RRCSetupComplete
-    bool     rrcsetup_deferred;        // RRCSetupComplete deferred waiting for auth
-    uint8_t  rrcsetup_transaction_id;  // Saved transaction ID
+    // Saved transaction ID (used when auth_state == RRCSETUP_DEFERRED)
+    uint8_t  rrcsetup_transaction_id;
 } tf5_tesla_ue_state_t;
 ```
 
 **Authentication state enum** (see [data-structures.md](data-structures.md)):
 ```c
 typedef enum {
-    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // Not yet authenticated (defer RRCSetupComplete)
+    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // Initial - no SIB1 processed yet
+    TF5_AUTH_STATE_BUFFERED,             // SIB1 buffered, RACH/RRC proceeding
+    TF5_AUTH_STATE_RRCSETUP_DEFERRED,    // RRCSetup received while auth pending
     TF5_AUTH_STATE_AUTHENTICATED,        // SIB1 successfully authenticated
     TF5_AUTH_STATE_AUTH_FAILED           // Authentication failed - abort RRC
 } tf5_tesla_auth_state_t;
@@ -92,8 +93,9 @@ flowchart TB
         AUTH["Start Authentication"]
         AUTH --> CHECK{"chain_bootstrapped?"}
         CHECK -->|"false<br/>(First-time UE)"| IBS["IBS verify"]
-        CHECK -->|"true<br/>(Returning UE)"| TESLA["Wait for TESLA<br/>key disclosure"]
+        CHECK -->|"true<br/>(Returning UE)"| BUFFER["Buffer SIB1<br/>auth_state=BUFFERED"]
         IBS --> RESULT
+        BUFFER --> TESLA["Wait for TESLA<br/>key disclosure"]
         TESLA --> RESULT
         RESULT{"Result"}
         RESULT -->|SUCCESS| SUCCESS["auth_state=AUTHENTICATED<br/>chain_bootstrapped=true"]
@@ -107,7 +109,7 @@ flowchart TB
         RRCSETUP --> GATE{"auth_state?"}
         GATE -->|"AUTHENTICATED"| NAS["Send NAS in<br/>RRCSetupComplete"]
         GATE -->|"AUTH_FAILED"| ABORT["ABORT RRC"]
-        GATE -->|"UNAUTHENTICATED"| DEFER["Defer RRCSetupComplete<br/>wait for auth"]
+        GATE -->|"UNAUTHENTICATED<br/>or BUFFERED"| DEFER["auth_state=RRCSETUP_DEFERRED<br/>Defer RRCSetupComplete"]
     end
 
     SUCCESS -.->|"trigger"| GATE
@@ -212,13 +214,13 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
 
 4. Buffer current SIB1 for future TESLA verification
    └── tf5_tesla_ue_buffer_sib1(..., triggered_rrc_setup)
-   └── auth_state remains UNAUTHENTICATED (defers RRCSetupComplete if RRCSetup arrives)
+   └── auth_state = TF5_AUTH_STATE_BUFFERED (RACH/RRC proceeding)
 
 5. Check if disclosed key available for PREVIOUSLY buffered SIB1
    └── If interval matches: tf5_tesla_ue_verify_with_key_recovery()
        ├── SUCCESS:
        │   └── auth_state = TF5_AUTH_STATE_AUTHENTICATED
-       │   └── If rrcsetup_deferred: send RRCSetupComplete now
+       │   └── If RRCSETUP_DEFERRED: send RRCSetupComplete now
        └── FAILED:
            └── auth_state = TF5_AUTH_STATE_AUTH_FAILED
            └── nr_rrc_abort_connection() → return
@@ -237,9 +239,10 @@ The RRC connection setup (bearers, cell group config) proceeds normally, but NAS
 if (SI_info->tesla_state) {
     switch (SI_info->tesla_state->auth_state) {
       case TF5_AUTH_STATE_UNAUTHENTICATED:
-        // Auth pending (buffered, waiting for key disclosure) - defer RRCSetupComplete
+      case TF5_AUTH_STATE_BUFFERED:
+        // Auth pending - defer RRCSetupComplete until verified
         LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete\n");
-        SI_info->tesla_state->rrcsetup_deferred = true;
+        SI_info->tesla_state->auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
         SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
         return;  // Wait for auth to complete
       case TF5_AUTH_STATE_AUTHENTICATED:

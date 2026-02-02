@@ -560,13 +560,11 @@ static void tf5_tesla_on_auth_success(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *
 {
     tf5_tesla_ue_state_t *state = SI_info->tesla_state;
 
-    state->auth_state = TF5_AUTH_STATE_AUTHENTICATED;
-
-    if (state->rrcsetup_deferred) {
+    if (state->auth_state == TF5_AUTH_STATE_RRCSETUP_DEFERRED) {
         LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
         rrc_ue_generate_RRCSetupComplete(rrc, state->rrcsetup_transaction_id);
-        state->rrcsetup_deferred = false;
     }
+    state->auth_state = TF5_AUTH_STATE_AUTHENTICATED;
 }
 
 /**
@@ -752,8 +750,9 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
     /* Step 2: Buffer current SIB1 */
     tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);
 
-    // Should trigger rrc if not rrcsetup_deferred and the buffer is empty
-    bool should_trigger_rrc = !state->rrcsetup_deferred && state->buffer_queue_count == 0;
+    // Should trigger RRC if this is the first buffered entry and not already deferred
+    bool should_trigger_rrc = (state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) &&
+                              (state->buffer_queue_count == 0);
 
     tf5_tesla_ue_buffer_sib1(state,
                               mac_auth_input, mac_auth_len,
@@ -761,6 +760,11 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
                               ext->tesla_tag,
                               &buffer_rx_time,
                               should_trigger_rrc);
+
+    // Set BUFFERED state if this is first buffered entry (RACH/RRC now proceeding)
+    if (state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) {
+        state->auth_state = TF5_AUTH_STATE_BUFFERED;
+    }
 
     /* Step 3: Verify buffered SIB1s with disclosed key (key recovery) */
     if (state->buffer_queue_count == 0 ||
@@ -2430,9 +2434,10 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
 
       switch (SI_info->tesla_state->auth_state) {
         case TF5_AUTH_STATE_UNAUTHENTICATED:
-          /* Authentication still in progress - defer RRCSetupComplete */
+        case TF5_AUTH_STATE_BUFFERED:
+          /* Authentication pending - defer RRCSetupComplete until verified */
           LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete until verified\n");
-          SI_info->tesla_state->rrcsetup_deferred = true;
+          SI_info->tesla_state->auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
           SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
           return;
         case TF5_AUTH_STATE_AUTHENTICATED:
@@ -2441,8 +2446,8 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
           rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
           return;
         default:
-          // Should not reach here
-          DevAssert(false, "should not reach here!!\n");
+          // Should not reach here (AUTH_FAILED would have aborted, RRCSETUP_DEFERRED shouldn't receive another RRCSetup)
+          DevAssert(false, "Unexpected auth state in RRCSetup processing\n");
       }
   }
 #endif
