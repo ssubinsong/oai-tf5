@@ -58,7 +58,6 @@ typedef struct {
     size_t   auth_input_len;
     uint32_t interval_index;
     uint8_t  tag[TF5_TESLA_TAG_LEN];
-    tf5_tesla_slot_time_t rx_time;   // RX timing (SFN/slot when received)
     bool     valid;                  // Entry contains valid data
     bool     triggered_rrc_setup;    // This SIB1 triggered the current RRC session
 } tf5_tesla_buffer_entry_t;
@@ -75,13 +74,12 @@ static inline tf5_tesla_slot_time_t tf5_slot_time_make(uint16_t sfn,
  * TESLA Parameters
  *
  * These parameters are constant for the lifetime of a key chain.
- * Wire format size: 12 bytes (T_0 now transmitted directly)
+ * Wire format size: 11 bytes (T_0 now transmitted directly)
  *
  * Note: root_key (K_0) is not included here. Since every SIB1 is signed,
  * the disclosed_key serves as a trusted anchor for key chain verification.
  */
 typedef struct {
-    uint8_t  te_version;           // 1B - Protocol version
     uint16_t t_int_ms;             // 2B - Interval duration in ms (e.g., 20ms)
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay d (e.g., 1)
     tf5_tesla_slot_time_t t0;      // 4B - T_0: interval 0 start (transmitted in wire format)
@@ -95,18 +93,19 @@ typedef struct {
  * This structure represents the complete TESLA data appended to SIB1
  * via lateNonCriticalExtension.
  *
- * Signature authenticates: SIB1 || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
+ * Signature authenticates: SIB1 || te_version || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
  * MAC authenticates:       SIB1 || gnb_key_validity_end (per RFC 4082)
  *
  * Wire format size: 107 bytes (with BLS signatures)
- *   tesla_params(12) + gnb_key_validity_end(3) + interval_index(4) +
+ *   te_version(1) + tesla_params(11) + gnb_key_validity_end(3) + interval_index(4) +
  *   disclosed_key(16) + timestamp_ms(8) + gnb_signature(48) + tesla_tag(16)
  *
  * Note: T_0 is transmitted in tesla_params (authenticated by signature)
  * Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
  */
 typedef struct {
-    tf5_tesla_params_t         tesla_params;                  // 12B (wire) - includes T_0
+    uint8_t                    te_version;                    // 1B - Protocol version
+    tf5_tesla_params_t         tesla_params;                  // 11B (wire) - includes T_0
     uint32_t                   gnb_key_validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                   interval_index;                // 4B - Current interval i
     uint8_t                    disclosed_key[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
@@ -273,7 +272,8 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
  * @param out_len       Output: length of data written
  * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
  * @param sib1_len      Length of original SIB1 data
- * @param tesla_params  TESLA parameters (includes T_0)
+ * @param te_version   TESLA protocol version
+ * @param tesla_params TESLA parameters (includes T_0)
  * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @param interval_index Current interval index
  * @param disclosed_key Disclosed key K_{i-d}
@@ -284,6 +284,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
                                    size_t *out_len,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
+                                   uint8_t te_version,
                                    const tf5_tesla_params_t *tesla_params,
                                    uint32_t gnb_key_validity_end,
                                    uint32_t interval_index,

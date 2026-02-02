@@ -669,6 +669,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     size_t sig_auth_len = 0;
     tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_len,
                                     sib1_buf, sib1_len,
+                                    ext->te_version,
                                     &ext->tesla_params,
                                     ext->gnb_key_validity_end,
                                     ext->interval_index,

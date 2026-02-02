@@ -71,16 +71,15 @@ State transitions:
 
 ---
 
-## TESLA Parameters (12 bytes wire format)
+## TESLA Parameters (11 bytes wire format)
 
 Parameters constant for the lifetime of a key chain.
 
-**Wire format**: 12 bytes (T_0 now transmitted directly, authenticated by signature)
+**Wire format**: 11 bytes (T_0 now transmitted directly, authenticated by signature)
 **Key length**: Hardcoded to 16 bytes (128 bits) - not configurable
 
 ```c
 typedef struct {
-    uint8_t  te_version;           // 1B - Protocol version (0x01)
     uint16_t t_int_ms;             // 2B - Interval duration (20ms)
     uint8_t  disclosure_delay;     // 1B - Key disclosure delay (1)
     tf5_tesla_slot_time_t t0;      // 4B - T_0: interval 0 start (transmitted in wire format)
@@ -98,7 +97,8 @@ Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
 ```c
 typedef struct {
-    tf5_tesla_params_t          tesla_params;    // 12B (wire) - includes T_0
+    uint8_t                     te_version;      // 1B - Protocol version (0x01)
+    tf5_tesla_params_t          tesla_params;    // 11B (wire) - includes T_0
     uint32_t                    gnb_key_validity_end;  // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                    interval_index;  // 4B - Current interval i
     uint8_t                     disclosed_key[16]; // 16B - K_{i-d} (serves as trusted anchor)
@@ -128,7 +128,7 @@ uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end);
 
 **Authentication Coverage**:
 
-- **Signature**: SIB1 || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
+- **Signature**: SIB1 || te_version || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
 - **MAC**: SIB1 || gnb_key_validity_end
 
 **Binary Wire Format** (107 bytes, big-endian):
