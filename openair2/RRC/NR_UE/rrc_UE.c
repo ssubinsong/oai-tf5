@@ -665,7 +665,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
           (long)((int64_t)ext->timestamp_ms - (int64_t)ue_time_ms));
 
     /* Build signature auth input */
-    uint8_t sig_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
+    uint8_t sig_auth_input[TF5_MAX_AUTH_INPUT];
     size_t sig_auth_len = 0;
     tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_len,
                                     sib1_buf, sib1_len,
@@ -741,7 +741,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
     }
 
     /* Build MAC auth input */
-    uint8_t mac_auth_input[TF5_TESLA_MAX_AUTH_INPUT];
+    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len = 0;
     tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
                                     sib1_buf, sib1_len,
@@ -1727,7 +1727,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
           free(ptr->SInfo.tesla_state);
           ptr->SInfo.tesla_state = NULL;
         } else {
-          uint8_t mpk[TF5_TESLA_PUBKEY_LEN];
+          uint8_t mpk[TF5_SIGN_PUBKEY_LEN];
           rc = tf5_tesla_load_pubkey(params->tesla_core_mpk_file, mpk);
           if (rc == 0) {
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info
@@ -2449,12 +2449,13 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
           // Should not reach here (AUTH_FAILED would have aborted, RRCSETUP_DEFERRED shouldn't receive another RRCSetup)
           DevAssert(false);
       }
-  }
+    }
 #endif
 
-  // set the content of RRCSetupComplete message (TESLA disabled or no tesla_state)
-  // TODO procedues described in 5.3.3.4 seems more complex than what we actualy do
-  rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
+    // set the content of RRCSetupComplete message (TESLA disabled or no tesla_state)
+    // TODO procedues described in 5.3.3.4 seems more complex than what we actualy do
+    rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
+  }
 }
 
 static void nr_rrc_process_rrcreject(NR_UE_RRC_INST_t *rrc, const NR_RRCReject_t *rrcReject)

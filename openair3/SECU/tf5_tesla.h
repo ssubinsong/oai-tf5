@@ -11,12 +11,12 @@
 
 /*
  * TESLA Configuration Constants
- * Note: TF5_TESLA_KEY_LEN is hardcoded (not configurable) per design.
  */
 #define TF5_TESLA_KEY_LEN           16      // 128-bit TESLA chain keys (hardcoded)
 #define TF5_TESLA_TAG_LEN           16      // Truncated HMAC-SHA256 to 128 bits
 #define TF5_TESLA_SIG_LEN           TF5_BLS_SIG_LEN   // BLS signature length (48 bytes)
 #define TF5_TESLA_CHAIN_LEN         65536   // ~21 minutes at T_int=20ms
+#define TF5_TESLA_DEFAULT_D_BOUND_US           1005    // Pre-calculated D bound (microseconds)
 #define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered
 
 #define TF5_SIGN_PUBKEY_LEN        TF5_BLS_PUBKEY_LEN  // BLS public key length (96 bytes)
@@ -29,24 +29,8 @@
 // Sentinel value for trust_anchor_idx indicating K_{-1} (bootstrap key)
 #define TF5_TESLA_BOOTSTRAP_IDX           UINT32_MAX
 
-/*
- * Default D parameter (CLI-configurable)
- *
- * D is the upper bound on (sender_time - receiver_time), per RFC 4082 Section 2.2.
- *
- * CP-based derivation:
- *   Successful OFDM decode implies timing error ≤ CP duration (4.69 μs at 15 kHz SCS).
- *   D = CP_max + M_impl = 4.69 + 1000 ≈ 1005 μs
- *
- * See doc-tf5/time-sync.md for detailed rationale.
- */
-#define TF5_DEFAULT_D_BOUND_US           1005    // Pre-calculated D bound (microseconds)
-
 // Protocol version
 #define TF5_TESLA_VERSION           0x01
-
-// Crypto suite identifiers
-#define TF5_CRYPTO_SUITE_HMAC_SHA256_IBS  0x03   // IBS-BLS (Identity-Based Signature)
 
 /*
  * IBS (Identity-Based Signature) Constants
