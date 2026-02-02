@@ -680,6 +680,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     tf5_extract_cell_id_from_sib1(sib1, cell_id);
 
     /* Perform IBS signature verification */
+    AssertFatal(!state->auth_in_progress, "TESLA: Concurrent authentication detected");
     state->auth_in_progress = true;
     int sig_rc = tf5_tesla_ibs_verify(state->mpk,
                                        cell_id,
@@ -806,7 +807,6 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 static tf5_verify_result_t tf5_tesla_verify_sib1(NR_UE_RRC_INST_t *rrc,
                                                   NR_UE_RRC_SI_INFO *SI_info,
                                                   NR_SIB1_t *sib1,
-                                                  int gNB_index,
                                                   int rx_frame,
                                                   int rx_slot)
 {
@@ -856,7 +856,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef TF5_ENABLE_TESLA
-  tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, gNB_index, rx_frame, rx_slot);
+  tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
   if (tesla_rc < 0) {
     tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);
     return;
@@ -2276,7 +2276,7 @@ static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const 
 /**
  * Abort RRC connection due to TESLA authentication failure
  *
- * This function is called when SIB1 authentication fails (either Ed25519 signature
+ * This function is called when SIB1 authentication fails (either signature
  * verification for first-time UE or TESLA MAC verification for returning UE).
  * It resets the RRC state to IDLE and stops any ongoing RACH procedure.
  */

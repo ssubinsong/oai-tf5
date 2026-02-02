@@ -459,7 +459,7 @@ int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
  * - d = disclosure delay
  *
  * Uses ti_hfn from the signed extension as the HFN reference since UE cannot
- * know gNB's HFN during initial SSB synchronization. The Ed25519 signature
+ * know gNB's HFN during initial SSB synchronization. The signature
  * guarantees ti_hfn hasn't been tampered.
  *
  * Checks that the packet arrived within a safe time window.
