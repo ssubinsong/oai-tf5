@@ -322,11 +322,12 @@ int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBKEY_LEN],
     /* Step 3: Compute derived_pk = pk_ID * MPK */
     blst_p2_from_affine(&derived_pk, &mpk_affine);
 
-    /* Serialize pk_id as big-endian bytes for scalar multiplication */
-    blst_bendian_from_scalar(pk_id_bytes, &pk_id);
+    /* Serialize pk_id as little-endian bytes for scalar multiplication
+     * Note: blst_p2_mult expects scalar in little-endian format */
+    blst_lendian_from_scalar(pk_id_bytes, &pk_id);
 
     /* Scalar multiplication: derived_pk = pk_ID * MPK */
-    blst_p2_mult(&derived_pk, &derived_pk, pk_id_bytes, 255);
+    blst_p2_mult(&derived_pk, &derived_pk, pk_id_bytes, 256);
 
     /* Clear sensitive pk_id_bytes */
     memset(pk_id_bytes, 0, sizeof(pk_id_bytes));

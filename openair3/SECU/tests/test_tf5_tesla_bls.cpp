@@ -14,6 +14,11 @@
 
 #include <gtest/gtest.h>
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <unistd.h>
+#include <sys/stat.h>
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
@@ -404,6 +409,269 @@ TEST_F(TF5BlsTest, IbsVerify_NullSignature_ReturnsError) {
                                     (const uint8_t*)data, strlen(data), nullptr);
 
     EXPECT_LT(ret, 0) << "Null signature should return error";
+}
+
+// ============================================================================
+// IBS End-to-End Tests using PKG binaries
+// ============================================================================
+
+/**
+ * Test fixture that uses the Core PKG binaries to generate IBS keys.
+ * This enables full end-to-end IBS signature testing with properly issued keys.
+ *
+ * The PKG binaries must be available at TF5_PKG_KEYGEN_PATH and TF5_PKG_ISSUE_PATH.
+ * If not found, these tests are skipped.
+ */
+class TF5IbsE2ETest : public ::testing::Test {
+protected:
+    // Paths to PKG binaries (relative to test working directory: oai-tf5/cmake_targets/ran_build/build/openair3/SECU/tests)
+    static constexpr const char* PKG_KEYGEN_PATH = "../../../../../../../tf5-code/core-pkg/build/tf5_ibs_pkg_keygen";
+    static constexpr const char* PKG_ISSUE_PATH = "../../../../../../../tf5-code/core-pkg/build/tf5_ibs_issue";
+
+    std::string test_dir;
+    std::string msk_path;
+    std::string mpk_path;
+    std::string sk_gnb_path;
+
+    uint8_t msk[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t mpk[TF5_IBS_PUBKEY_LEN];
+    uint8_t sk_gnb[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
+    uint32_t validity_end;
+
+    bool pkg_available;
+
+    static bool bls_initialized;
+
+    void SetUp() override {
+        // Initialize BLS library once
+        if (!bls_initialized) {
+            tf5_tesla_bls_init();
+            bls_initialized = true;
+        }
+
+        // Set up test parameters
+        memset(cell_id, 0, TF5_IBS_CELL_ID_LEN);
+        cell_id[0] = 0x12;
+        cell_id[1] = 0x34;
+        cell_id[2] = 0x56;
+        cell_id[3] = 0x78;
+        cell_id[4] = 0x90;  // 36-bit cell ID = 0x123456789
+
+        validity_end = 1051200;  // 2 years from epoch
+
+        // Create temp directory
+        test_dir = "/tmp/tf5_ibs_e2e_test_" + std::to_string(getpid());
+        mkdir(test_dir.c_str(), 0700);
+        msk_path = test_dir + "/msk.bin";
+        mpk_path = test_dir + "/mpk.bin";
+        sk_gnb_path = test_dir + "/sk_gnb.bin";
+
+        // Check if PKG binaries are available
+        pkg_available = checkPkgBinaries();
+
+        if (pkg_available) {
+            // Generate keys using PKG binaries
+            generateKeysWithPkg();
+            loadGeneratedKeys();
+        }
+    }
+
+    void TearDown() override {
+        // Clean up
+        unlink(msk_path.c_str());
+        unlink(mpk_path.c_str());
+        unlink(sk_gnb_path.c_str());
+        rmdir(test_dir.c_str());
+    }
+
+    bool checkPkgBinaries() {
+        // Check if keygen binary exists
+        if (access(PKG_KEYGEN_PATH, X_OK) != 0) {
+            return false;
+        }
+        // Check if issue binary exists
+        if (access(PKG_ISSUE_PATH, X_OK) != 0) {
+            return false;
+        }
+        return true;
+    }
+
+    void generateKeysWithPkg() {
+        // Generate master keypair
+        char cmd[512];
+        snprintf(cmd, sizeof(cmd), "%s %s %s >/dev/null 2>&1",
+                 PKG_KEYGEN_PATH, msk_path.c_str(), mpk_path.c_str());
+        int ret = system(cmd);
+        ASSERT_EQ(0, ret) << "Failed to generate master keypair";
+
+        // Issue gNB key
+        // Cell ID 0x123456789 as hex string
+        snprintf(cmd, sizeof(cmd), "%s %s 123456789 %u %s >/dev/null 2>&1",
+                 PKG_ISSUE_PATH, msk_path.c_str(), validity_end, sk_gnb_path.c_str());
+        ret = system(cmd);
+        ASSERT_EQ(0, ret) << "Failed to issue gNB key";
+    }
+
+    void loadGeneratedKeys() {
+        // Load MSK
+        FILE* f = fopen(msk_path.c_str(), "rb");
+        ASSERT_NE(nullptr, f) << "Failed to open MSK file";
+        size_t n = fread(msk, 1, TF5_BLS_SECRET_KEY_LEN, f);
+        fclose(f);
+        ASSERT_EQ(TF5_BLS_SECRET_KEY_LEN, n) << "Failed to read MSK";
+
+        // Load MPK
+        f = fopen(mpk_path.c_str(), "rb");
+        ASSERT_NE(nullptr, f) << "Failed to open MPK file";
+        n = fread(mpk, 1, TF5_IBS_PUBKEY_LEN, f);
+        fclose(f);
+        ASSERT_EQ(TF5_IBS_PUBKEY_LEN, n) << "Failed to read MPK";
+
+        // Load gNB secret key (35 bytes: 32 sk + 3 validity)
+        f = fopen(sk_gnb_path.c_str(), "rb");
+        ASSERT_NE(nullptr, f) << "Failed to open gNB SK file";
+        uint8_t sk_file[35];
+        n = fread(sk_file, 1, 35, f);
+        fclose(f);
+        ASSERT_EQ(35, n) << "Failed to read gNB SK";
+
+        // Extract secret key (first 32 bytes)
+        memcpy(sk_gnb, sk_file, TF5_BLS_SECRET_KEY_LEN);
+
+        // Extract validity (last 3 bytes, big-endian) for verification
+        uint32_t file_validity = ((uint32_t)sk_file[32] << 16) |
+                                 ((uint32_t)sk_file[33] << 8) |
+                                 (uint32_t)sk_file[34];
+        ASSERT_EQ(validity_end, file_validity) << "Validity mismatch in key file";
+    }
+};
+
+bool TF5IbsE2ETest::bls_initialized = false;
+
+TEST_F(TF5IbsE2ETest, IbsSignVerify_ValidSignature_Success) {
+    if (!pkg_available) {
+        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
+    }
+
+    const char message[] = "Test message for IBS signature verification";
+    uint8_t signature[TF5_BLS_SIG_LEN];
+
+    // Sign with the IBS secret key (sk_ID issued by PKG)
+    int sign_ret = tf5_tesla_bls_sign(sk_gnb, (const uint8_t*)message,
+                                       strlen(message), signature);
+    ASSERT_EQ(0, sign_ret) << "IBS signing should succeed";
+
+    // Verify using IBS verification (with MPK and identity)
+    int verify_ret = tf5_tesla_ibs_verify(mpk, cell_id, validity_end,
+                                           (const uint8_t*)message,
+                                           strlen(message), signature);
+
+    EXPECT_EQ(0, verify_ret) << "Valid IBS signature should verify successfully";
+}
+
+TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedMessage_Fails) {
+    if (!pkg_available) {
+        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
+    }
+
+    const char message[] = "Original message";
+    uint8_t signature[TF5_BLS_SIG_LEN];
+
+    // Sign with the IBS secret key
+    tf5_tesla_bls_sign(sk_gnb, (const uint8_t*)message, strlen(message), signature);
+
+    // Verify with tampered message
+    const char tampered[] = "Tampered message";
+    int verify_ret = tf5_tesla_ibs_verify(mpk, cell_id, validity_end,
+                                           (const uint8_t*)tampered,
+                                           strlen(tampered), signature);
+
+    EXPECT_NE(0, verify_ret) << "Tampered message should fail verification";
+}
+
+TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongCellId_Fails) {
+    if (!pkg_available) {
+        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
+    }
+
+    const char message[] = "Test message";
+    uint8_t signature[TF5_BLS_SIG_LEN];
+
+    // Sign with the IBS secret key
+    tf5_tesla_bls_sign(sk_gnb, (const uint8_t*)message, strlen(message), signature);
+
+    // Verify with wrong cell ID
+    uint8_t wrong_cell_id[TF5_IBS_CELL_ID_LEN] = {0xAA, 0xBB, 0xCC, 0xDD, 0xE0};
+    int verify_ret = tf5_tesla_ibs_verify(mpk, wrong_cell_id, validity_end,
+                                           (const uint8_t*)message,
+                                           strlen(message), signature);
+
+    EXPECT_NE(0, verify_ret) << "Wrong cell ID should fail verification";
+}
+
+TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongValidity_Fails) {
+    if (!pkg_available) {
+        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
+    }
+
+    const char message[] = "Test message";
+    uint8_t signature[TF5_BLS_SIG_LEN];
+
+    // Sign with the IBS secret key
+    tf5_tesla_bls_sign(sk_gnb, (const uint8_t*)message, strlen(message), signature);
+
+    // Verify with wrong validity
+    uint32_t wrong_validity = 999999;
+    int verify_ret = tf5_tesla_ibs_verify(mpk, cell_id, wrong_validity,
+                                           (const uint8_t*)message,
+                                           strlen(message), signature);
+
+    EXPECT_NE(0, verify_ret) << "Wrong validity should fail verification";
+}
+
+TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedSignature_Fails) {
+    if (!pkg_available) {
+        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
+    }
+
+    const char message[] = "Test message";
+    uint8_t signature[TF5_BLS_SIG_LEN];
+
+    // Sign with the IBS secret key
+    tf5_tesla_bls_sign(sk_gnb, (const uint8_t*)message, strlen(message), signature);
+
+    // Tamper with signature
+    signature[0] ^= 0xFF;
+    signature[10] ^= 0xFF;
+
+    int verify_ret = tf5_tesla_ibs_verify(mpk, cell_id, validity_end,
+                                           (const uint8_t*)message,
+                                           strlen(message), signature);
+
+    EXPECT_NE(0, verify_ret) << "Tampered signature should fail verification";
+}
+
+TEST_F(TF5IbsE2ETest, IbsSignVerify_DifferentMessages_DifferentSignatures) {
+    if (!pkg_available) {
+        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
+    }
+
+    const char msg1[] = "Message one";
+    const char msg2[] = "Message two";
+    uint8_t sig1[TF5_BLS_SIG_LEN], sig2[TF5_BLS_SIG_LEN];
+
+    tf5_tesla_bls_sign(sk_gnb, (const uint8_t*)msg1, strlen(msg1), sig1);
+    tf5_tesla_bls_sign(sk_gnb, (const uint8_t*)msg2, strlen(msg2), sig2);
+
+    EXPECT_NE(0, memcmp(sig1, sig2, TF5_BLS_SIG_LEN))
+        << "Different messages should produce different signatures";
+
+    // Both should verify with correct parameters
+    EXPECT_EQ(0, tf5_tesla_ibs_verify(mpk, cell_id, validity_end,
+                                       (const uint8_t*)msg1, strlen(msg1), sig1));
+    EXPECT_EQ(0, tf5_tesla_ibs_verify(mpk, cell_id, validity_end,
+                                       (const uint8_t*)msg2, strlen(msg2), sig2));
 }
 
 // ============================================================================
