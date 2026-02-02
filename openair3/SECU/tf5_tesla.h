@@ -95,7 +95,7 @@ typedef struct {
     uint32_t                   i;                // 4B - Current interval i
     uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                   validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
-    uint32_t                   timestamp_ms;                  // 4B - Unix epoch timestamp LSB (ms) for replay protection
+    uint32_t                   timestamp_ms;                  // 3B (wire) - Unix epoch timestamp LSB (ms) for replay protection
     uint8_t                    signature[TF5_TESLA_SIG_LEN]; // 48B - BLS signature
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_tesla_extension_t;
@@ -244,7 +244,7 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
  * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @param interval_index Current interval index
  * @param disclosed_key Disclosed key K_{i-d}
- * @param timestamp_ms  Wall-clock timestamp LSB (ms since Unix epoch) for replay protection
+ * @param timestamp_ms  Wall-clock timestamp LSB (ms since Unix epoch) for replay protection (24-bit)
  * @return 0 on success, negative on error
  */
 int tf5_tesla_build_sig_auth_input(uint8_t *out,
@@ -652,6 +652,12 @@ static inline void tf5_encode_u32_be(uint8_t *buf, uint32_t val) {
     buf[3] = val & 0xFF;
 }
 
+static inline void tf5_encode_u24_be(uint8_t *buf, uint32_t val) {
+    buf[0] = (val >> 16) & 0xFF;
+    buf[1] = (val >> 8) & 0xFF;
+    buf[2] = val & 0xFF;
+}
+
 static inline uint16_t tf5_decode_u16_be(const uint8_t *buf) {
     return ((uint16_t)buf[0] << 8) | buf[1];
 }
@@ -661,6 +667,10 @@ static inline uint32_t tf5_decode_u32_be(const uint8_t *buf) {
            ((uint32_t)buf[1] << 16) |
            ((uint32_t)buf[2] << 8) |
            buf[3];
+}
+
+static inline uint32_t tf5_decode_u24_be(const uint8_t *buf) {
+    return ((uint32_t)buf[0] << 16) | ((uint32_t)buf[1] << 8) | buf[2];
 }
 
 static inline void tf5_encode_u64_be(uint8_t *buf, uint64_t val) {

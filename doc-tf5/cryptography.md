@@ -157,7 +157,7 @@ sig_auth_input = original_SIB1 || tesla_params || gnb_key_validity_end || interv
 - **gnb_key_validity_end**: 3 bytes key expiration (minutes since 2024-01-01)
 - **interval_index**: 4 bytes current interval
 - **disclosed_key**: 16 bytes K_{i-d}
-- **timestamp_ms**: 4 bytes Unix epoch timestamp LSB (milliseconds) for signature replay protection
+- **timestamp_ms**: 3 bytes Unix epoch timestamp LSB (milliseconds) for signature replay protection
 
 ### MAC Auth Input
 

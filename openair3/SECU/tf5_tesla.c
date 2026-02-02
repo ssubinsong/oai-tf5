@@ -114,8 +114,9 @@ int tf5_rp_validate_timestamp(uint64_t ue_time_ms,
                                  uint32_t ext_timestamp_ms,
                                  uint64_t window_ms)
 {
-    uint32_t ue_time_lsb_ms = (uint32_t)ue_time_ms;
-    int32_t diff_ms = (int32_t)(ue_time_lsb_ms - ext_timestamp_ms);
+    uint32_t ue_time_lsb_ms = (uint32_t)ue_time_ms & 0xFFFFFFu;
+    uint32_t ext_time_lsb_ms = ext_timestamp_ms & 0xFFFFFFu;
+    int32_t diff_ms = (int32_t)(ue_time_lsb_ms - ext_time_lsb_ms);
 
     // This comparison assumes window_ms << 2^31 (fits into int32_t).
     if (diff_ms > 0 && (uint64_t)diff_ms > window_ms) {
@@ -235,9 +236,9 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
     memcpy(out + offset, disclosed_key, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
-    // Append timestamp_ms (4 bytes) - for signature replay protection
-    tf5_encode_u32_be(out + offset, timestamp_ms);
-    offset += 4;
+    // Append timestamp_ms (3 bytes) - for signature replay protection
+    tf5_encode_u24_be(out + offset, timestamp_ms);
+    offset += 3;
 
     *out_len = offset;
     return 0;
@@ -251,9 +252,9 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
         return -1;
     }
 
-    // Total size: 1 + 11 + 3 + 4 + 16 + 4 + 48 + 16 = 103 bytes (with BLS signatures)
+    // Total size: 1 + 11 + 3 + 4 + 16 + 3 + 48 + 16 = 102 bytes (with BLS signatures)
     // Note: T_0 now included in tesla_params (11 bytes)
-    const size_t required_len = 103;
+    const size_t required_len = 102;
     if (buf_len < required_len) {
         return -2;
     }
@@ -278,9 +279,9 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
     memcpy(buf + offset, ext->key_disclosure, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
-    // Timestamp (4 bytes) - for signature replay protection
-    tf5_encode_u32_be(buf + offset, ext->timestamp_ms);
-    offset += 4;
+    // Timestamp (3 bytes) - for signature replay protection
+    tf5_encode_u24_be(buf + offset, ext->timestamp_ms);
+    offset += 3;
 
     // Signature (48 bytes - BLS)
     memcpy(buf + offset, ext->signature, TF5_TESLA_SIG_LEN);
@@ -301,9 +302,9 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
         return -1;
     }
 
-    // Total size: 1 + 11 + 3 + 4 + 16 + 4 + 48 + 16 = 103 bytes (with BLS signatures)
+    // Total size: 1 + 11 + 3 + 4 + 16 + 3 + 48 + 16 = 102 bytes (with BLS signatures)
     // Note: T_0 now included in tesla_params (11 bytes)
-    const size_t required_len = 103;
+    const size_t required_len = 102;
     if (buf_len < required_len) {
         return -2;
     }
@@ -328,9 +329,9 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
     memcpy(ext->key_disclosure, buf + offset, TF5_TESLA_KEY_LEN);
     offset += TF5_TESLA_KEY_LEN;
 
-    // Timestamp (4 bytes) - for signature replay protection
-    ext->timestamp_ms = tf5_decode_u32_be(buf + offset);
-    offset += 4;
+    // Timestamp (3 bytes) - for signature replay protection
+    ext->timestamp_ms = tf5_decode_u24_be(buf + offset);
+    offset += 3;
 
     // Signature (48 bytes - BLS)
     memcpy(ext->signature, buf + offset, TF5_TESLA_SIG_LEN);
@@ -486,7 +487,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
     }
 
     // Set wall-clock timestamp for signature replay protection
-    ext->timestamp_ms = (uint32_t)tf5_rp_get_wallclock_ms();
+    ext->timestamp_ms = (uint32_t)tf5_rp_get_wallclock_ms() & 0xFFFFFFu;
     if (ext->timestamp_ms == 0) {
         LOG_E(NR_RRC, "TESLA: Failed to get wall-clock time\n");
         return -7;

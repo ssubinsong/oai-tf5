@@ -106,7 +106,7 @@ Called from scheduler before each SIB1 transmission:
        ├── Build MAC auth_input = SIB1 || gnb_key_validity_end
        └── Compute TESLA tag with K_i
 
-4. Pack extension to binary (103 bytes)
+4. Pack extension to binary (102 bytes)
    └── tf5_tesla_pack_extension(&ext, buffer, sizeof(buffer))
 
 5. Allocate/set lateNonCriticalExtension

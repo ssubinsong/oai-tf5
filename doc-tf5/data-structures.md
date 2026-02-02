@@ -91,7 +91,7 @@ T_0 is transmitted directly in the wire format and authenticated by the IBS sign
 
 ---
 
-## TESLA Extension (103 bytes)
+## TESLA Extension (102 bytes)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
@@ -102,7 +102,7 @@ typedef struct {
     uint32_t                    gnb_key_validity_end;  // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                    interval_index;  // 4B - Current interval i
     uint8_t                     disclosed_key[16]; // 16B - K_{i-d} (serves as trusted anchor)
-    uint32_t                    timestamp_ms;    // 4B - Unix epoch LSB (ms) for replay protection
+    uint32_t                    timestamp_ms;    // 3B - Unix epoch LSB (ms) for replay protection
     uint8_t  gnb_signature[48];                  // 48B - BLS signature
     uint8_t  tesla_tag[16];                      // 16B - HMAC tag
 } tf5_tesla_extension_t;
@@ -131,7 +131,7 @@ uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end);
 - **Signature**: SIB1 || te_version || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
 - **MAC**: SIB1 || gnb_key_validity_end
 
-**Binary Wire Format** (103 bytes, big-endian):
+**Binary Wire Format** (102 bytes, big-endian):
 
 ```
 Offset  Size  Field
@@ -145,11 +145,11 @@ Offset  Size  Field
 12      3     gnb_key_validity_end   (minutes since 2024-01-01)
 15      4     interval_index
 19      16    disclosed_key
-35      4     timestamp_ms
-39      48    gnb_signature (BLS)
-87      16    tesla_tag
+35      3     timestamp_ms
+38      48    gnb_signature (BLS)
+86      16    tesla_tag
 ------
-103 bytes total (with BLS signatures)
+102 bytes total (with BLS signatures)
 
 Note: T_0 now transmitted in tesla_params (authenticated by signature)
 Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is signed)
