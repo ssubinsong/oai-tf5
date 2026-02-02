@@ -36,8 +36,8 @@
 
 /* BLS12-381 key and signature sizes (non-ETH mode) */
 #define TF5_BLS_SECRET_KEY_LEN   32   /* Fr element */
-#define TF5_BLS_PUBLIC_KEY_LEN   96   /* G2 point (compressed) */
-#define TF5_BLS_SIGNATURE_LEN    48   /* G1 point (compressed) */
+#define TF5_BLS_PUBKEY_LEN   96   /* G2 point (compressed) */
+#define TF5_BLS_SIG_LEN    48   /* G1 point (compressed) */
 
 /**
  * Initialize BLS library
@@ -57,7 +57,7 @@ int tf5_tesla_bls_init(void);
  * @return 0 on success, negative on error
  */
 int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
-                                uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN]);
+                                uint8_t public_key[TF5_BLS_PUBKEY_LEN]);
 
 /**
  * Sign data with BLS
@@ -71,7 +71,7 @@ int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN]
 int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
                        const uint8_t *data,
                        size_t data_len,
-                       uint8_t signature[TF5_BLS_SIGNATURE_LEN]);
+                       uint8_t signature[TF5_BLS_SIG_LEN]);
 
 /**
  * Verify BLS signature
@@ -82,10 +82,10 @@ int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
  * @param signature    Signature to verify (48 bytes)
  * @return 0 on success (signature valid), negative on error
  */
-int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN],
+int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBKEY_LEN],
                          const uint8_t *data,
                          size_t data_len,
-                         const uint8_t signature[TF5_BLS_SIGNATURE_LEN]);
+                         const uint8_t signature[TF5_BLS_SIG_LEN]);
 
 /**
  * Generate BLS key pair
@@ -95,7 +95,7 @@ int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN],
  * @return 0 on success, negative on error
  */
 int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
-                         uint8_t public_key[TF5_BLS_PUBLIC_KEY_LEN]);
+                         uint8_t public_key[TF5_BLS_PUBKEY_LEN]);
 
 /*
  * =============================================================================
@@ -135,12 +135,12 @@ int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
  *   -4: Invalid signature format
  *   -5: Signature verification failed
  */
-int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBLIC_KEY_LEN],
+int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBKEY_LEN],
                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                           uint32_t gnb_key_validity_end,
                           const uint8_t *data,
                           size_t data_len,
-                          const uint8_t signature[TF5_BLS_SIGNATURE_LEN]);
+                          const uint8_t signature[TF5_BLS_SIG_LEN]);
 
 /**
  * Hash Cell ID and validity to scalar (H_s function)

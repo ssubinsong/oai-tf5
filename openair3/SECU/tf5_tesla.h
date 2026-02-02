@@ -1,33 +1,3 @@
-/*
- * Licensed to the OpenAirInterface (OAI) Software Alliance under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The OpenAirInterface Software Alliance licenses this file to You under
- * the OAI Public License, Version 1.1  (the "License"); you may not use this file
- * except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.openairinterface.org/?page_id=698
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *-------------------------------------------------------------------------------
- * For more information about the OpenAirInterface (OAI) Software Alliance:
- *      contact@openairinterface.org
- */
-
-/*
- * TESLA Broadcast Authentication for SIB1
- *
- * This module implements the TESLA (Timed Efficient Stream Loss-tolerant
- * Authentication) protocol for authenticating SIB1 messages in 5G NR.
- *
- * Reference: RFC 4082 - Timed Efficient Stream Loss-Tolerant Authentication
- */
-
 #ifndef TF5_TESLA_H
 #define TF5_TESLA_H
 
@@ -45,14 +15,16 @@
  */
 #define TF5_TESLA_KEY_LEN           16      // 128-bit TESLA chain keys (hardcoded)
 #define TF5_TESLA_TAG_LEN           16      // Truncated HMAC-SHA256 to 128 bits
-#define TF5_TESLA_SIG_LEN           TF5_BLS_SIGNATURE_LEN   // BLS signature length (48 bytes)
-#define TF5_TESLA_PUBKEY_LEN        TF5_BLS_PUBLIC_KEY_LEN  // BLS public key length (96 bytes)
+#define TF5_TESLA_SIG_LEN           TF5_BLS_SIG_LEN   // BLS signature length (48 bytes)
 #define TF5_TESLA_CHAIN_LEN         65536   // ~21 minutes at T_int=20ms
-#define TF5_TESLA_MAX_SIB1_LEN      374     // Max SIB1 encoded size (2976 bits)
-#define TF5_TESLA_MAX_AUTH_INPUT    512     // Max auth input buffer size
-#define TF5_TESLA_TIMESTAMP_LEN     8       // 64-bit Unix timestamp (ms)
-#define TF5_TESLA_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
-#define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered per RFC 4082 multi-packet
+#define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered
+
+#define TF5_SIGN_PUBKEY_LEN        TF5_BLS_PUBKEY_LEN  // BLS public key length (96 bytes)
+#define TF5_MAX_AUTH_INPUT    512     // Max auth input buffer size
+
+// Signature replay protection
+#define TF5_REPLAY_TIMESTAMP_LEN     8       // 64-bit Unix timestamp (ms)
+#define TF5_REPLAY_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
 
 // Sentinel value for trust_anchor_idx indicating K_{-1} (bootstrap key)
 #define TF5_TESLA_BOOTSTRAP_IDX           UINT32_MAX
@@ -128,7 +100,7 @@ typedef struct {
  * before key disclosure. This struct represents one buffered SIB1.
  */
 typedef struct {
-    uint8_t  auth_input[TF5_TESLA_MAX_AUTH_INPUT];
+    uint8_t  auth_input[TF5_MAX_AUTH_INPUT];
     size_t   auth_input_len;
     uint32_t interval_index;
     uint8_t  tag[TF5_TESLA_TAG_LEN];
@@ -236,7 +208,7 @@ typedef struct {
     tf5_tesla_params_t tesla_params;
 
     // Pre-provisioned Core Master Public Key (IBS mode)
-    uint8_t  mpk[TF5_TESLA_PUBKEY_LEN];  // 96B - Core's MPK = s*Q (G2 point)
+    uint8_t  mpk[TF5_SIGN_PUBKEY_LEN];  // 96B - Core's MPK = s*Q (G2 point)
     bool     has_mpk;                     // Is Core MPK configured?
 
     // Verification state (trust anchor for key chain verification)
@@ -412,7 +384,7 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
-                      const uint8_t mpk[TF5_TESLA_PUBKEY_LEN],
+                      const uint8_t mpk[TF5_SIGN_PUBKEY_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us);
 
@@ -616,7 +588,7 @@ int tf5_tesla_load_privkey(const char *filepath,
  *         -3: Invalid key format
  */
 int tf5_tesla_load_pubkey(const char *filepath,
-                          uint8_t pubkey_out[TF5_TESLA_PUBKEY_LEN]);
+                          uint8_t pubkey_out[TF5_SIGN_PUBKEY_LEN]);
 
 /*
  * =============================================================================

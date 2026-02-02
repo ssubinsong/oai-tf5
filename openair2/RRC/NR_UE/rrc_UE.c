@@ -2447,7 +2447,7 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
           return;
         default:
           // Should not reach here (AUTH_FAILED would have aborted, RRCSETUP_DEFERRED shouldn't receive another RRCSetup)
-          DevAssert(false, "Unexpected auth state in RRCSetup processing\n");
+          DevAssert(false);
       }
   }
 #endif
