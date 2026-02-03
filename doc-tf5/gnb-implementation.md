@@ -70,7 +70,7 @@ The initialization is performed in `nr_mac_configure_sib1()` within the `#ifdef 
 
 **Key generation**: Use the Core PKG utilities (located in `openair3/SECU/core-pkg/`) to issue gNB keys:
 ```bash
-cd cmake_targets/ran_build/build_test
+cd cmake_targets/ran_build/build
 ./tf5_ibs_issue pkg_keys/msk.bin <cell_id_hex> <validity_end> gnb_keys/sk_gnb.bin
 ```
 

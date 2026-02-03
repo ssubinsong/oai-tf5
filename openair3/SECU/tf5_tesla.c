@@ -461,7 +461,6 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
                TF5_TESLA_KEY_LEN);
     } else {
         // Bootstrap case (interval < d): disclose K_{-1}
-        // Per RFC 4082 Section 3.3: receiver needs one authenticated chain key
         memcpy(ext->key_disclosure, state->k_bootstrap, TF5_TESLA_KEY_LEN);
         LOG_D(NR_RRC, "TESLA: Bootstrap interval %u < d=%u, disclosing K_{-1}\n",
               interval, disclosure_delay);
@@ -474,7 +473,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
         return -7;
     }
 
-    // Build signature auth input (SIB1 + tesla_params + gnb_key_validity_end + interval + key + timestamp)
+    // Build signature auth input
     uint8_t sig_auth_input[TF5_MAX_AUTH_INPUT];
     size_t sig_auth_input_len;
     int rc = tf5_tesla_build_sig_auth_input(sig_auth_input, &sig_auth_input_len,

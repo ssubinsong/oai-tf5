@@ -31,4 +31,9 @@ target_include_directories(tf5_ibs_issue PRIVATE
     ${BLST_DIR}/bindings)
 target_link_libraries(tf5_ibs_issue PRIVATE SECURITY blst)
 
+# Place PKG utilities directly in the build directory root for easy access
+set_target_properties(tf5_ibs_pkg_keygen tf5_ibs_issue PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
 endif(ENABLE_TF5)

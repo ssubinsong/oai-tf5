@@ -58,20 +58,14 @@ cd cmake_targets
 ./build_oai --ninja --gNB --nrUE --cmake-opt "-DENABLE_TESTS=ON -DENABLE_TF5=ON"
 ```
 
-Alternatively, using CMake presets:
-```bash
-cmake --preset tests
-ninja -C cmake_targets/ran_build/build_test tf5_tests
-```
-
-This produces two utilities in `cmake_targets/ran_build/build_test/`:
+This produces two utilities in `cmake_targets/ran_build/build/`:
 - `tf5_ibs_pkg_keygen` - Master keypair generation
 - `tf5_ibs_issue` - gNB secret key issuance
 
 ### Step 2: Generate Master Keypair (One-time)
 
 ```bash
-cd cmake_targets/ran_build/build_test
+cd cmake_targets/ran_build/build
 ./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
 ```
 
@@ -84,7 +78,7 @@ cd cmake_targets/ran_build/build_test
 For each gNB, issue a secret key based on its NR Cell ID (36 bits) and a validity period:
 
 ```bash
-cd cmake_targets/ran_build/build_test
+cd cmake_targets/ran_build/build
 # Cell ID 0x123456789, valid for 2 years (1051200 minutes from 2024-01-01)
 ./tf5_ibs_issue pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_gnb.bin
 ```
