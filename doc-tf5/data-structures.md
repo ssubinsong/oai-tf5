@@ -163,12 +163,11 @@ Note: root_key removed - disclosed_key serves as trusted anchor (every SIB1 is s
 typedef struct {
     tf5_tesla_params_t params;
 
-    // Key chain storage (dynamically allocated)
-    uint8_t  (*key_chain)[16];    // K_0 ... K_N
-    uint32_t key_chain_len;
-
-    // Bootstrap key K_{-1} = F(K_0), disclosed during intervals 0 to d-1
-    uint8_t  k_bootstrap[16];
+    // Key chain storage (dynamically allocated, chain_len + 1 entries)
+    // Layout: key_chain[0] = K_{-1}, key_chain[1] = K_0, ..., key_chain[N] = K_{N-1}
+    // Use tf5_key_interval_to_index(i) to convert interval to array index
+    uint8_t  (*key_chain)[16];
+    uint32_t key_chain_len;       // Number of intervals N (array has N+1 entries)
 
     // Current state
     uint32_t current_interval;
@@ -198,8 +197,8 @@ typedef struct {
     bool     has_mpk;                     // Is Core MPK configured?
 
     // Verification state (trust anchor for key chain verification)
-    // trust_anchor_idx = TF5_TESLA_BOOTSTRAP_IDX (UINT32_MAX) indicates K_{-1}
-    uint32_t trust_anchor_idx;                        // Interval index of the trust anchor key
+    // trust_anchor_idx = -1 indicates K_{-1} (bootstrap key)
+    int32_t  trust_anchor_idx;                        // Interval index of the trust anchor key
     uint8_t  trust_anchor_key[TF5_TESLA_KEY_LEN];     // Key used as anchor for chain verification
 
     // Buffer queue for pending TESLA verification (RFC 4082 multi-packet)

@@ -92,7 +92,7 @@ protected:
     }
 
     // Helper to set up UE state with a trust anchor
-    void setupUeWithTrustAnchor(const uint8_t* anchor_key, uint32_t anchor_idx) {
+    void setupUeWithTrustAnchor(const uint8_t* anchor_key, int32_t anchor_idx) {
         memcpy(ue_state.trust_anchor_key, anchor_key, TF5_TESLA_KEY_LEN);
         ue_state.trust_anchor_idx = anchor_idx;
         ue_state.chain_bootstrapped = true;
@@ -387,10 +387,10 @@ TEST_F(TF5UeTest, VerifyKeyChain_ValidChain_ReturnsTrue) {
     ASSERT_EQ(0, initGnbDefault(10));
 
     // Set up UE with K_0 as trust anchor (from bootstrap)
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     // Verify K_1 chains to K_0
-    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[1], 1);
+    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(1)], 1);
 
     EXPECT_TRUE(valid) << "K_1 should chain to K_0";
 }
@@ -400,7 +400,7 @@ TEST_F(TF5UeTest, VerifyKeyChain_InvalidChain_ReturnsFalse) {
     ASSERT_EQ(0, initGnbDefault(10));
 
     // Set up UE with K_0 as trust anchor
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     // Try to verify a fake key
     uint8_t fake_key[TF5_TESLA_KEY_LEN] = {0xff, 0xff, 0xff, 0xff};
@@ -415,10 +415,10 @@ TEST_F(TF5UeTest, VerifyKeyChain_SkippedKeys_MultipleHashOps) {
     ASSERT_EQ(0, initGnbDefault(10));
 
     // Set up UE with K_0 as trust anchor
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     // Verify K_5 chains to K_0 (requires 5 hash operations)
-    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[5], 5);
+    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(5)], 5);
 
     EXPECT_TRUE(valid) << "K_5 should chain to K_0 via 5 hash ops";
 }
@@ -427,13 +427,13 @@ TEST_F(TF5UeTest, VerifyKeyChain_BootstrapAnchor) {
     ASSERT_EQ(0, initUeDefault());
     ASSERT_EQ(0, initGnbDefault(10));
 
-    // Set up UE with K_{-1} as bootstrap anchor
-    memcpy(ue_state.trust_anchor_key, gnb_state.k_bootstrap, TF5_TESLA_KEY_LEN);
-    ue_state.trust_anchor_idx = TF5_TESLA_BOOTSTRAP_IDX;
+    // Set up UE with K_{-1} as bootstrap anchor (stored at index 0)
+    memcpy(ue_state.trust_anchor_key, gnb_state.key_chain[tf5_key_interval_to_index(-1)], TF5_TESLA_KEY_LEN);
+    ue_state.trust_anchor_idx = -1;
     ue_state.chain_bootstrapped = true;
 
-    // Verify K_0 chains to K_{-1}
-    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[0], 0);
+    // Verify K_0 chains to K_{-1} (K_0 is at index 1)
+    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     EXPECT_TRUE(valid) << "K_0 should chain to K_{-1} (bootstrap anchor)";
 }
@@ -445,7 +445,7 @@ TEST_F(TF5UeTest, VerifyKeyChain_NotBootstrapped_ReturnsFalse) {
     // UE is not bootstrapped (no trust anchor)
     EXPECT_FALSE(ue_state.chain_bootstrapped);
 
-    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[1], 1);
+    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(1)], 1);
 
     EXPECT_FALSE(valid) << "Should fail when not bootstrapped";
 }
@@ -482,7 +482,7 @@ TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
 
     // Set up UE
     ue_state.tesla_params = ext5.tesla_params;
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     // Buffer SIB1 from interval 5
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
@@ -500,7 +500,7 @@ TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
     bool rrc_trigger_verified = false;
 
     // This should recover K_5 from K_7 and verify the buffered entry
-    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[7],
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)],
                                                      7, &total_verified, &total_failed,
                                                      &rrc_trigger_verified);
 
@@ -787,7 +787,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerTrackedInBuffer) {
 
     // Set up UE
     ue_state.tesla_params = ext.tesla_params;
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     // Buffer with triggered_rrc_setup = true
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
@@ -823,7 +823,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
 
     // Set up UE
     ue_state.tesla_params = ext.tesla_params;
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     // Buffer with triggered_rrc_setup = true
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
@@ -839,7 +839,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger_verified = false;
 
-    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[ext.i],
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                 ext.i, &verified_count, &failed_count,
                                                 &rrc_trigger_verified);
 

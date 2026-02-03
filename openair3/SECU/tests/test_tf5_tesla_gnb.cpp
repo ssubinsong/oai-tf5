@@ -88,24 +88,26 @@ TEST_F(TF5GnbTest, GnbInit_BootstrapKeyComputed) {
     int ret = initGnbDefault(10);
     EXPECT_EQ(0, ret);
 
-    // Bootstrap key K_{-1} = F(K_0)
+    // Bootstrap key K_{-1} = F(K_0), stored at index 0
+    // K_0 is stored at index 1
     uint8_t computed_bootstrap[TF5_TESLA_KEY_LEN];
-    tf5_tesla_chain_key(gnb_state.key_chain[0], computed_bootstrap);
+    tf5_tesla_chain_key(gnb_state.key_chain[tf5_key_interval_to_index(0)], computed_bootstrap);
 
-    EXPECT_EQ(0, memcmp(gnb_state.k_bootstrap, computed_bootstrap, TF5_TESLA_KEY_LEN))
-        << "Bootstrap key K_{-1} should equal F(K_0)";
+    EXPECT_EQ(0, memcmp(gnb_state.key_chain[tf5_key_interval_to_index(-1)], computed_bootstrap, TF5_TESLA_KEY_LEN))
+        << "Bootstrap key K_{-1} at index 0 should equal F(K_0)";
 }
 
 TEST_F(TF5GnbTest, GnbInit_KeyChainValid) {
     int ret = initGnbDefault(10);
     EXPECT_EQ(0, ret);
 
-    // Verify key chain: K_i = F(K_{i+1})
-    for (uint32_t i = 0; i < gnb_state.key_chain_len - 1; i++) {
+    // Verify key chain: K_i = F(K_{i+1}) for i = -1 to N-2
+    // Key chain now includes K_{-1} at index 0
+    for (int32_t i = -1; i < (int32_t)gnb_state.key_chain_len - 1; i++) {
         uint8_t computed[TF5_TESLA_KEY_LEN];
-        tf5_tesla_chain_key(gnb_state.key_chain[i + 1], computed);
+        tf5_tesla_chain_key(gnb_state.key_chain[tf5_key_interval_to_index(i + 1)], computed);
 
-        EXPECT_EQ(0, memcmp(gnb_state.key_chain[i], computed, TF5_TESLA_KEY_LEN))
+        EXPECT_EQ(0, memcmp(gnb_state.key_chain[tf5_key_interval_to_index(i)], computed, TF5_TESLA_KEY_LEN))
             << "K_" << i << " should equal F(K_" << (i + 1) << ")";
     }
 }
@@ -247,7 +249,7 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectKeyDisclosure_NormalInterval) {
     tf5_tesla_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     // At interval 5 with d=1, should disclose K_{5-1} = K_4
-    EXPECT_EQ(0, memcmp(ext.key_disclosure, gnb_state.key_chain[4], TF5_TESLA_KEY_LEN))
+    EXPECT_EQ(0, memcmp(ext.key_disclosure, gnb_state.key_chain[tf5_key_interval_to_index(4)], TF5_TESLA_KEY_LEN))
         << "At interval 5 with d=1, should disclose K_4";
 }
 
@@ -260,7 +262,7 @@ TEST_F(TF5GnbTest, PrepareExtension_BootstrapInterval_DiscloseKMinus1) {
     // At interval 0 (T_0), should disclose K_{-1} (bootstrap key)
     tf5_tesla_gnb_prepare_extension(&gnb_state, 0, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
-    EXPECT_EQ(0, memcmp(ext.key_disclosure, gnb_state.k_bootstrap, TF5_TESLA_KEY_LEN))
+    EXPECT_EQ(0, memcmp(ext.key_disclosure, gnb_state.key_chain[tf5_key_interval_to_index(-1)], TF5_TESLA_KEY_LEN))
         << "At interval 0 with d=1, should disclose K_{-1} (bootstrap key)";
 }
 

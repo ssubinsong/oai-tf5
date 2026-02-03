@@ -19,9 +19,6 @@
 #define TF5_TESLA_DEFAULT_D_BOUND_US           1005    // Pre-calculated D bound (microseconds)
 #define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered
 
-// Sentinel value for trust_anchor_idx indicating K_{-1} (bootstrap key)
-#define TF5_TESLA_BOOTSTRAP_IDX           UINT32_MAX
-
 #define TF5_MAX_AUTH_INPUT    512     // Max auth input buffer size
 
 // Protocol version
@@ -74,6 +71,20 @@ static inline tf5_tesla_slot_time_t tf5_slot_time_make(uint16_t sfn,
     return (tf5_tesla_slot_time_t){.sfn = sfn, .slot = slot};
 }
 
+/**
+ * Convert TESLA key interval to array index
+ *
+ * Key chain storage: key_chain[0] = K_{-1}, key_chain[1] = K_0, ..., key_chain[n+1] = K_n
+ * This simplifies bootstrap key handling by storing K_{-1} in the same array.
+ *
+ * @param interval  Key interval (-1, 0, 1, ..., N-1)
+ * @return Array index (0, 1, 2, ..., N)
+ */
+static inline uint32_t tf5_key_interval_to_index(int32_t interval)
+{
+    return (uint32_t)(interval + 1);
+}
+
 
 /*
  * TESLA Parameters
@@ -106,10 +117,10 @@ typedef struct {
 typedef struct {
     tf5_tesla_params_t tesla_params;
 
-    // Key chain storage
-    uint8_t  (*key_chain)[TF5_TESLA_KEY_LEN];      // Dynamically allocated
-    uint8_t  k_bootstrap[TF5_TESLA_KEY_LEN];        // Bootstrap key K_{-1} = F(K_0), disclosed during intervals 0 to d-1
-    uint32_t key_chain_len;
+    // Key chain storage: key_chain[0] = K_{-1}, key_chain[1] = K_0, ..., key_chain[N] = K_{N-1}
+    // Use tf5_key_interval_to_index() to convert interval to array index
+    uint8_t  (*key_chain)[TF5_TESLA_KEY_LEN];      // Dynamically allocated (chain_len + 1 entries)
+    uint32_t key_chain_len;                         // Number of intervals N (array has N+1 entries)
 
     // IBS keys
     uint8_t  private_key[TF5_GNB_SKEY_LEN];   // 32B - sk_ID (issued by Core PKG)
@@ -141,7 +152,7 @@ typedef struct {
     uint8_t  mpk[TF5_MPK_LEN];  // 96B - Core's MPK = s*Q (G2 point)
 
     // Verification state (trust anchor for key chain verification)
-    uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
+    int32_t  trust_anchor_idx;        // Interval index of the trust anchor key (-1 for K_{-1})
     uint8_t  trust_anchor_key[TF5_TESLA_KEY_LEN];  // Key used as anchor for chain verification
 
     // Buffer queue for pending TESLA verification

@@ -698,17 +698,11 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     /* Accept disclosed key as trust anchor (signature authenticates it) */
     memcpy(state->trust_anchor_key, ext->key_disclosure, TF5_TESLA_KEY_LEN);
 
-    if (ext->i < ext->tesla_params.d) {
-        // Bootstrap case: key_disclosure is K_{-1}
-        state->trust_anchor_idx = TF5_TESLA_BOOTSTRAP_IDX;
-        LOG_I(NR_RRC, "TESLA IBS: First-time UE - bootstrap K_{-1} as anchor (interval %u)\n",
-              ext->i);
-    } else {
-        // Normal case: key_disclosure is K_{i-d}
-        state->trust_anchor_idx = ext->i - ext->tesla_params.d;
-        LOG_I(NR_RRC, "TESLA IBS: First-time UE - K_%u as anchor (interval %u)\n",
-              state->trust_anchor_idx, ext->i);
-    }
+    // Key disclosure is K_{i-d}, which is the trust anchor
+    // For bootstrap case (i < d), this results in negative index (e.g., -1 for K_{-1})
+    state->trust_anchor_idx = (int32_t)ext->i - ext->tesla_params.d;
+    LOG_I(NR_RRC, "TESLA IBS: First-time UE - K_%d as anchor (interval %u)\n",
+          state->trust_anchor_idx, ext->i);
 
     tf5_tesla_on_auth_success(rrc, SI_info);
     return TF5_VERIFY_OK;
@@ -729,12 +723,12 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
                                                        int rx_frame,
                                                        int rx_slot)
 {
-    tf5_ue_state_t *state = SI_info->tesla_state;
+    tf5_ue_state_t *ue_state = SI_info->tesla_state;
 
     LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
 
     /* Step 1 (RFC 4082 3.5): Safe packet test FIRST */
-    if (!tf5_tesla_ue_safe_packet_test(state, ext, rx_frame, rx_slot)) {
+    if (!tf5_tesla_ue_safe_packet_test(ue_state, ext, rx_frame, rx_slot)) {
         LOG_W(NR_RRC, "TESLA: Safe packet test FAILED; Skipping SIB1\n");
         return TF5_VERIFY_SKIP_UNSAFE;
     }
@@ -750,27 +744,27 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
     tf5_tesla_slot_time_t buffer_rx_time = tf5_slot_time_make(rx_frame, rx_slot);
 
     // Should trigger RRC if this is the first buffered entry and not already deferred
-    bool should_trigger_rrc = (state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) &&
-                              (state->buffer_queue_count == 0);
+    bool should_trigger_rrc = (ue_state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) &&
+                              (ue_state->buffer_queue_count == 0);
 
-    tf5_tesla_ue_buffer_sib1(state, mac_auth_input, mac_auth_len, ext->i, ext->tesla_tag, should_trigger_rrc);
+    tf5_tesla_ue_buffer_sib1(ue_state, mac_auth_input, mac_auth_len, ext->i, ext->tesla_tag, should_trigger_rrc);
 
     // Set BUFFERED state if this is first buffered entry (RACH/RRC now proceeding)
-    if (state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) {
-        state->auth_state = TF5_AUTH_STATE_BUFFERED;
+    if (ue_state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) {
+        ue_state->auth_state = TF5_AUTH_STATE_BUFFERED;
     }
 
     /* Step 3: Verify buffered SIB1s with disclosed key (key recovery) */
-    if (state->buffer_queue_count == 0 ||
-        ext->i <= state->tesla_params.d) {
+    if (ue_state->buffer_queue_count == 0 ||
+        ext->i <= ue_state->tesla_params.d) {
         return TF5_VERIFY_PENDING;
     }
 
-    uint32_t disclosed_interval = ext->i - state->tesla_params.d;
+    uint32_t disclosed_interval = ext->i - ue_state->tesla_params.d;
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger_verified = false;
 
-    int verify_rc = tf5_tesla_ue_verify_with_key_recovery(state,
+    int verify_rc = tf5_tesla_ue_verify_with_key_recovery(ue_state,
                                                            ext->key_disclosure,
                                                            disclosed_interval,
                                                            &verified_count,
