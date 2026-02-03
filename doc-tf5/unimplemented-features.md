@@ -114,6 +114,23 @@ TESLA uses a finite key chain of length N. When the chain is exhausted, the gNB 
 
 ---
 
+## 4. BLS Signature Batch Verification
+
+**Description**: Amortize pairing costs across multiple BLS signatures during cell selection/reselection.
+
+During cell selection and reselection, UEs detect and measure multiple candidate cells, ranking them by signal quality before selecting the best one (3GPP TS 38.304). This procedure inherently requires authenticating signatures from several gNBs.
+
+BLS supports efficient batch verification through aggregation: verifying n signatures requires only n+1 pairings rather than 2n, reducing computational overhead when authenticating multiple candidate cells simultaneously.
+
+**Current Status**: Not implemented. The current implementation verifies one BLS signature at a time. Each signature verification performs 2 pairing operations independently.
+
+**Rationale for Deferral**:
+- Requires neighbor broadcast infrastructure (UE needs to receive SIB1 from multiple cells)
+- Current single-cell evaluation does not exercise multi-cell scenarios
+- Optimization benefit is marginal for small n (e.g., 2-3 candidate cells)
+
+---
+
 ## Summary
 
 | Feature | Status | Dependencies |
@@ -121,6 +138,7 @@ TESLA uses a finite key chain of length N. When the chain is exhausted, the gNB 
 | HFN Tracking | Not implemented | None (independent) |
 | Neighbor TESLA Broadcast | Not implemented | Multi-cell testbed |
 | Chain Renewal Optimization | Not implemented | Neighbor broadcast (for optimal path) |
+| BLS Batch Verification | Not implemented | Multi-cell scenario |
 
 ---
 
