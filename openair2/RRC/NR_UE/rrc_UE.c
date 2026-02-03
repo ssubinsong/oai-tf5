@@ -525,6 +525,7 @@ typedef enum {
     TF5_VERIFY_FAIL_TIMESTAMP = -5,     // Timestamp validation failed
     TF5_VERIFY_FAIL_SIGNATURE = -6,     // IBS signature verification failed
     TF5_VERIFY_FAIL_MAC = -7,           // All TESLA MAC verifications failed
+    TF5_VERIFY_FAIL_KEYCHAIN = -8,      // Key chain verification failed (RFC 4082 3.5 step 3)
 } tf5_verify_result_t;
 
 /**
@@ -543,10 +544,11 @@ static void tf5_tesla_on_auth_failure(NR_UE_RRC_INST_t *rrc,
         [5] = "timestamp invalid",
         [6] = "signature verification failed",
         [7] = "MAC verification failed",
+        [8] = "key chain verification failed",
     };
 
     int idx = -result;
-    const char *reason = (idx >= 1 && idx <= 7) ? result_names[idx] : "unknown";
+    const char *reason = (idx >= 1 && idx <= 8) ? result_names[idx] : "unknown";
 
     LOG_E(NR_RRC, "TESLA: Verification failed (%s) - aborting RRC\n", reason);
     SI_info->tesla_state->auth_state = TF5_AUTH_STATE_AUTH_FAILED;
@@ -770,6 +772,22 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
                                                            &verified_count,
                                                            &failed_count,
                                                            &rrc_trigger_verified);
+
+    // RFC 4082 Section 3.5 Step 3: "If key verification fails, the newly arrived
+    // packet P_j should be discarded"
+    if (verify_rc == -6) {
+        LOG_E(NR_RRC, "TESLA: Key chain verification failed - discarding buffered packet at interval %u\n", ext->i);
+        // Remove the just-buffered packet
+        for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
+            if (ue_state->buffer_queue[i].valid &&
+                ue_state->buffer_queue[i].rx_interval_index == ext->i) {
+                ue_state->buffer_queue[i].valid = false;
+                ue_state->buffer_queue_count--;
+                break;
+            }
+        }
+        return TF5_VERIFY_FAIL_KEYCHAIN;
+    }
 
     if (verify_rc == 0 && verified_count > 0) {
         LOG_I(NR_RRC, "TESLA: Returning UE - %d SIB1(s) MAC verified (with key recovery)\n",

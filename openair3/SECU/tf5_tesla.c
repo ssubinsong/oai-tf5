@@ -709,11 +709,10 @@ bool tf5_tesla_ue_verify_key_chain(tf5_ue_state_t *ue_state,
         if (memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
             LOG_D(NR_RRC, "TESLA: Key chain verified K_%u -> K_%d (%u hash ops)\n",
                   disclosed_key_interval, ue_state->trust_anchor_idx, steps);
-            // Promote to normal anchor for O(1) future verifications (only if anchor was bootstrap)
-            if (ue_state->trust_anchor_idx == -1) {
-                memcpy(ue_state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
-                ue_state->trust_anchor_idx = disclosed_interval;
-            }
+            // Update anchor to newly verified key for O(1) future verifications
+            // Per RFC 4082: once a key is verified, it becomes the new trust anchor
+            memcpy(ue_state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
+            ue_state->trust_anchor_idx = disclosed_interval;
             return true;
         } else {
             LOG_E(NR_RRC, "TESLA: Key chain verification FAILED K_%u -> K_%d\n",
@@ -885,12 +884,9 @@ int tf5_tesla_ue_verify_with_key_recovery(
         }
     }
 
-    // Step 7: Update trust anchor to highest verified interval
-    // This enables O(1) verification for subsequent consecutive disclosures
+    // Step 7: Log verification results
+    // Note: Trust anchor already updated in tf5_tesla_ue_verify_key_chain() per RFC 4082
     if (*total_verified > 0) {
-        memcpy(ue_state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
-        ue_state->trust_anchor_idx = disclosed_key_interval;
-
         LOG_I(NR_RRC, "TESLA: Key recovery verified %d SIB1(s) across intervals [%u, %u] "
               "(%d failed, rrc_trigger=%d)\n",
               *total_verified, verify_start, verify_end, *total_failed, *rrc_trigger_verified);

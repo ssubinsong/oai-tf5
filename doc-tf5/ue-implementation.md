@@ -171,6 +171,7 @@ typedef enum {
     TF5_VERIFY_FAIL_TIMESTAMP = -5,     // Timestamp validation failed
     TF5_VERIFY_FAIL_SIGNATURE = -6,     // IBS signature verification failed
     TF5_VERIFY_FAIL_MAC = -7,           // All TESLA MAC verifications failed
+    TF5_VERIFY_FAIL_KEYCHAIN = -8,      // Key chain verification failed (RFC 4082 3.5 step 3)
 } tf5_verify_result_t;
 ```
 
@@ -315,7 +316,7 @@ bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
 Key chain verification is called automatically by `tf5_tesla_ue_verify_buffered()` before MAC verification.
 This ensures disclosed keys are cryptographically validated against a trusted anchor key.
 
-### Anchor Key Strategy
+### Anchor Key Strategy (RFC 4082 Compliant)
 
 Instead of chaining every disclosed key back to K_0 (which requires O(i) hash operations), the UE uses the **last verified key** as anchor:
 
@@ -323,7 +324,10 @@ Instead of chaining every disclosed key back to K_0 (which requires O(i) hash op
    - K_{i-d} becomes the anchor (0 hash ops - signature authenticated)
 2. **Subsequent SIB1s**: New disclosed key verified against last anchor
    - Verify: F(K_{new}) == K_{anchor}? (typically 1 hash op)
-   - Anchor updates to K_{new} after successful verification
+   - **Anchor always updates to K_{new} after successful key chain verification**
+     (per RFC 4082 Section 3.5 - this happens regardless of whether any buffered packets were verified)
+
+**RFC 4082 Compliance**: The anchor update occurs in `tf5_tesla_ue_verify_key_chain()` immediately after the key is verified, not in `tf5_tesla_ue_verify_with_key_recovery()`. This ensures the anchor advances even when packets are lost, preventing unnecessary hash operations on subsequent verifications.
 
 ### Example (d=1)
 
@@ -352,8 +356,7 @@ bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
 }
 ```
 
-**Security Note**: If a disclosed key does not chain to the anchor, `tf5_tesla_ue_verify_buffered()` returns error -6
-and the buffered SIB1 MAC verification is rejected. This prevents use of forged keys.
+**Security Note**: If a disclosed key does not chain to the anchor, `tf5_tesla_ue_verify_with_key_recovery()` returns error -6 (key chain failure). Per RFC 4082 Section 3.5 Step 3: *"If key verification fails, the newly arrived packet P_j should be discarded"* - the calling code in `tf5_tesla_verify_returning()` removes the just-buffered packet and returns `TF5_VERIFY_FAIL_KEYCHAIN` (-8). This prevents use of forged keys and ensures compromised packets don't remain in the buffer.
 
 ---
 
@@ -381,10 +384,10 @@ Without key recovery, the SIB1 from interval 5 would never be verified.
 Using the one-way chain property `K_i = F(K_{i+1})`, the UE can derive missing keys:
 
 1. Receive disclosed key K_{disclosed_interval}
-2. Find all buffered intervals requiring verification
-3. Derive intermediate keys: `K_{disclosed} → K_{disclosed-1} → ... → K_{earliest}`
-4. Verify all buffered entries using the derived keys
-5. Update anchor to disclosed_interval
+2. Verify disclosed key chains to anchor (updates anchor as side-effect per RFC 4082)
+3. Find all buffered intervals requiring verification
+4. Derive intermediate keys: `K_{disclosed} → K_{disclosed-1} → ... → K_{earliest}`
+5. Verify all buffered entries using the derived keys
 
 ### Example (d=1, Lost SIB1)
 
@@ -410,8 +413,9 @@ int tf5_tesla_ue_verify_with_key_recovery(state, disclosed_key, disclosed_interv
     uint32_t verify_end = MIN(latest_buffered, disclosed_interval);
 
     // Step 2: Verify disclosed key chains to trust anchor (once)
+    // NOTE: This updates the trust anchor as a side effect per RFC 4082
     if (!tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval))
-        return -6;  // Key chain failed
+        return -6;  // Key chain failed - caller must discard newly buffered packet
 
     // Step 3: Derive all keys from disclosed_interval down to verify_start
     key_cache[disclosed_interval] = disclosed_key;
@@ -422,9 +426,7 @@ int tf5_tesla_ue_verify_with_key_recovery(state, disclosed_key, disclosed_interv
     for each buffered entry in [verify_start, verify_end]:
         verify_mac(entry, key_cache[entry.interval_index]);
 
-    // Step 5: Update trust anchor
-    state->trust_anchor_key = disclosed_key;
-    state->trust_anchor_idx = disclosed_interval;
+    // Trust anchor already updated in verify_key_chain()
 }
 ```
 
