@@ -31,7 +31,7 @@ void exit_function(const char *file, const char *function, const int line, const
 class TF5GnbTest : public ::testing::Test {
 protected:
     tf5_gnb_state_t gnb_state;
-    uint8_t test_private_key[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t test_private_key[TF5_GNB_SKEY_LEN];
     tf5_tesla_slot_time_t t0;
 
     void SetUp() override {
@@ -42,7 +42,7 @@ protected:
         memset(&gnb_state, 0, sizeof(gnb_state));
 
         // Use test private key
-        memcpy(test_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_BLS_SECRET_KEY_LEN);
+        memcpy(test_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SKEY_LEN);
 
         // Set T_0 to SFN=0, slot=0
         t0 = tf5_slot_time_make(tf5_test::TV_T0_SFN, tf5_test::TV_T0_SLOT);

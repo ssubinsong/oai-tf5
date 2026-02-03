@@ -188,7 +188,7 @@ typedef enum {
    └── tf5_extract_cell_id_from_sib1(sib1, cell_id)
 
 4. Verify IBS signature (synchronous - fast)
-   └── tf5_tesla_ue_verify_signature(state, cell_id, gnb_key_validity_end, auth_input, auth_len, signature)
+   └── tf5_tesla_ibs_verify(mpk, cell_id, gnb_key_validity_end, auth_input, auth_len, signature)
    ├── SUCCESS:
    │   └── Chain bootstrapped: chain_bootstrapped = true
    │   └── auth_state = TF5_AUTH_STATE_AUTHENTICATED

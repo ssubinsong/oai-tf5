@@ -35,7 +35,7 @@
 #include <stddef.h>
 
 /* BLS12-381 key and signature sizes (non-ETH mode) */
-#define TF5_BLS_SECRET_KEY_LEN   32   /* Fr element */
+#define TF5_GNB_SKEY_LEN   32   /* Fr element */
 #define TF5_BLS_PUBKEY_LEN   96   /* G2 point (compressed) */
 #define TF5_BLS_SIG_LEN    48   /* G1 point (compressed) */
 
@@ -56,7 +56,7 @@ int tf5_tesla_bls_init(void);
  * @param public_key   Output: BLS public key (96 bytes)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
                                 uint8_t public_key[TF5_BLS_PUBKEY_LEN]);
 
 /**
@@ -68,7 +68,7 @@ int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN]
  * @param signature    Output: BLS signature (48 bytes)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
                        const uint8_t *data,
                        size_t data_len,
                        uint8_t signature[TF5_BLS_SIG_LEN]);
@@ -94,7 +94,7 @@ int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBKEY_LEN],
  * @param public_key   Output: BLS public key (96 bytes)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_GNB_SKEY_LEN],
                          uint8_t public_key[TF5_BLS_PUBKEY_LEN]);
 
 /*
@@ -158,7 +158,7 @@ int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBKEY_LEN],
 int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
                                   size_t cell_id_len,
                                   uint32_t gnb_key_validity_end,
-                                  uint8_t scalar_out[TF5_BLS_SECRET_KEY_LEN]);
+                                  uint8_t scalar_out[TF5_GNB_SKEY_LEN]);
 
 #endif /* ENABLE_TF5 */
 

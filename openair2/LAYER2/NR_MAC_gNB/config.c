@@ -1184,7 +1184,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   extern char *tesla_privkey_file;
   extern unsigned int tesla_chain_len;
 
-  uint8_t private_key[TF5_BLS_SECRET_KEY_LEN];
+  uint8_t private_key[TF5_GNB_SKEY_LEN];
   uint32_t gnb_key_validity_end;
   int rc;
 

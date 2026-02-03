@@ -641,8 +641,6 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
 {
     tf5_tesla_ue_state_t *state = SI_info->tesla_state;
 
-    AssertFatal(state->has_mpk, "TESLA IBS: Core MPK not configured");
-
     /* Validate wall-clock (fail fast before expensive crypto) */
     uint64_t ue_time_ms = tf5_rp_get_wallclock_ms();
     if (ue_time_ms == 0) {
@@ -652,12 +650,12 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
 
     int ts_rc = tf5_rp_validate_timestamp(ue_time_ms,
                                               ext->timestamp_ms,
-                                              state->timestamp_window_ms);
+                                              state->rp_timestamp_window_ms);
     if (ts_rc != 0) {
         LOG_E(NR_RRC, "TESLA: Timestamp validation FAILED (rc=%d) - "
               "ext_ts=%lu, ue_ts=%lu, window=%lu ms\n",
               ts_rc, (unsigned long)ext->timestamp_ms, (unsigned long)ue_time_ms,
-              (unsigned long)state->timestamp_window_ms);
+              (unsigned long)state->rp_timestamp_window_ms);
         return TF5_VERIFY_FAIL_TIMESTAMP;
     }
 
@@ -1728,7 +1726,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
           free(ptr->SInfo.tesla_state);
           ptr->SInfo.tesla_state = NULL;
         } else {
-          uint8_t mpk[TF5_IBS_PUBKEY_LEN];
+          uint8_t mpk[TF5_MPK_LEN];
           rc = tf5_tesla_load_pubkey(params->tesla_core_mpk_file, mpk);
           if (rc == 0) {
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info

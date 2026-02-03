@@ -33,7 +33,7 @@ class TF5E2ETest : public ::testing::Test {
 protected:
     // gNB state
     tf5_gnb_state_t gnb_state;
-    uint8_t gnb_private_key[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t gnb_private_key[TF5_GNB_SKEY_LEN];
     uint8_t gnb_public_key[TF5_BLS_PUBKEY_LEN];
 
     // UE state
@@ -59,7 +59,7 @@ protected:
         memset(&ue_state, 0, sizeof(ue_state));
 
         // Generate gNB key pair
-        memcpy(gnb_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_BLS_SECRET_KEY_LEN);
+        memcpy(gnb_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SKEY_LEN);
         tf5_tesla_bls_derive_public(gnb_private_key, gnb_public_key);
 
         // Set cell ID

@@ -35,13 +35,13 @@
 /*
  * IBS (Identity-Based Signature) Constants
  */
-#define TF5_IBS_PUBKEY_LEN        TF5_BLS_PUBKEY_LEN  // BLS-IBS public key length (96 bytes)
+#define TF5_MPK_LEN        TF5_BLS_PUBKEY_LEN  // BLS-IBS public key length (96 bytes)
 #define TF5_IBS_CELL_ID_LEN   5    // 36 bits = 5 bytes
 #define TF5_VALIDITY_PERIOD_LEN   3     // 24-bit minutes since epoch
 #define TF5_IBS_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
 
 // gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
-#define TF5_IBS_SK_FILE_SIZE   (TF5_BLS_SECRET_KEY_LEN + TF5_VALIDITY_PERIOD_LEN)  // 35 bytes
+#define TF5_IBS_SK_FILE_SIZE   (TF5_GNB_SKEY_LEN + TF5_VALIDITY_PERIOD_LEN)  // 35 bytes
 
 // Signature replay protection
 #define TF5_RP_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
@@ -112,7 +112,7 @@ typedef struct {
     uint32_t key_chain_len;
 
     // IBS keys
-    uint8_t  private_key[TF5_BLS_SECRET_KEY_LEN];   // 32B - sk_ID (issued by Core PKG)
+    uint8_t  private_key[TF5_GNB_SKEY_LEN];   // 32B - sk_ID (issued by Core PKG)
     uint32_t key_validity_end;                      // Key expiration (minutes since 2024-01-01)
 
     // Slots per frame (depends on numerology)
@@ -137,9 +137,8 @@ typedef struct {
     tf5_tesla_params_t tesla_params;
     uint32_t d_bound_us;              // D bound for safe packet test (microseconds)
 
-    // Pre-provisioned Core Master Public Key (IBS mode)
-    uint8_t  mpk[TF5_IBS_PUBKEY_LEN];  // 96B - Core's MPK = s*Q (G2 point)
-    bool     has_mpk;                     // Is Core MPK configured?
+    // Pre-provisioned Core Master Public Key
+    uint8_t  mpk[TF5_MPK_LEN];  // 96B - Core's MPK = s*Q (G2 point)
 
     // Verification state (trust anchor for key chain verification)
     uint32_t trust_anchor_idx;        // Interval index of the trust anchor key
@@ -154,7 +153,7 @@ typedef struct {
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
     tf5_tesla_auth_state_t auth_state; // Current authentication state
     uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete (used when auth_state == RRCSETUP_DEFERRED)
-    uint64_t timestamp_window_ms;     // Timestamp window for signature replay protection (default 60000ms)
+    uint64_t rp_timestamp_window_ms;     // Timestamp window for signature replay protection (default 60000ms)
 
 } tf5_tesla_ue_state_t;
 
@@ -182,7 +181,7 @@ int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
                        uint16_t t_int_ms,
                        uint8_t d,
                        uint32_t chain_len,
-                       const uint8_t private_key[TF5_BLS_SECRET_KEY_LEN],
+                       const uint8_t private_key[TF5_GNB_SKEY_LEN],
                        const tf5_tesla_slot_time_t *t0,
                        uint16_t slots_per_frame);
 
@@ -301,14 +300,14 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
  * @param mpk           Pre-provisioned Core Master Public Key (96 bytes)
  * @param slots_per_frame Number of slots per frame
  * @param d_bound_us    D bound for safe packet test (microseconds)
- * @param timestamp_window_ms Timestamp window for signature replay protection (ms)
+ * @param rp_timestamp_window_ms Timestamp window for signature replay protection (ms)
  * @return 0 on success, negative on error
  */
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
-                      const uint8_t mpk[TF5_IBS_PUBKEY_LEN],
+                      const uint8_t mpk[TF5_MPK_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us,
-                      uint64_t timestamp_window_ms);
+                      uint64_t rp_timestamp_window_ms);
 
 /**
  * Free TESLA state resources on UE
@@ -328,27 +327,6 @@ void tf5_tesla_ue_free(tf5_tesla_ue_state_t *state);
 int tf5_tesla_unpack_extension(const uint8_t *buf,
                                size_t buf_len,
                                tf5_tesla_extension_t *ext);
-
-/**
- * Verify IBS signature
- *
- * Verifies signature using Identity-Based Signature scheme:
- *   e(Σ, Q) = e(H_m(auth_input), H_s(cell_id || gnb_key_validity_end) * MPK)
- *
- * @param state         Pointer to UE TESLA state structure (contains MPK)
- * @param cell_id       gNB's NR Cell ID (5 bytes, 36 bits) from SIB1
- * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
- * @param auth_input    Authentication input (SIB1 + static + dynamic)
- * @param auth_input_len Length of auth input
- * @param signature     Signature to verify (48 bytes)
- * @return 0 on success (signature valid), negative on error
- */
-int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
-                                  const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                                  uint32_t gnb_key_validity_end,
-                                  const uint8_t *auth_input,
-                                  size_t auth_input_len,
-                                  const uint8_t signature[TF5_TESLA_SIG_LEN]);
 
 /**
  * Perform safe packet test
@@ -496,7 +474,7 @@ int tf5_tesla_ue_verify_with_key_recovery(
  *         -3: Invalid key format
  */
 int tf5_tesla_load_privkey(const char *filepath,
-                           uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN],
+                           uint8_t privkey_out[TF5_GNB_SKEY_LEN],
                            uint32_t *validity_out);
 
 /**
@@ -510,7 +488,7 @@ int tf5_tesla_load_privkey(const char *filepath,
  *         -3: Invalid key format
  */
 int tf5_tesla_load_pubkey(const char *filepath,
-                          uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN]);
+                          uint8_t pubkey_out[TF5_MPK_LEN]);
 
 /*
  * =============================================================================

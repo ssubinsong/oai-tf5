@@ -46,7 +46,7 @@ int tf5_tesla_bls_init(void)
     return 0;
 }
 
-int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
                                 uint8_t public_key[TF5_BLS_PUBKEY_LEN])
 {
     if (!secret_key || !public_key) {
@@ -77,7 +77,7 @@ int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN]
     return 0;
 }
 
-int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
                        const uint8_t *data,
                        size_t data_len,
                        uint8_t signature[TF5_BLS_SIG_LEN])
@@ -169,7 +169,7 @@ int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBKEY_LEN],
     return 0;
 }
 
-int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN],
+int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_GNB_SKEY_LEN],
                          uint8_t public_key[TF5_BLS_PUBKEY_LEN])
 {
     if (!secret_key || !public_key) {
@@ -230,7 +230,7 @@ static const size_t TF5_IBS_DST_HS_LEN = sizeof(TF5_IBS_DST_HS) - 1;
 int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
                                   size_t cell_id_len,
                                   uint32_t gnb_key_validity_end,
-                                  uint8_t scalar_out[TF5_BLS_SECRET_KEY_LEN])
+                                  uint8_t scalar_out[TF5_GNB_SKEY_LEN])
 {
     if (!cell_id || !scalar_out || cell_id_len == 0) {
         return -1;

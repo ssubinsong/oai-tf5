@@ -39,7 +39,7 @@ void exit_function(const char *file, const char *function, const int line, const
 
 class TF5BlsTest : public ::testing::Test {
 protected:
-    uint8_t secret_key[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t secret_key[TF5_GNB_SKEY_LEN];
     uint8_t public_key[TF5_BLS_PUBKEY_LEN];
     uint8_t signature[TF5_BLS_SIG_LEN];
 
@@ -54,7 +54,7 @@ protected:
         }
 
         // Use test secret key
-        memcpy(secret_key, tf5_test::TV_BLS_SECRET_KEY, TF5_BLS_SECRET_KEY_LEN);
+        memcpy(secret_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SKEY_LEN);
 
         // Clear output buffers
         memset(public_key, 0, sizeof(public_key));
@@ -78,7 +78,7 @@ TEST_F(TF5BlsTest, BlsInit_Success) {
 // ============================================================================
 
 TEST_F(TF5BlsTest, BlsKeygen_Success) {
-    uint8_t new_sk[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t new_sk[TF5_GNB_SKEY_LEN];
     uint8_t new_pk[TF5_BLS_PUBKEY_LEN];
 
     int ret = tf5_tesla_bls_keygen(new_sk, new_pk);
@@ -87,7 +87,7 @@ TEST_F(TF5BlsTest, BlsKeygen_Success) {
 
     // Verify keys are not all zeros
     bool sk_all_zeros = true, pk_all_zeros = true;
-    for (int i = 0; i < TF5_BLS_SECRET_KEY_LEN; i++) {
+    for (int i = 0; i < TF5_GNB_SKEY_LEN; i++) {
         if (new_sk[i] != 0) sk_all_zeros = false;
     }
     for (int i = 0; i < TF5_BLS_PUBKEY_LEN; i++) {
@@ -99,13 +99,13 @@ TEST_F(TF5BlsTest, BlsKeygen_Success) {
 }
 
 TEST_F(TF5BlsTest, BlsKeygen_DifferentKeysEachTime) {
-    uint8_t sk1[TF5_BLS_SECRET_KEY_LEN], sk2[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t sk1[TF5_GNB_SKEY_LEN], sk2[TF5_GNB_SKEY_LEN];
     uint8_t pk1[TF5_BLS_PUBKEY_LEN], pk2[TF5_BLS_PUBKEY_LEN];
 
     tf5_tesla_bls_keygen(sk1, pk1);
     tf5_tesla_bls_keygen(sk2, pk2);
 
-    EXPECT_NE(0, memcmp(sk1, sk2, TF5_BLS_SECRET_KEY_LEN))
+    EXPECT_NE(0, memcmp(sk1, sk2, TF5_GNB_SKEY_LEN))
         << "Each keygen should produce different secret keys";
     EXPECT_NE(0, memcmp(pk1, pk2, TF5_BLS_PUBKEY_LEN))
         << "Each keygen should produce different public keys";
@@ -142,8 +142,8 @@ TEST_F(TF5BlsTest, BlsDerivePublic_Deterministic) {
 }
 
 TEST_F(TF5BlsTest, BlsDerivePublic_DifferentKeys) {
-    uint8_t sk1[TF5_BLS_SECRET_KEY_LEN] = {0x01};
-    uint8_t sk2[TF5_BLS_SECRET_KEY_LEN] = {0x02};
+    uint8_t sk1[TF5_GNB_SKEY_LEN] = {0x01};
+    uint8_t sk2[TF5_GNB_SKEY_LEN] = {0x02};
     uint8_t pk1[TF5_BLS_PUBKEY_LEN], pk2[TF5_BLS_PUBKEY_LEN];
 
     tf5_tesla_bls_derive_public(sk1, pk1);
@@ -249,7 +249,7 @@ TEST_F(TF5BlsTest, BlsVerify_WrongKey_Fails) {
                        tf5_test::TV_BLS_MESSAGE_LEN, signature);
 
     // Generate a different key pair
-    uint8_t wrong_sk[TF5_BLS_SECRET_KEY_LEN], wrong_pk[TF5_BLS_PUBKEY_LEN];
+    uint8_t wrong_sk[TF5_GNB_SKEY_LEN], wrong_pk[TF5_BLS_PUBKEY_LEN];
     tf5_tesla_bls_keygen(wrong_sk, wrong_pk);
 
     // Verify with wrong public key
@@ -312,45 +312,45 @@ TEST_F(TF5BlsTest, BlsVerify_NullInputs_ReturnsError) {
 // ============================================================================
 
 TEST_F(TF5BlsTest, IbsHashToScalar_Deterministic) {
-    uint8_t scalar1[TF5_BLS_SECRET_KEY_LEN], scalar2[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t scalar1[TF5_GNB_SKEY_LEN], scalar2[TF5_GNB_SKEY_LEN];
 
     tf5_tesla_ibs_hash_to_scalar(tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN,
                                   tf5_test::TV_IBS_VALIDITY_END, scalar1);
     tf5_tesla_ibs_hash_to_scalar(tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN,
                                   tf5_test::TV_IBS_VALIDITY_END, scalar2);
 
-    EXPECT_EQ(0, memcmp(scalar1, scalar2, TF5_BLS_SECRET_KEY_LEN))
+    EXPECT_EQ(0, memcmp(scalar1, scalar2, TF5_GNB_SKEY_LEN))
         << "Same inputs should produce same scalar";
 }
 
 TEST_F(TF5BlsTest, IbsHashToScalar_DifferentCellIds) {
     uint8_t cell_id1[TF5_IBS_CELL_ID_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05};
     uint8_t cell_id2[TF5_IBS_CELL_ID_LEN] = {0x11, 0x12, 0x13, 0x14, 0x15};
-    uint8_t scalar1[TF5_BLS_SECRET_KEY_LEN], scalar2[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t scalar1[TF5_GNB_SKEY_LEN], scalar2[TF5_GNB_SKEY_LEN];
 
     tf5_tesla_ibs_hash_to_scalar(cell_id1, TF5_IBS_CELL_ID_LEN,
                                   tf5_test::TV_IBS_VALIDITY_END, scalar1);
     tf5_tesla_ibs_hash_to_scalar(cell_id2, TF5_IBS_CELL_ID_LEN,
                                   tf5_test::TV_IBS_VALIDITY_END, scalar2);
 
-    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_BLS_SECRET_KEY_LEN))
+    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_GNB_SKEY_LEN))
         << "Different cell IDs should produce different scalars";
 }
 
 TEST_F(TF5BlsTest, IbsHashToScalar_DifferentValidity) {
-    uint8_t scalar1[TF5_BLS_SECRET_KEY_LEN], scalar2[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t scalar1[TF5_GNB_SKEY_LEN], scalar2[TF5_GNB_SKEY_LEN];
 
     tf5_tesla_ibs_hash_to_scalar(tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN,
                                   1000, scalar1);
     tf5_tesla_ibs_hash_to_scalar(tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN,
                                   2000, scalar2);
 
-    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_BLS_SECRET_KEY_LEN))
+    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_GNB_SKEY_LEN))
         << "Different validity periods should produce different scalars";
 }
 
 TEST_F(TF5BlsTest, IbsHashToScalar_NullInputs_ReturnsError) {
-    uint8_t scalar[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t scalar[TF5_GNB_SKEY_LEN];
 
     int ret = tf5_tesla_ibs_hash_to_scalar(nullptr, TF5_IBS_CELL_ID_LEN,
                                             tf5_test::TV_IBS_VALIDITY_END, scalar);
@@ -428,9 +428,9 @@ protected:
     std::string mpk_path;
     std::string sk_gnb_path;
 
-    uint8_t msk[TF5_BLS_SECRET_KEY_LEN];
-    uint8_t mpk[TF5_IBS_PUBKEY_LEN];
-    uint8_t sk_gnb[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t msk[TF5_GNB_SKEY_LEN];
+    uint8_t mpk[TF5_MPK_LEN];
+    uint8_t sk_gnb[TF5_GNB_SKEY_LEN];
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     uint32_t validity_end;
 
@@ -500,7 +500,7 @@ protected:
         ASSERT_EQ(TF5_IBS_SK_FILE_SIZE, n) << "Failed to read gNB SK";
 
         // Extract secret key (first 32 bytes)
-        memcpy(sk_gnb, sk_file, TF5_BLS_SECRET_KEY_LEN);
+        memcpy(sk_gnb, sk_file, TF5_GNB_SKEY_LEN);
 
         // Extract validity (last 3 bytes, big-endian) for verification
         uint32_t file_validity = ((uint32_t)sk_file[32] << 16) |

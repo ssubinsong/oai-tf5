@@ -49,17 +49,17 @@ protected:
     // Helper to create a valid 35-byte private key file
     void CreateValidPrivkeyFile(const std::string& path, uint32_t validity = 525600) {
         // Generate a valid BLS secret key using the library
-        uint8_t sk[TF5_BLS_SECRET_KEY_LEN];
-        uint8_t pk[TF5_IBS_PUBKEY_LEN];
+        uint8_t sk[TF5_GNB_SKEY_LEN];
+        uint8_t pk[TF5_MPK_LEN];
 
         // Use a fixed test key (deterministic for testing)
-        memset(sk, 0x42, TF5_BLS_SECRET_KEY_LEN);
+        memset(sk, 0x42, TF5_GNB_SKEY_LEN);
         // Ensure it's a valid scalar by making it small enough
         sk[0] = 0x01;  // First byte small to ensure valid scalar
 
         // Write the 35-byte file: sk (32) + validity (3 big-endian)
         std::ofstream file(path, std::ios::binary);
-        file.write(reinterpret_cast<char*>(sk), TF5_BLS_SECRET_KEY_LEN);
+        file.write(reinterpret_cast<char*>(sk), TF5_GNB_SKEY_LEN);
 
         uint8_t validity_bytes[3];
         validity_bytes[0] = (validity >> 16) & 0xFF;
@@ -72,11 +72,11 @@ protected:
     // Helper to create a valid 96-byte public key file
     void CreateValidPubkeyFile(const std::string& path) {
         // Generate a keypair and write the public key
-        uint8_t sk[TF5_BLS_SECRET_KEY_LEN];
-        uint8_t pk[TF5_IBS_PUBKEY_LEN];
+        uint8_t sk[TF5_GNB_SKEY_LEN];
+        uint8_t pk[TF5_MPK_LEN];
 
         // Use a fixed test key
-        memset(sk, 0x42, TF5_BLS_SECRET_KEY_LEN);
+        memset(sk, 0x42, TF5_GNB_SKEY_LEN);
         sk[0] = 0x01;
 
         // Derive public key
@@ -84,7 +84,7 @@ protected:
         ASSERT_EQ(0, rc) << "Failed to derive public key for test setup";
 
         std::ofstream file(path, std::ios::binary);
-        file.write(reinterpret_cast<char*>(pk), TF5_IBS_PUBKEY_LEN);
+        file.write(reinterpret_cast<char*>(pk), TF5_MPK_LEN);
         file.close();
     }
 };
@@ -97,7 +97,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_Success) {
     uint32_t expected_validity = 1051200;  // 2 years
     CreateValidPrivkeyFile(privkey_path, expected_validity);
 
-    uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t privkey_out[TF5_GNB_SKEY_LEN];
     uint32_t validity_out;
 
     int result = tf5_tesla_load_privkey(privkey_path.c_str(), privkey_out, &validity_out);
@@ -113,7 +113,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_ValidityExtracted) {
     for (uint32_t expected : test_values) {
         CreateValidPrivkeyFile(privkey_path, expected);
 
-        uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+        uint8_t privkey_out[TF5_GNB_SKEY_LEN];
         uint32_t validity_out;
 
         int result = tf5_tesla_load_privkey(privkey_path.c_str(), privkey_out, &validity_out);
@@ -124,7 +124,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_ValidityExtracted) {
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_FileNotFound) {
-    uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t privkey_out[TF5_GNB_SKEY_LEN];
     uint32_t validity_out;
 
     int result = tf5_tesla_load_privkey("/nonexistent/path/sk.bin", privkey_out, &validity_out);
@@ -140,7 +140,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooSmall) {
     file.write(reinterpret_cast<char*>(data), 30);
     file.close();
 
-    uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t privkey_out[TF5_GNB_SKEY_LEN];
     uint32_t validity_out;
 
     int result = tf5_tesla_load_privkey(small_file.c_str(), privkey_out, &validity_out);
@@ -156,7 +156,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooLarge) {
     file.write(reinterpret_cast<char*>(data), 40);
     file.close();
 
-    uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t privkey_out[TF5_GNB_SKEY_LEN];
     uint32_t validity_out;
 
     int result = tf5_tesla_load_privkey(large_file.c_str(), privkey_out, &validity_out);
@@ -169,7 +169,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooLarge) {
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_NullPath) {
-    uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t privkey_out[TF5_GNB_SKEY_LEN];
     uint32_t validity_out;
 
     int result = tf5_tesla_load_privkey(nullptr, privkey_out, &validity_out);
@@ -188,7 +188,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_NullPrivkeyOutput) {
 
 TEST_F(TF5FileIOTest, LoadPrivkey_NullValidityOutput) {
     CreateValidPrivkeyFile(privkey_path);
-    uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t privkey_out[TF5_GNB_SKEY_LEN];
 
     int result = tf5_tesla_load_privkey(privkey_path.c_str(), privkey_out, nullptr);
 
@@ -204,7 +204,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_InvalidKeyFormat) {
     file.write(reinterpret_cast<char*>(data), 35);
     file.close();
 
-    uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t privkey_out[TF5_GNB_SKEY_LEN];
     uint32_t validity_out;
 
     int result = tf5_tesla_load_privkey(invalid_file.c_str(), privkey_out, &validity_out);
@@ -219,7 +219,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_EmptyFile) {
     std::ofstream file(empty_file, std::ios::binary);
     file.close();
 
-    uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t privkey_out[TF5_GNB_SKEY_LEN];
     uint32_t validity_out;
 
     int result = tf5_tesla_load_privkey(empty_file.c_str(), privkey_out, &validity_out);
@@ -234,7 +234,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_EmptyFile) {
 TEST_F(TF5FileIOTest, LoadPubkey_Success) {
     CreateValidPubkeyFile(pubkey_path);
 
-    uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN];
+    uint8_t pubkey_out[TF5_MPK_LEN];
 
     int result = tf5_tesla_load_pubkey(pubkey_path.c_str(), pubkey_out);
 
@@ -245,20 +245,20 @@ TEST_F(TF5FileIOTest, LoadPubkey_ContentVerified) {
     CreateValidPubkeyFile(pubkey_path);
 
     // Read the original file
-    uint8_t expected[TF5_IBS_PUBKEY_LEN];
+    uint8_t expected[TF5_MPK_LEN];
     std::ifstream file(pubkey_path, std::ios::binary);
-    file.read(reinterpret_cast<char*>(expected), TF5_IBS_PUBKEY_LEN);
+    file.read(reinterpret_cast<char*>(expected), TF5_MPK_LEN);
     file.close();
 
-    uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN];
+    uint8_t pubkey_out[TF5_MPK_LEN];
     tf5_tesla_load_pubkey(pubkey_path.c_str(), pubkey_out);
 
-    EXPECT_EQ(0, memcmp(expected, pubkey_out, TF5_IBS_PUBKEY_LEN))
+    EXPECT_EQ(0, memcmp(expected, pubkey_out, TF5_MPK_LEN))
         << "Loaded key should match file contents";
 }
 
 TEST_F(TF5FileIOTest, LoadPubkey_FileNotFound) {
-    uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN];
+    uint8_t pubkey_out[TF5_MPK_LEN];
 
     int result = tf5_tesla_load_pubkey("/nonexistent/path/mpk.bin", pubkey_out);
 
@@ -272,7 +272,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooSmall) {
     file.write(reinterpret_cast<char*>(data), 64);
     file.close();
 
-    uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN];
+    uint8_t pubkey_out[TF5_MPK_LEN];
 
     int result = tf5_tesla_load_pubkey(small_file.c_str(), pubkey_out);
 
@@ -286,7 +286,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooLarge) {
     file.write(reinterpret_cast<char*>(data), 128);
     file.close();
 
-    uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN];
+    uint8_t pubkey_out[TF5_MPK_LEN];
 
     int result = tf5_tesla_load_pubkey(large_file.c_str(), pubkey_out);
 
@@ -296,7 +296,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooLarge) {
 }
 
 TEST_F(TF5FileIOTest, LoadPubkey_NullPath) {
-    uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN];
+    uint8_t pubkey_out[TF5_MPK_LEN];
 
     int result = tf5_tesla_load_pubkey(nullptr, pubkey_out);
 
@@ -316,7 +316,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_EmptyFile) {
     std::ofstream file(empty_file, std::ios::binary);
     file.close();
 
-    uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN];
+    uint8_t pubkey_out[TF5_MPK_LEN];
 
     int result = tf5_tesla_load_pubkey(empty_file.c_str(), pubkey_out);
 
@@ -332,18 +332,18 @@ TEST_F(TF5FileIOTest, RoundTrip_PrivkeyValidity) {
     uint32_t original_validity = 0x123456;
 
     // Create file with known validity
-    uint8_t sk[TF5_BLS_SECRET_KEY_LEN];
-    memset(sk, 0x42, TF5_BLS_SECRET_KEY_LEN);
+    uint8_t sk[TF5_GNB_SKEY_LEN];
+    memset(sk, 0x42, TF5_GNB_SKEY_LEN);
     sk[0] = 0x01;
 
     std::ofstream file(privkey_path, std::ios::binary);
-    file.write(reinterpret_cast<char*>(sk), TF5_BLS_SECRET_KEY_LEN);
+    file.write(reinterpret_cast<char*>(sk), TF5_GNB_SKEY_LEN);
     // Write validity as big-endian
     uint8_t v[3] = {0x12, 0x34, 0x56};
     file.write(reinterpret_cast<char*>(v), 3);
     file.close();
 
-    uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN];
+    uint8_t privkey_out[TF5_GNB_SKEY_LEN];
     uint32_t validity_out;
 
     tf5_tesla_load_privkey(privkey_path.c_str(), privkey_out, &validity_out);

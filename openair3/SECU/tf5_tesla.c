@@ -341,7 +341,7 @@ int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
                        uint16_t t_int_ms,
                        uint8_t d,
                        uint32_t chain_len,
-                       const uint8_t private_key[TF5_BLS_SECRET_KEY_LEN],
+                       const uint8_t private_key[TF5_GNB_SKEY_LEN],
                        const tf5_tesla_slot_time_t *t0,
                        uint16_t slots_per_frame)
 {
@@ -352,7 +352,7 @@ int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
     memset(state, 0, sizeof(*state));
 
     // Store IBS secret key (sk_ID issued by Core PKG)
-    memcpy(state->private_key, private_key, TF5_BLS_SECRET_KEY_LEN);
+    memcpy(state->private_key, private_key, TF5_GNB_SKEY_LEN);
 
     // Allocate key chain
     state->key_chain = calloc(chain_len, TF5_TESLA_KEY_LEN);
@@ -531,10 +531,10 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
  */
 
 int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
-                      const uint8_t mpk[TF5_IBS_PUBKEY_LEN],
+                      const uint8_t mpk[TF5_MPK_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us,
-                      uint64_t timestamp_window_ms)
+                      uint64_t rp_timestamp_window_ms)
 {
     if (!state || !mpk) {
         return -1;
@@ -542,21 +542,15 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
 
     memset(state, 0, sizeof(*state));
 
-    // Store Core's Master Public Key (IBS mode)
-    memcpy(state->mpk, mpk, TF5_IBS_PUBKEY_LEN);
-    state->has_mpk = true;
+    // Store Core's Master Public Key
+    memcpy(state->mpk, mpk, TF5_MPK_LEN);
     state->slots_per_frame = slots_per_frame;
     state->buffer_queue_count = 0;  // All queue entries initialized to 0/false by memset
 
-    // Parallel authentication state (initialized by memset to 0)
-    // chain_bootstrapped = false (first-time UE, needs IBS signature verification)
-    // auth_state = TF5_AUTH_STATE_UNAUTHENTICATED (0)
-    // rrcsetup_transaction_id = 0
-
     // Timestamp validation for signature replay protection
-    state->timestamp_window_ms = (timestamp_window_ms == 0)
+    state->rp_timestamp_window_ms = (rp_timestamp_window_ms == 0)
                                      ? TF5_RP_DEFAULT_TIME_WINDOW_MS
-                                     : timestamp_window_ms;
+                                     : rp_timestamp_window_ms;
 
     // D parameter (CLI-configured)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
@@ -564,7 +558,7 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
 
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA IBS: UE initialized (D=%u us, first-time UE)\n", state->d_bound_us);
+    LOG_I(NR_RRC, "TESLA: UE initialized (D=%u us, first-time UE)\n", state->d_bound_us);
 
     return 0;
 }
@@ -574,25 +568,6 @@ void tf5_tesla_ue_free(tf5_tesla_ue_state_t *state)
     if (state) {
         memset(state, 0, sizeof(*state));
     }
-}
-
-int tf5_tesla_ue_verify_signature(const tf5_tesla_ue_state_t *state,
-                                  const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                                  uint32_t gnb_key_validity_end,
-                                  const uint8_t *auth_input,
-                                  size_t auth_input_len,
-                                  const uint8_t signature[TF5_TESLA_SIG_LEN])
-{
-    if (!state || !state->initialized || !cell_id || !auth_input || !signature) {
-        return -1;
-    }
-
-    // IBS verification: e(Σ, Q) = e(H_m(m), H_s(cell_id || gnb_key_validity_end) * MPK)
-    return tf5_tesla_ibs_verify(state->mpk,
-                                cell_id,
-                                gnb_key_validity_end,
-                                auth_input, auth_input_len,
-                                signature);
 }
 
 bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
@@ -1085,7 +1060,7 @@ int tf5_tesla_ue_verify_with_key_recovery(
  */
 
 int tf5_tesla_load_privkey(const char *filepath,
-                           uint8_t privkey_out[TF5_BLS_SECRET_KEY_LEN],
+                           uint8_t privkey_out[TF5_GNB_SKEY_LEN],
                            uint32_t *validity_out)
 {
     if (!filepath || !privkey_out || !validity_out) {
@@ -1110,7 +1085,7 @@ int tf5_tesla_load_privkey(const char *filepath,
     }
 
     // Extract secret key (bytes 0-31)
-    memcpy(privkey_out, buffer, TF5_BLS_SECRET_KEY_LEN);
+    memcpy(privkey_out, buffer, TF5_GNB_SKEY_LEN);
 
     // Extract validity from bytes 32-34 (big-endian)
     *validity_out = ((uint32_t)buffer[32] << 16) |
@@ -1121,10 +1096,10 @@ int tf5_tesla_load_privkey(const char *filepath,
     memset(buffer, 0, TF5_IBS_SK_FILE_SIZE);
 
     // Validate by trying to derive public key (this checks the key is valid)
-    uint8_t pubkey_test[TF5_IBS_PUBKEY_LEN];
+    uint8_t pubkey_test[TF5_MPK_LEN];
     if (tf5_tesla_bls_derive_public(privkey_out, pubkey_test) != 0) {
         LOG_E(NR_RRC, "TESLA: Invalid BLS secret key format\n");
-        memset(privkey_out, 0, TF5_BLS_SECRET_KEY_LEN);
+        memset(privkey_out, 0, TF5_GNB_SKEY_LEN);
         return -3;
     }
 
@@ -1132,7 +1107,7 @@ int tf5_tesla_load_privkey(const char *filepath,
 }
 
 int tf5_tesla_load_pubkey(const char *filepath,
-                          uint8_t pubkey_out[TF5_IBS_PUBKEY_LEN])
+                          uint8_t pubkey_out[TF5_MPK_LEN])
 {
     if (!filepath || !pubkey_out) {
         return -1;
@@ -1144,12 +1119,12 @@ int tf5_tesla_load_pubkey(const char *filepath,
         return -1;
     }
 
-    size_t n = fread(pubkey_out, 1, TF5_IBS_PUBKEY_LEN, fp);
+    size_t n = fread(pubkey_out, 1, TF5_MPK_LEN, fp);
     fclose(fp);
 
-    if (n != TF5_IBS_PUBKEY_LEN) {
+    if (n != TF5_MPK_LEN) {
         LOG_E(NR_RRC, "TESLA: Public key file has wrong size: %zu (expected %d)\n",
-              n, TF5_IBS_PUBKEY_LEN);
+              n, TF5_MPK_LEN);
         return -2;
     }
 
@@ -1157,7 +1132,7 @@ int tf5_tesla_load_pubkey(const char *filepath,
     // We just check deserialization succeeds by doing a simple sign/verify
     // A malformed public key would fail during the actual signature verification
     LOG_I(NR_RRC, "TESLA: Loaded BLS public key from %s (%d bytes)\n",
-          filepath, TF5_IBS_PUBKEY_LEN);
+          filepath, TF5_MPK_LEN);
 
     return 0;
 }
