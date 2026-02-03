@@ -753,12 +753,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
     bool should_trigger_rrc = (state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) &&
                               (state->buffer_queue_count == 0);
 
-    tf5_tesla_ue_buffer_sib1(state,
-                              mac_auth_input, mac_auth_len,
-                              ext->i,
-                              ext->tesla_tag,
-                              &buffer_rx_time,
-                              should_trigger_rrc);
+    tf5_tesla_ue_buffer_sib1(state, mac_auth_input, mac_auth_len, ext->i, ext->tesla_tag, should_trigger_rrc);
 
     // Set BUFFERED state if this is first buffered entry (RACH/RRC now proceeding)
     if (state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) {

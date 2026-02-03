@@ -554,11 +554,13 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
 
     // D parameter (CLI-configured)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
-    state->d_bound_us = d_bound_us;
+    // Pre-compute D in slots (ceiling division for upper bound)
+    uint32_t slot_duration_us = 10000 / slots_per_frame;
+    state->d_offset_slots = (d_bound_us + slot_duration_us - 1) / slot_duration_us;
 
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA: UE initialized (D=%u us, first-time UE)\n", state->d_bound_us);
+    LOG_I(NR_RRC, "TESLA: UE initialized (D=%u slots, first-time UE)\n", state->d_offset_slots);
 
     return 0;
 }
@@ -584,10 +586,7 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
     uint64_t t_abs_slots = tf5_tesla_absolute_slots(&rx_time, state->slots_per_frame);
 
     // Step 2: Compute upper bound on sender's clock: t_j = T + D_t
-    // Convert D from microseconds to slots (ceiling division for upper bound)
-    uint32_t slot_duration_us = 10000 / state->slots_per_frame;
-    uint32_t d_offset_slots = (state->d_bound_us + slot_duration_us - 1) / slot_duration_us;
-    uint64_t t_j_abs_slots = t_abs_slots + d_offset_slots;
+    uint64_t t_j_abs_slots = t_abs_slots + state->d_offset_slots;
 
     // Step 3: Compute x = floor((t_j - T_0) / T_int)
     // This is the highest interval the sender could possibly be in
@@ -598,8 +597,6 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
 
     // Safe if: x < i + d
     // This means the sender hasn't yet disclosed K_i
-    // Note: interval_index comes from ext (claimed interval from sender)
-    //       d comes from cached state (authenticated)
     uint32_t i = ext->i;
     uint8_t d = state->tesla_params.d;
 
@@ -607,7 +604,7 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
 
     if (!safe) {
         LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - x=%u (T+D, D=%u slots) >= i=%u + d=%u\n",
-              x, d_offset_slots, i, d);
+              x, state->d_offset_slots, i, d);
     }
 
     return safe;
@@ -618,10 +615,9 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
                              size_t auth_input_len,
                              uint32_t interval_index,
                              const uint8_t tag[TF5_TESLA_TAG_LEN],
-                             const tf5_tesla_slot_time_t *rx_time,
                              bool triggered_rrc_setup)
 {
-    if (!state || !state->initialized || !auth_input || !tag || !rx_time) {
+    if (!state || !state->initialized || !auth_input || !tag) {
         return -1;
     }
 
@@ -631,45 +627,27 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
         return -2;
     }
 
-    // Find target slot: prefer invalid entry, then oldest same-interval entry
+    // Find target slot: prefer invalid entry, then oldest entry
     int target_slot = -1;
-    int oldest_same_interval_slot = -1;
-    uint32_t oldest_same_interval_time = UINT32_MAX;
+    int oldest_slot = -1;
+    uint32_t oldest_index = UINT32_MAX;
 
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
         if (!state->buffer_queue[i].valid) {
             target_slot = i;
             break;  // Use first invalid slot
         }
-        // Track oldest entry with same interval (for overflow handling)
-        if (state->buffer_queue[i].rx_interval_index == interval_index) {
-            uint32_t entry_time = state->buffer_queue[i].rx_interval_index;
-            if (entry_time < oldest_same_interval_time) {
-                oldest_same_interval_time = entry_time;
-                oldest_same_interval_slot = i;
-            }
+        // Choose an  oldest entry (i.e., smallest rx_interval_index)
+        uint32_t idx = state->buffer_queue[i].rx_interval_index;
+        if (idx < oldest_index) {
+          oldest_index = idx;
+          oldest_slot = i;
         }
     }
-
-    // If no invalid slot, drop oldest same-interval entry (DoS protection per RFC 4082 Section 3.7)
     if (target_slot < 0) {
-        if (oldest_same_interval_slot >= 0) {
-            target_slot = oldest_same_interval_slot;
-            LOG_W(NR_RRC, "TESLA: Buffer full - dropping oldest entry for interval %u\n",
-                  interval_index);
-        } else {
-            // Buffer full with different intervals - drop oldest overall
-            uint32_t oldest_time = UINT32_MAX;
-            for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
-                uint32_t entry_time = state->buffer_queue[i].rx_interval_index;
-                if (entry_time < oldest_time) {
-                    oldest_time = entry_time;
-                    target_slot = i;
-                }
-            }
-            LOG_W(NR_RRC, "TESLA: Buffer full - dropping oldest entry (interval %u)\n",
+        target_slot = oldest_slot;
+        LOG_W(NR_RRC, "TESLA: Buffer full - dropping oldest entry (interval %u)\n",
                   state->buffer_queue[target_slot].rx_interval_index);
-        }
     }
 
     // Store in target slot

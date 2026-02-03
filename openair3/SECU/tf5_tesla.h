@@ -135,7 +135,7 @@ typedef enum {
  */
 typedef struct {
     tf5_tesla_params_t tesla_params;
-    uint32_t d_bound_us;              // D bound for safe packet test (microseconds)
+    uint32_t d_offset_slots;          // D bound for safe packet test (in slots, pre-computed)
 
     // Pre-provisioned Core Master Public Key
     uint8_t  mpk[TF5_MPK_LEN];  // 96B - Core's MPK = s*Q (G2 point)
@@ -364,7 +364,6 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
  * @param auth_input_len     Length of auth input
  * @param interval_index     Interval index of this SIB1
  * @param tag                TESLA tag from SIB1
- * @param rx_time            RX timing (HFN from signed extension, SFN/slot when received)
  * @param triggered_rrc_setup True if this SIB1 triggered the current RRC session
  * @return 0 on success, negative on error
  */
@@ -373,7 +372,6 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
                              size_t auth_input_len,
                              uint32_t interval_index,
                              const uint8_t tag[TF5_TESLA_TAG_LEN],
-                             const tf5_tesla_slot_time_t *rx_time,
                              bool triggered_rrc_setup);
 
 /**

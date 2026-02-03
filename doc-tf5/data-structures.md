@@ -225,7 +225,7 @@ typedef struct {
 
     // D parameter (CLI-configured, used by receiver)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
-    uint32_t d_bound_us;               // D bound for safe packet test (microseconds)
+    uint32_t d_offset_slots;           // D bound for safe packet test (in slots, pre-computed)
 } tf5_tesla_ue_state_t;
 ```
 

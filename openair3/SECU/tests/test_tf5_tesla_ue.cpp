@@ -259,14 +259,12 @@ TEST_F(TF5UeTest, BufferSib1_Success) {
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    int ret = tf5_tesla_ue_buffer_sib1(
-        &ue_state,
-        (const uint8_t*)auth_input,
-        strlen(auth_input),
-        5,  // interval_index
-        tag,
-        &rx_time,
-        false  // triggered_rrc_setup
+    int ret = tf5_tesla_ue_buffer_sib1(&ue_state,
+                                       (const uint8_t*)auth_input,
+                                       strlen(auth_input),
+                                       5, // interval_index
+                                       tag,
+                                       false // triggered_rrc_setup
     );
 
     EXPECT_EQ(0, ret) << "Buffer SIB1 should return 0 on success";
@@ -281,8 +279,7 @@ TEST_F(TF5UeTest, BufferSib1_QueueCountIncremented) {
 
     EXPECT_EQ(0, ue_state.buffer_queue_count);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input),
-                             5, tag, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
 
     EXPECT_EQ(1, ue_state.buffer_queue_count);
 }
@@ -294,8 +291,7 @@ TEST_F(TF5UeTest, BufferSib1_DataStored) {
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0xde, 0xad, 0xbe, 0xef};
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input),
-                             5, tag, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
 
     // Find the entry in the queue
     bool found = false;
@@ -319,8 +315,7 @@ TEST_F(TF5UeTest, BufferSib1_RrcTriggerFlagSet) {
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input),
-                             5, tag, &rx_time, true);  // triggered_rrc_setup = true
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, true);  // triggered_rrc_setup = true
 
     // Find the entry
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
@@ -340,10 +335,8 @@ TEST_F(TF5UeTest, BufferSib1_MultipleEntries) {
     uint8_t tag2[TF5_TESLA_TAG_LEN] = {0x02};
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input1, strlen(auth_input1),
-                             5, tag1, &rx_time, false);
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input2, strlen(auth_input2),
-                             6, tag2, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input1, strlen(auth_input1), 5, tag1, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input2, strlen(auth_input2), 6, tag2, false);
 
     EXPECT_EQ(2, ue_state.buffer_queue_count);
 }
@@ -358,16 +351,14 @@ TEST_F(TF5UeTest, BufferSib1_FullQueue_DropsOldest) {
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
         char auth_input[32];
         snprintf(auth_input, sizeof(auth_input), "auth input %d", i);
-        tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input),
-                                 i, tag, &rx_time, false);
+        tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), i, tag, false);
     }
 
     EXPECT_EQ(TF5_TESLA_BUFFER_QUEUE_SIZE, ue_state.buffer_queue_count);
 
     // Add one more - should replace oldest
     const char new_auth[] = "new auth input";
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)new_auth, strlen(new_auth),
-                             99, tag, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)new_auth, strlen(new_auth), 99, tag, false);
 
     // Queue should still be at max size
     EXPECT_EQ(TF5_TESLA_BUFFER_QUEUE_SIZE, ue_state.buffer_queue_count);
@@ -379,13 +370,13 @@ TEST_F(TF5UeTest, BufferSib1_NullInputs_ReturnsError) {
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    int ret = tf5_tesla_ue_buffer_sib1(nullptr, (const uint8_t*)"test", 4, 5, tag, &rx_time, false);
+    int ret = tf5_tesla_ue_buffer_sib1(nullptr, (const uint8_t*)"test", 4, 5, tag, false);
     EXPECT_LT(ret, 0) << "Null state should return error";
 
-    ret = tf5_tesla_ue_buffer_sib1(&ue_state, nullptr, 4, 5, tag, &rx_time, false);
+    ret = tf5_tesla_ue_buffer_sib1(&ue_state, nullptr, 4, 5, tag, false);
     EXPECT_LT(ret, 0) << "Null auth_input should return error";
 
-    ret = tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)"test", 4, 5, nullptr, &rx_time, false);
+    ret = tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)"test", 4, 5, nullptr, false);
     EXPECT_LT(ret, 0) << "Null tag should return error";
 }
 
@@ -498,8 +489,7 @@ TEST_F(TF5UeTest, VerifyAllBuffered_ValidTags_Success) {
                                    gnb_state.key_validity_end);
 
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len,
-                             ext.i, ext.tesla_tag, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, false);
 
     // Verify using the disclosed key
     int verified_count = 0, failed_count = 0;
@@ -528,8 +518,7 @@ TEST_F(TF5UeTest, VerifyAllBuffered_InvalidTag_Fails) {
     uint8_t fake_tag[TF5_TESLA_TAG_LEN] = {0xba, 0xad, 0xf0, 0x0d};
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input),
-                             5, fake_tag, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, fake_tag, false);
 
     // Try to verify
     int verified_count = 0, failed_count = 0;
@@ -591,8 +580,7 @@ TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
                                    gnb_state.key_validity_end);
 
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len,
-                             5, ext5.tesla_tag, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, 5, ext5.tesla_tag, false);
 
     // Simulate missed disclosure for interval 5, receive at interval 7
     // Use key from interval 7 to recover key for interval 5
@@ -879,8 +867,7 @@ TEST_F(TF5UeTest, VerifyBuffered_Success) {
                                    gnb_state.key_validity_end);
 
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len,
-                             ext.i, ext.tesla_tag, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, false);
 
     // Use legacy verify_buffered function
     int ret = tf5_tesla_ue_verify_buffered(&ue_state, gnb_state.key_chain[ext.i], ext.i);
@@ -902,8 +889,7 @@ TEST_F(TF5UeTest, VerifyBuffered_InvalidTag_Fails) {
     uint8_t fake_tag[TF5_TESLA_TAG_LEN] = {0xDE, 0xAD, 0xBE, 0xEF};
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input),
-                             5, fake_tag, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, fake_tag, false);
 
     int ret = tf5_tesla_ue_verify_buffered(&ue_state, gnb_state.key_chain[5], 5);
 
@@ -920,8 +906,7 @@ TEST_F(TF5UeTest, VerifyBuffered_NoMatchingEntry_Fails) {
     const char auth_input[] = "test";
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input),
-                             5, tag, &rx_time, false);
+    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
 
     // Try to verify interval 10 (no entry exists)
     int ret = tf5_tesla_ue_verify_buffered(&ue_state, gnb_state.key_chain[10], 10);
@@ -988,8 +973,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerTrackedInBuffer) {
                                    gnb_state.key_validity_end);
 
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    int ret = tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len,
-                                        ext.i, ext.tesla_tag, &rx_time, true);  // RRC trigger!
+    int ret = tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, true);  // RRC trigger!
 
     EXPECT_EQ(0, ret);
 
@@ -1025,8 +1009,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
                                    gnb_state.key_validity_end);
 
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len,
-                             ext.i, ext.tesla_tag, &rx_time, true);  // RRC trigger!
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, true);  // RRC trigger!
 
     // Verify and check rrc_trigger_verified
     int verified_count = 0, failed_count = 0;
