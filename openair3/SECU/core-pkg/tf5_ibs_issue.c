@@ -62,7 +62,6 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     /* Load master secret key */
     rc = tf5_ibs_load_master_secret(msk_path, msk);
     if (rc != 0) {
-        fprintf(stderr, "Failed to load master secret (error %d)\n", rc);
         return -2;
     }
 
@@ -73,7 +72,6 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     memset(msk, 0, TF5_IBS_MASTER_SECRET_LEN);
 
     if (rc != 0) {
-        fprintf(stderr, "Failed to compute gNB secret key (error %d)\n", rc);
         return -4;
     }
 
@@ -206,7 +204,20 @@ int main(int argc, char *argv[])
     /* Issue the key */
     rc = tf5_ibs_issue_gnb_key(msk_path, cell_id, gnb_key_validity_end, sk_path);
     if (rc != 0) {
-        fprintf(stderr, "Failed to issue gNB key (error %d)\n", rc);
+        switch (rc) {
+        case -2:
+            fprintf(stderr, "Failed to load master secret from %s\n", msk_path);
+            break;
+        case -4:
+            fprintf(stderr, "Failed to compute gNB secret key\n");
+            break;
+        case -5:
+            fprintf(stderr, "Failed to write key file to %s\n", sk_path);
+            break;
+        default:
+            fprintf(stderr, "Failed to issue gNB key (error %d)\n", rc);
+            break;
+        }
         return 1;
     }
 

@@ -80,7 +80,6 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
     blst_p2 mpk;
     uint8_t msk_bytes[TF5_IBS_MASTER_SECRET_LEN];
     uint8_t mpk_bytes[TF5_IBS_MASTER_PUBLIC_LEN];
-    int rc = 0;
 
     /* Generate random IKM */
     if (read_random_bytes(ikm, IKM_LEN) != 0) {

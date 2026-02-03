@@ -637,7 +637,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
             target_slot = i;
             break;  // Use first invalid slot
         }
-        // Choose an  oldest entry (i.e., smallest rx_interval_index)
+        // Choose an oldest entry (i.e., smallest rx_interval_index)
         uint32_t idx = state->buffer_queue[i].rx_interval_index;
         if (idx < oldest_index) {
           oldest_index = idx;
