@@ -235,7 +235,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
     return 0;
 }
 
-int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
+int tf5_tesla_pack_extension(const tf5_extension_t *ext,
                              uint8_t *buf,
                              size_t buf_len)
 {
@@ -286,7 +286,7 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
 
 int tf5_tesla_unpack_extension(const uint8_t *buf,
                                size_t buf_len,
-                               tf5_tesla_extension_t *ext)
+                               tf5_extension_t *ext)
 {
     if (!buf || !ext) {
         return -1;
@@ -434,7 +434,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
                                     uint16_t slot,
                                     const uint8_t *original_sib1,
                                     size_t sib1_len,
-                                    tf5_tesla_extension_t *ext)
+                                    tf5_extension_t *ext)
 {
     if (!state || !state->initialized || !original_sib1 || !ext) {
         return -1;
@@ -576,39 +576,39 @@ void tf5_tesla_ue_free(tf5_ue_state_t *state)
     }
 }
 
-bool tf5_tesla_ue_safe_packet_test(tf5_ue_state_t *state,
-                                   const tf5_tesla_extension_t *ext,
+bool tf5_tesla_ue_safe_packet_test(tf5_ue_state_t *ue_state,
+                                   const tf5_extension_t *tf5_ext,
                                    uint16_t rx_sfn,
                                    uint16_t rx_slot)
 {
-    if (!state || !state->initialized || !ext) {
+    if (!ue_state || !ue_state->initialized || !tf5_ext) {
         return false;
     }
 
     // Step 1: Record rx time T (in absolute slots)
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(rx_sfn, rx_slot);
-    uint64_t t_abs_slots = tf5_tesla_absolute_slots(&rx_time, state->slots_per_frame);
+    uint64_t t_abs_slots = tf5_tesla_absolute_slots(&rx_time, ue_state->slots_per_frame);
 
     // Step 2: Compute upper bound on sender's clock: t_j = T + D_t
-    uint64_t t_j_abs_slots = t_abs_slots + state->d_offset_slots;
+    uint64_t t_j_abs_slots = t_abs_slots + ue_state->d_offset_slots;
 
     // Step 3: Compute x = floor((t_j - T_0) / T_int)
     // This is the highest interval the sender could possibly be in
-    uint64_t t0_abs_slots = tf5_tesla_absolute_slots(&state->tesla_params.t0, state->slots_per_frame);
+    uint64_t t0_abs_slots = tf5_tesla_absolute_slots(&ue_state->tesla_params.t0, ue_state->slots_per_frame);
     uint64_t slots_since_t0 = (t_j_abs_slots >= t0_abs_slots) ? (t_j_abs_slots - t0_abs_slots) : 0;
-    uint64_t time_ms = (slots_since_t0 * 10) / state->slots_per_frame;
-    uint32_t x = (uint32_t)(time_ms / state->tesla_params.t_int_ms);
+    uint64_t time_ms = (slots_since_t0 * 10) / ue_state->slots_per_frame;
+    uint32_t x = (uint32_t)(time_ms / ue_state->tesla_params.t_int_ms);
 
     // Safe if: x < i + d
     // This means the sender hasn't yet disclosed K_i
-    uint32_t i = ext->i;
-    uint8_t d = state->tesla_params.d;
+    uint32_t i = tf5_ext->i;
+    uint8_t d = ue_state->tesla_params.d;
 
     bool safe = (x < i + d);
 
     if (!safe) {
         LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - x=%u (T+D, D=%u slots) >= i=%u + d=%u\n",
-              x, state->d_offset_slots, i, d);
+              x, ue_state->d_offset_slots, i, d);
     }
 
     return safe;
@@ -888,6 +888,163 @@ int tf5_tesla_ue_verify_with_key_recovery(
     // Note: Trust anchor already updated in tf5_tesla_ue_verify_key_chain() per RFC 4082
     if (*total_verified > 0) {
         LOG_I(NR_RRC, "TESLA: Key recovery verified %d SIB1(s) across intervals [%u, %u] "
+              "(%d failed, rrc_trigger=%d)\n",
+              *total_verified, verify_start, verify_end, *total_failed, *rrc_trigger_verified);
+        return 0;
+    }
+
+    return (*total_failed > 0) ? -5 : -2;
+}
+
+int tf5_tesla_ue_verify_buffered_with_verified_key(
+    tf5_ue_state_t *ue_state,
+    const uint8_t verified_key[TF5_TESLA_KEY_LEN],
+    uint32_t verified_key_interval,
+    int *total_verified,
+    int *total_failed,
+    bool *rrc_trigger_verified)
+{
+    if (!ue_state || !ue_state->initialized || !verified_key ||
+        !total_verified || !total_failed || !rrc_trigger_verified) {
+        return -1;
+    }
+
+    *total_verified = 0;
+    *total_failed = 0;
+    *rrc_trigger_verified = false;
+
+    // Step 1: Find the range of buffered intervals
+    uint32_t earliest_buffered = UINT32_MAX;
+    uint32_t latest_buffered = 0;
+    bool has_buffered_entries = false;
+
+    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
+        if (ue_state->buffer_queue[i].valid) {
+            has_buffered_entries = true;
+            uint32_t interval = ue_state->buffer_queue[i].rx_interval_index;
+            if (interval < earliest_buffered) {
+                earliest_buffered = interval;
+            }
+            if (interval > latest_buffered) {
+                latest_buffered = interval;
+            }
+        }
+    }
+
+    if (!has_buffered_entries) {
+        LOG_D(NR_RRC, "TESLA: No buffered entries for verification\n");
+        return -2;
+    }
+
+    // Step 2: Determine verification range
+    // Lower bound: don't re-verify already verified intervals
+    uint32_t verify_start = earliest_buffered;
+    if (ue_state->chain_bootstrapped &&
+        ue_state->trust_anchor_idx >= 0 &&
+        (uint32_t)(ue_state->trust_anchor_idx + 1) > verify_start) {
+        // Note: trust_anchor_idx was already updated by verify_key_chain caller
+        // But entries at trust_anchor_idx may still need verification
+        verify_start = earliest_buffered;
+    }
+
+    // Upper bound: can't verify intervals newer than verified key
+    uint32_t verify_end = (latest_buffered < verified_key_interval) ?
+                           latest_buffered : verified_key_interval;
+
+    if (verify_start > verify_end) {
+        LOG_D(NR_RRC, "TESLA: No intervals in verifiable range [%u, %u]\n",
+              verify_start, verify_end);
+        return -2;
+    }
+
+    // Step 3: Build key cache for all intervals in range
+    // Per RFC 4082 Section 3.5: "Using a disclosed key, we can calculate all
+    // previous disclosed keys" via the chain function K_i = F(K_{i+1})
+    uint32_t num_intervals = verified_key_interval - verify_start + 1;
+
+    // Safety check: limit derivations to prevent excessive computation
+    if (num_intervals > TF5_TESLA_BUFFER_QUEUE_SIZE + 2) {
+        LOG_W(NR_RRC, "TESLA: Key recovery range too large (%u intervals), limiting\n",
+              num_intervals);
+        verify_start = verified_key_interval - TF5_TESLA_BUFFER_QUEUE_SIZE - 1;
+        num_intervals = verified_key_interval - verify_start + 1;
+    }
+
+    // Stack-allocated key cache (safe because num_intervals is bounded)
+    uint8_t key_cache[TF5_TESLA_BUFFER_QUEUE_SIZE + 3][TF5_TESLA_KEY_LEN];
+
+    // Start with verified_key at highest index
+    memcpy(key_cache[num_intervals - 1], verified_key, TF5_TESLA_KEY_LEN);
+
+    // Derive backwards: K_i = F(K_{i+1})
+    for (int i = (int)num_intervals - 2; i >= 0; i--) {
+        tf5_tesla_chain_key(key_cache[i + 1], key_cache[i]);
+    }
+
+    LOG_D(NR_RRC, "TESLA: Key recovery - derived %u keys for intervals [%u, %u]\n",
+          num_intervals, verify_start, verified_key_interval);
+
+    // Step 4: Verify all buffered entries using derived keys
+    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
+        tf5_tesla_buffer_entry_t *entry = &ue_state->buffer_queue[i];
+
+        if (!entry->valid) {
+            continue;
+        }
+
+        uint32_t interval = entry->rx_interval_index;
+
+        // Skip if outside verifiable range
+        if (interval < verify_start || interval > verify_end) {
+            continue;
+        }
+
+        // Get the key for this interval from cache
+        uint32_t cache_index = interval - verify_start;
+        const uint8_t *key_for_interval = key_cache[cache_index];
+
+        // Compute expected tag
+        uint8_t expected_tag[TF5_TESLA_TAG_LEN];
+        int rc = tf5_tesla_compute_tag(key_for_interval,
+                                       entry->auth_input,
+                                       entry->auth_input_len,
+                                       expected_tag);
+        if (rc != 0) {
+            LOG_E(NR_RRC, "TESLA: Failed to compute tag for interval %u\n", interval);
+            entry->valid = false;
+            (*total_failed)++;
+            continue;
+        }
+
+        // Compare tags
+        if (memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
+            LOG_I(NR_RRC, "TESLA: MAC verified for interval %u (rrc_trigger=%d)\n",
+                  interval, entry->triggered_rrc_setup);
+
+            if (entry->triggered_rrc_setup) {
+                *rrc_trigger_verified = true;
+            }
+
+            entry->valid = false;  // Release from buffer
+            (*total_verified)++;
+        } else {
+            LOG_E(NR_RRC, "TESLA: MAC verification FAILED for interval %u\n",
+                  interval);
+            entry->valid = false;
+            (*total_failed)++;
+        }
+    }
+
+    // Step 5: Update queue count
+    ue_state->buffer_queue_count = 0;
+    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
+        if (ue_state->buffer_queue[i].valid) {
+            ue_state->buffer_queue_count++;
+        }
+    }
+
+    if (*total_verified > 0) {
+        LOG_I(NR_RRC, "TESLA: Verified %d SIB1(s) across intervals [%u, %u] "
               "(%d failed, rrc_trigger=%d)\n",
               *total_verified, verify_start, verify_end, *total_failed, *rrc_trigger_verified);
         return 0;

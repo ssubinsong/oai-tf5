@@ -145,11 +145,13 @@ The main `nr_rrc_process_sib1()` function delegates TESLA verification to a clea
 
 | Function | Location | Purpose |
 |----------|----------|---------|
-| `tf5_tesla_verify_sib1()` | rrc_UE.c:796 | Main entry point with early returns |
+| `tf5_tesla_verify_sib1()` | rrc_UE.c:807 | Main entry point with early returns |
 | `tf5_tesla_unpack_and_validate()` | rrc_UE.c | Unpack extension + key expiry check |
 | `tf5_tesla_encode_sib1_for_auth()` | rrc_UE.c:573 | Re-encode SIB1 without extension |
 | `tf5_tesla_verify_firsttime()` | rrc_UE.c | IBS signature path (first-time UE) |
-| `tf5_tesla_verify_returning()` | rrc_UE.c | TESLA MAC path (returning UE, RFC 4082) |
+| `tf5_tesla_verify_returning()` | rrc_UE.c:713 | TESLA MAC path (returning UE, RFC 4082 3.5) |
+| `tf5_tesla_ue_verify_key_chain()` | tf5_tesla.c:680 | Verify disclosed key (RFC 4082 3.5 Step 3) |
+| `tf5_tesla_ue_verify_buffered_with_verified_key()` | tf5_tesla.c:899 | Verify buffered messages (RFC 4082 3.5 Step 4) |
 | `tf5_tesla_on_auth_success()` | rrc_UE.c | Send deferred RRCSetupComplete |
 | `tf5_tesla_on_auth_failure()` | rrc_UE.c | Mark failed + abort RRC |
 | `tf5_extract_cell_id_from_sib1()` | rrc_UE.c:499 | Extract Cell ID from SIB1 |
@@ -201,13 +203,13 @@ typedef enum {
 
 ### Returning UE (chain_bootstrapped == true)
 
-Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before buffering or MAC verification.
+Per RFC 4082 Section 3.5, the receiver MUST perform key verification BEFORE buffering the current packet. The steps in exact order:
 
 ```
 1. Unpack TESLA extension from lateNonCriticalExtension
 
 2. Safe packet test: tf5_tesla_ue_safe_packet_test()
-   └── FAILED: Skip this SIB1 → return
+   └── FAILED: Skip this SIB1 → return (packet is unsafe)
    └── PASSED: Continue to step 3
 
 3. Build MAC auth_input (excludes interval_index, disclosed_key, tesla_params)
@@ -215,18 +217,29 @@ Per RFC 4082 Section 3.5, the safe packet test MUST be performed FIRST before bu
    └── tf5_tesla_build_mac_auth_input(sib1, gnb_key_validity_end)
        (tesla_params authenticated via BLS signature during first-time verification)
 
-4. Buffer current SIB1 for future TESLA verification
-   └── tf5_tesla_ue_buffer_sib1(..., triggered_rrc_setup)
-   └── auth_state = TF5_AUTH_STATE_BUFFERED (RACH/RRC proceeding)
+4. New key index test (RFC 4082 3.5 Step 2)
+   └── Check if disclosed key K_{i-d} index > trust_anchor_idx
+   └── If not new: skip to step 6 (key already verified transitively)
 
-5. Check if disclosed key available for PREVIOUSLY buffered SIB1
-   └── If interval matches: tf5_tesla_ue_verify_with_key_recovery()
+5. Key verification test (RFC 4082 3.5 Step 3) - BEFORE buffering
+   └── tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval)
+   └── FAILED: Discard packet, return TF5_VERIFY_FAIL_KEYCHAIN
+       NOTE: "If key verification fails, the newly arrived packet P_j should be discarded"
+   └── PASSED: Trust anchor updated to disclosed key
+
+6. Message verification tests (RFC 4082 3.5 Step 4)
+   └── Verify any earlier safe, buffered packets using verified key
+   └── tf5_tesla_ue_verify_buffered_with_verified_key()
        ├── SUCCESS:
        │   └── auth_state = TF5_AUTH_STATE_AUTHENTICATED
        │   └── If RRCSETUP_DEFERRED: send RRCSetupComplete now
        └── FAILED:
-           └── auth_state = TF5_AUTH_STATE_AUTH_FAILED
-           └── nr_rrc_abort_connection() → return
+           └── Log MAC failures, but continue (current packet passed key verification)
+
+7. Buffer current SIB1 (RFC 4082 3.5 end of Step 1)
+   └── ONLY buffered AFTER key verification passed
+   └── tf5_tesla_ue_buffer_sib1(..., triggered_rrc_setup)
+   └── auth_state = TF5_AUTH_STATE_BUFFERED (RACH/RRC proceeding)
 ```
 
 ---
@@ -356,7 +369,7 @@ bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
 }
 ```
 
-**Security Note**: If a disclosed key does not chain to the anchor, `tf5_tesla_ue_verify_with_key_recovery()` returns error -6 (key chain failure). Per RFC 4082 Section 3.5 Step 3: *"If key verification fails, the newly arrived packet P_j should be discarded"* - the calling code in `tf5_tesla_verify_returning()` removes the just-buffered packet and returns `TF5_VERIFY_FAIL_KEYCHAIN` (-8). This prevents use of forged keys and ensures compromised packets don't remain in the buffer.
+**Security Note**: Per RFC 4082 Section 3.5 Step 3: *"If key verification fails, the newly arrived packet P_j should be discarded"*. Key chain verification is performed in `tf5_tesla_verify_returning()` **BEFORE** the current packet is buffered. If `tf5_tesla_ue_verify_key_chain()` returns false, the function returns `TF5_VERIFY_FAIL_KEYCHAIN` (-8) immediately without buffering the packet. This prevents use of forged keys and ensures packets with invalid key disclosures are never buffered.
 
 ---
 
@@ -405,30 +418,44 @@ Key Recovery:
 
 ### Implementation
 
+Per RFC 4082 Section 3.5, key verification (Step 3) MUST happen BEFORE packet buffering. The implementation uses two functions:
+
+1. **`tf5_tesla_ue_verify_key_chain()`** - Called before buffering to verify the disclosed key
+2. **`tf5_tesla_ue_verify_buffered_with_verified_key()`** - Called after key verification to verify buffered messages
+
 ```c
-int tf5_tesla_ue_verify_with_key_recovery(state, disclosed_key, disclosed_interval, ...) {
+// In tf5_tesla_verify_returning():
+// Step 3: Key verification test - BEFORE buffering
+if (!tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval))
+    return TF5_VERIFY_FAIL_KEYCHAIN;  // Discard packet without buffering
+
+// Step 4: Message verification - verify previously buffered packets
+tf5_tesla_ue_verify_buffered_with_verified_key(state, disclosed_key, disclosed_interval, ...);
+
+// Step 5: Buffer current packet - ONLY after key verification passed
+tf5_tesla_ue_buffer_sib1(...);
+```
+
+The message verification function:
+```c
+int tf5_tesla_ue_verify_buffered_with_verified_key(state, verified_key, verified_interval, ...) {
     // Step 1: Find range of buffered intervals
     uint32_t earliest_buffered = find_earliest_buffered(state);
-    uint32_t verify_start = MAX(earliest_buffered, trust_anchor_idx + 1);
-    uint32_t verify_end = MIN(latest_buffered, disclosed_interval);
+    uint32_t verify_end = MIN(latest_buffered, verified_interval);
 
-    // Step 2: Verify disclosed key chains to trust anchor (once)
-    // NOTE: This updates the trust anchor as a side effect per RFC 4082
-    if (!tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval))
-        return -6;  // Key chain failed - caller must discard newly buffered packet
-
-    // Step 3: Derive all keys from disclosed_interval down to verify_start
-    key_cache[disclosed_interval] = disclosed_key;
-    for (i = disclosed_interval - 1; i >= verify_start; i--)
+    // Step 2: Derive all keys from verified_interval down to verify_start
+    // (Key was already verified by caller via tf5_tesla_ue_verify_key_chain)
+    key_cache[verified_interval] = verified_key;
+    for (i = verified_interval - 1; i >= verify_start; i--)
         key_cache[i] = F(key_cache[i + 1]);  // tf5_tesla_chain_key()
 
-    // Step 4: Verify all buffered entries
+    // Step 3: Verify all buffered entries
     for each buffered entry in [verify_start, verify_end]:
         verify_mac(entry, key_cache[entry.interval_index]);
-
-    // Trust anchor already updated in verify_key_chain()
 }
 ```
+
+**Note**: The legacy function `tf5_tesla_ue_verify_with_key_recovery()` combines both key verification and message verification. Use `tf5_tesla_ue_verify_buffered_with_verified_key()` when key verification has already been performed separately.
 
 ### Complexity
 

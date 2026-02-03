@@ -109,7 +109,7 @@ typedef struct {
     uint32_t                   timestamp_ms;                  // 3B (wire) - Unix epoch timestamp LSB (ms) for replay protection
     uint8_t                    signature[TF5_TESLA_SIG_LEN]; // 48B - BLS signature
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
-} tf5_tesla_extension_t;
+} tf5_extension_t;
 
 /*
  * gNB-side TESLA State
@@ -272,7 +272,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
                                     uint16_t slot,
                                     const uint8_t *original_sib1,
                                     size_t sib1_len,
-                                    tf5_tesla_extension_t *ext);
+                                    tf5_extension_t *ext);
 
 /**
  * Pack TESLA extension into binary format
@@ -282,7 +282,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
  * @param buf_len       Size of output buffer
  * @return Number of bytes written, or negative on error
  */
-int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
+int tf5_tesla_pack_extension(const tf5_extension_t *ext,
                              uint8_t *buf,
                              size_t buf_len);
 
@@ -325,7 +325,7 @@ void tf5_tesla_ue_free(tf5_ue_state_t *state);
  */
 int tf5_tesla_unpack_extension(const uint8_t *buf,
                                size_t buf_len,
-                               tf5_tesla_extension_t *ext);
+                               tf5_extension_t *ext);
 
 /**
  * Perform safe packet test
@@ -341,14 +341,14 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
  *
  * Checks that the packet arrived within a safe time window.
  *
- * @param state         Pointer to UE TESLA state structure
- * @param ext           TESLA extension from received SIB1
+ * @param ue_state         Pointer to UE TESLA state structure
+ * @param tf5_ext           TESLA extension from received SIB1
  * @param rx_sfn        SFN when packet was received
  * @param rx_slot       Slot when packet was received
  * @return true if packet is safe, false otherwise
  */
-bool tf5_tesla_ue_safe_packet_test(tf5_ue_state_t *state,
-                                   const tf5_tesla_extension_t *ext,
+bool tf5_tesla_ue_safe_packet_test(tf5_ue_state_t *ue_state,
+                                   const tf5_extension_t *tf5_ext,
                                    uint16_t rx_sfn,
                                    uint16_t rx_slot);
 
@@ -413,6 +413,32 @@ int tf5_tesla_ue_verify_with_key_recovery(
     tf5_ue_state_t *ue_state,
     const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
     uint32_t disclosed_key_interval,
+    int *total_verified,
+    int *total_failed,
+    bool *rrc_trigger_verified);
+
+/**
+ * Verify buffered SIB1s using an already-verified key
+ *
+ * Per RFC 4082 Section 3.5: Key verification (step 3) must be done BEFORE
+ * packet buffering. This function handles message verification (step 4) using
+ * a key that has already been verified by tf5_tesla_ue_verify_key_chain.
+ *
+ * @param ue_state              Pointer to UE TESLA state structure
+ * @param verified_key          Key that has been verified via key chain
+ * @param verified_key_interval Interval index of verified key
+ * @param total_verified        Output: total successfully verified entries
+ * @param total_failed          Output: total failed verifications
+ * @param rrc_trigger_verified  Output: true if RRC-triggering entry verified
+ * @return 0 if at least one verified, negative on error:
+ *         -1: Invalid parameters
+ *         -2: No buffered entries to verify
+ *         -5: All entries failed verification
+ */
+int tf5_tesla_ue_verify_buffered_with_verified_key(
+    tf5_ue_state_t *ue_state,
+    const uint8_t verified_key[TF5_TESLA_KEY_LEN],
+    uint32_t verified_key_interval,
     int *total_verified,
     int *total_failed,
     bool *rrc_trigger_verified);
