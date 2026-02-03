@@ -80,6 +80,8 @@
             "name": "tf5_tests",
             "configurePreset": "tests",
             "targets": [
+                "nr-uesoftmodem",
+                "nr-softmodem",
                 "tf5_tests"
             ]
         }
