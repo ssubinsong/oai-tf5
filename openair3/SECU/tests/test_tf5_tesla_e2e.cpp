@@ -194,12 +194,9 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     EXPECT_EQ(0, failed_count) << "No entries should fail";
 }
 
-// DISABLED: Key recovery with multiple intervals needs investigation.
-// The test buffers entries at intervals 5 and 6, then tries key recovery with K_7.
-// The implementation currently returns -2 (no entries to verify), which may indicate
-// that the key recovery function doesn't correctly handle multiple past intervals.
-// TODO: Investigate tf5_tesla_ue_verify_with_key_recovery implementation.
-TEST_F(TF5E2ETest, DISABLED_E2E_MultipleSib1s_AllVerified) {
+// Key recovery test: buffers entries at intervals 5 and 6, then verifies using K_7.
+// Fixed: verify_start was calculated after verify_key_chain updated trust_anchor_idx.
+TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
     // Setup
     ASSERT_EQ(0, initGnb(100));
     ASSERT_EQ(0, initUe());
@@ -405,12 +402,10 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
 // Key Recovery Scenario Tests
 // ============================================================================
 
-// DISABLED: Key recovery from future intervals needs investigation.
-// The test buffers at interval 5, then tries key recovery with K_8.
-// The implementation returns -2 (no entries to verify), which may indicate
-// that key derivation from K_8 -> K_5 isn't working correctly.
-// TODO: Investigate the key recovery chaining logic in tf5_tesla_ue_verify_with_key_recovery.
-TEST_F(TF5E2ETest, DISABLED_E2E_MissedDisclosure_KeyRecovery) {
+// Key recovery test: buffers SIB1 at interval 5, misses disclosures until interval 8.
+// Uses K_8 to recover and verify the buffered entry from interval 5.
+// Fixed: verify_start was calculated after verify_key_chain updated trust_anchor_idx.
+TEST_F(TF5E2ETest, E2E_MissedDisclosure_KeyRecovery) {
     // Setup
     ASSERT_EQ(0, initGnb(100));
     ASSERT_EQ(0, initUe());
@@ -485,6 +480,277 @@ TEST_F(TF5E2ETest, E2E_PackUnpack_PreservesAllFields) {
     EXPECT_EQ(0, memcmp(original.key_disclosure, unpacked.key_disclosure, TF5_TESLA_KEY_LEN));
     EXPECT_EQ(0, memcmp(original.signature, unpacked.signature, TF5_TESLA_SIG_LEN));
     EXPECT_EQ(0, memcmp(original.tesla_tag, unpacked.tesla_tag, TF5_TESLA_TAG_LEN));
+}
+
+// ============================================================================
+// Key Validity / Expiration Tests
+// ============================================================================
+
+TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
+    // Test that a key with future validity is accepted
+    ASSERT_EQ(0, initGnb(100));
+    ASSERT_EQ(0, initUe());
+
+    // Set key validity to 1 year from now
+    uint64_t now_unix = (uint64_t)time(NULL);
+    gnb_state.key_validity_end = tf5_ibs_unix_to_gnb_key_validity(now_unix + 365 * 86400);
+
+    const char sib1[] = "SIB1 content";
+    tf5_tesla_extension_t ext;
+    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
+
+    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+
+    // Verify the validity_end is in the future
+    uint64_t validity_unix = tf5_ibs_gnb_key_validity_to_unix(ext.validity_end);
+
+    EXPECT_GT(validity_unix, now_unix) << "Key validity should be in the future";
+
+    // Verify full flow works
+    bootstrapUe(&ext);
+
+    uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
+    size_t mac_auth_len;
+    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+                                   (const uint8_t*)sib1, strlen(sib1),
+                                   gnb_state.key_validity_end);
+
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, &rx_time, false);
+
+    int verified_count = 0, failed_count = 0;
+    bool rrc_trigger = false;
+    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+                                                ext.i, &verified_count, &failed_count, &rrc_trigger);
+
+    EXPECT_EQ(0, ret) << "Valid key should pass verification";
+}
+
+TEST_F(TF5E2ETest, E2E_KeyValidity_ApplicationLevelExpirationCheck) {
+    // Test that application (RRC layer) can check key expiration
+    ASSERT_EQ(0, initGnb(100));
+
+    // Set key validity to 1 year from now
+    uint64_t now_unix = (uint64_t)time(NULL);
+    gnb_state.key_validity_end = tf5_ibs_unix_to_gnb_key_validity(now_unix + 365 * 86400);
+
+    const char sib1[] = "SIB1 content";
+    tf5_tesla_extension_t ext;
+    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
+
+    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+
+    // Simulate application-level expiration check
+    uint64_t validity_unix = tf5_ibs_gnb_key_validity_to_unix(ext.validity_end);
+
+    // Check: is key expired?
+    bool key_expired = (now_unix > validity_unix);
+    EXPECT_FALSE(key_expired) << "Test key should not be expired";
+
+    // Simulate checking an expired key
+    // Create a validity that's already expired
+    uint32_t expired_validity = tf5_ibs_unix_to_gnb_key_validity(now_unix - 3600);  // 1 hour ago
+    uint64_t expired_validity_unix = tf5_ibs_gnb_key_validity_to_unix(expired_validity);
+
+    bool expired_key = (now_unix > expired_validity_unix);
+    EXPECT_TRUE(expired_key) << "Key with past validity should be detected as expired";
+}
+
+TEST_F(TF5E2ETest, E2E_KeyValidity_ConversionRoundTrip) {
+    // Test validity conversion utilities
+    uint64_t original_unix = (uint64_t)time(NULL) + 86400 * 30;  // 30 days from now
+
+    uint32_t validity = tf5_ibs_unix_to_gnb_key_validity(original_unix);
+    uint64_t recovered_unix = tf5_ibs_gnb_key_validity_to_unix(validity);
+
+    // Should be within 60 seconds (1 minute resolution)
+    EXPECT_LE(llabs((long long)(original_unix - recovered_unix)), 60)
+        << "Round-trip conversion should preserve time within 1 minute";
+}
+
+// ============================================================================
+// RRC Integration Tests (auth_state and RRC trigger handling)
+// ============================================================================
+
+TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
+    // Scenario: SIB1 received, buffered, RACH initiated, RRCSetup arrives before auth completes
+    ASSERT_EQ(0, initGnb(100));
+    ASSERT_EQ(0, initUe());
+
+    const char sib1[] = "SIB1 that triggers RRC setup";
+    tf5_tesla_extension_t ext;
+    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
+
+    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    bootstrapUe(&ext);
+
+    // Buffer SIB1 with RRC trigger flag
+    uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
+    size_t mac_auth_len;
+    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+                                   (const uint8_t*)sib1, strlen(sib1),
+                                   gnb_state.key_validity_end);
+
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, &rx_time, true);
+
+    // Simulate RRC state transitions
+    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+
+    // RRCSetup arrives while auth pending
+    ue_state.rrcsetup_transaction_id = 7;  // Save for later
+    ue_state.auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
+
+    EXPECT_EQ(TF5_AUTH_STATE_RRCSETUP_DEFERRED, ue_state.auth_state);
+    EXPECT_EQ(7, ue_state.rrcsetup_transaction_id);
+
+    // Auth succeeds
+    int verified_count = 0, failed_count = 0;
+    bool rrc_trigger_verified = false;
+    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+                                                ext.i, &verified_count, &failed_count,
+                                                &rrc_trigger_verified);
+
+    EXPECT_EQ(0, ret) << "Verification should succeed";
+    EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 should be verified";
+
+    // RRC layer would now set auth_state = AUTHENTICATED and send RRCSetupComplete
+    ue_state.auth_state = TF5_AUTH_STATE_AUTHENTICATED;
+    EXPECT_EQ(TF5_AUTH_STATE_AUTHENTICATED, ue_state.auth_state);
+}
+
+TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
+    // Scenario: SIB1 received but auth fails -> RRC setup should be aborted
+    ASSERT_EQ(0, initGnb(100));
+    ASSERT_EQ(0, initUe());
+
+    const char sib1[] = "SIB1 that triggers RRC setup";
+    tf5_tesla_extension_t ext;
+    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
+
+    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    bootstrapUe(&ext);
+
+    // Buffer SIB1 with TAMPERED tag (simulating attack)
+    uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
+    size_t mac_auth_len;
+    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+                                   (const uint8_t*)sib1, strlen(sib1),
+                                   gnb_state.key_validity_end);
+
+    uint8_t tampered_tag[TF5_TESLA_TAG_LEN];
+    memcpy(tampered_tag, ext.tesla_tag, TF5_TESLA_TAG_LEN);
+    tampered_tag[0] ^= 0xFF;  // Tamper!
+
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag, &rx_time, true);
+
+    // Simulate state transitions
+    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+    ue_state.rrcsetup_transaction_id = 7;
+    ue_state.auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
+
+    // Auth fails
+    int verified_count = 0, failed_count = 0;
+    bool rrc_trigger_verified = false;
+    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+                                                ext.i, &verified_count, &failed_count,
+                                                &rrc_trigger_verified);
+
+    EXPECT_LT(ret, 0) << "Verification should fail with tampered tag";
+    EXPECT_FALSE(rrc_trigger_verified) << "RRC trigger should NOT be verified";
+    EXPECT_EQ(1, failed_count);
+
+    // RRC layer would now set auth_state = AUTH_FAILED and abort RRC setup
+    ue_state.auth_state = TF5_AUTH_STATE_AUTH_FAILED;
+    EXPECT_EQ(TF5_AUTH_STATE_AUTH_FAILED, ue_state.auth_state);
+}
+
+TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
+    // Scenario: Verify that RRC provides mechanism to gate NAS message
+    // (NAS containing SUCI must not be sent until auth completes)
+    ASSERT_EQ(0, initGnb(100));
+    ASSERT_EQ(0, initUe());
+
+    const char sib1[] = "SIB1 content";
+    tf5_tesla_extension_t ext;
+    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
+
+    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    bootstrapUe(&ext);
+
+    // Buffer SIB1 (RACH has started)
+    uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
+    size_t mac_auth_len;
+    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+                                   (const uint8_t*)sib1, strlen(sib1),
+                                   gnb_state.key_validity_end);
+
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, &rx_time, true);
+    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+
+    // At this point:
+    // - SIB1 is buffered, auth pending
+    // - NAS message (with SUCI) MUST NOT be sent yet
+    EXPECT_NE(TF5_AUTH_STATE_AUTHENTICATED, ue_state.auth_state)
+        << "Auth not complete - NAS must wait";
+
+    // RRCSetup arrives
+    ue_state.auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
+    ue_state.rrcsetup_transaction_id = 3;
+
+    // Still must not send NAS
+    EXPECT_NE(TF5_AUTH_STATE_AUTHENTICATED, ue_state.auth_state)
+        << "Still auth pending - NAS must wait";
+
+    // Auth succeeds
+    int verified_count = 0, failed_count = 0;
+    bool rrc_trigger_verified = false;
+    tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+                                      ext.i, &verified_count, &failed_count,
+                                      &rrc_trigger_verified);
+
+    ue_state.auth_state = TF5_AUTH_STATE_AUTHENTICATED;
+
+    // NOW NAS can be sent (RRC layer checks auth_state == AUTHENTICATED)
+    EXPECT_EQ(TF5_AUTH_STATE_AUTHENTICATED, ue_state.auth_state)
+        << "Auth complete - NAS can proceed";
+    EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 verified";
+}
+
+TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
+    // Scenario: SIB1 received that does NOT trigger RRC setup (e.g., refresh)
+    ASSERT_EQ(0, initGnb(100));
+    ASSERT_EQ(0, initUe());
+
+    const char sib1[] = "SIB1 refresh (no RRC)";
+    tf5_tesla_extension_t ext;
+    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
+
+    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    bootstrapUe(&ext);
+
+    // Buffer SIB1 WITHOUT RRC trigger flag
+    uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
+    size_t mac_auth_len;
+    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+                                   (const uint8_t*)sib1, strlen(sib1),
+                                   gnb_state.key_validity_end);
+
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, &rx_time, false);
+
+    // Verify
+    int verified_count = 0, failed_count = 0;
+    bool rrc_trigger_verified = false;
+    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+                                                ext.i, &verified_count, &failed_count,
+                                                &rrc_trigger_verified);
+
+    EXPECT_EQ(0, ret) << "Verification should succeed";
+    EXPECT_EQ(1, verified_count);
+    EXPECT_FALSE(rrc_trigger_verified) << "No RRC trigger flag set";
 }
 
 // ============================================================================

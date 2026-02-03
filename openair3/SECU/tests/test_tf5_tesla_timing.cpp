@@ -296,6 +296,53 @@ TEST_F(TF5TimingTest, ValidateTimestamp_SmallWindow) {
     EXPECT_EQ(-1, result) << "5 seconds old should be rejected with 3 second window";
 }
 
+TEST_F(TF5TimingTest, ValidateTimestamp_JustOutsideWindow_TooOld) {
+    uint64_t ue_time_ms = 1000000;
+    uint32_t ext_timestamp_ms = (1000000 - 60001) & 0xFFFFFFu;  // 60.001 seconds old
+    uint64_t window_ms = 60000;  // 60 second window
+
+    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+
+    EXPECT_EQ(-1, result) << "Timestamp just outside window (old) should be rejected";
+}
+
+TEST_F(TF5TimingTest, ValidateTimestamp_JustOutsideWindow_TooFuture) {
+    uint64_t ue_time_ms = 1000000;
+    uint32_t ext_timestamp_ms = (1000000 + 60001) & 0xFFFFFFu;  // 60.001 seconds in future
+    uint64_t window_ms = 60000;  // 60 second window
+
+    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+
+    EXPECT_EQ(-2, result) << "Timestamp just outside window (future) should be rejected";
+}
+
+TEST_F(TF5TimingTest, ValidateTimestamp_LargeTimeDrift_Rejected) {
+    // Use a large enough ue_time so that subtraction doesn't wrap into 24-bit space
+    uint64_t ue_time_ms = 5000000;  // 5000 seconds = ~83 minutes
+    uint32_t ext_timestamp_ms = (5000000 - 300000) & 0xFFFFFFu;  // 5 minutes old
+    uint64_t window_ms = 60000;  // 60 second window
+
+    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+
+    EXPECT_EQ(-1, result) << "Large time drift (5 minutes old) should be rejected with 60s window";
+}
+
+TEST_F(TF5TimingTest, ValidateTimestamp_ReplayAttackScenario) {
+    // Scenario: Attacker records a valid SIB1 and tries to replay it later
+    // Time when SIB1 was originally sent
+    uint64_t original_time_ms = 1000000;
+    uint32_t original_timestamp = original_time_ms & 0xFFFFFFu;
+
+    // UE validates immediately - should succeed
+    int result1 = tf5_rp_validate_timestamp(original_time_ms, original_timestamp, 60000);
+    EXPECT_EQ(0, result1) << "Original timestamp should be valid";
+
+    // Attacker waits 2 minutes and replays
+    uint64_t replay_time_ms = original_time_ms + 120000;  // 2 minutes later
+    int result2 = tf5_rp_validate_timestamp(replay_time_ms, original_timestamp, 60000);
+    EXPECT_EQ(-1, result2) << "Replayed timestamp (2 minutes later) should be rejected";
+}
+
 TEST_F(TF5TimingTest, ValidateTimestamp_ZeroWindow) {
     uint64_t ue_time_ms = 1000000;
     uint32_t ext_timestamp_ms = 1000000 & 0xFFFFFFu;  // Same time

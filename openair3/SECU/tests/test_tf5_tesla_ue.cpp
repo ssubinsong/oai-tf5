@@ -1025,6 +1025,117 @@ TEST_F(TF5UeTest, VerifyBuffered_NullKey_ReturnsError) {
 }
 
 // ============================================================================
+// Authentication State Machine Tests
+// ============================================================================
+
+TEST_F(TF5UeTest, AuthState_InitialStateIsUnauthenticated) {
+    // Covered by UeInit_AuthStateUnauthenticated - but verify explicitly here
+    ASSERT_EQ(0, initUeDefault());
+
+    EXPECT_EQ(TF5_AUTH_STATE_UNAUTHENTICATED, ue_state.auth_state)
+        << "Initial auth state should be UNAUTHENTICATED";
+}
+
+TEST_F(TF5UeTest, AuthState_CanBeSetToBuffered) {
+    ASSERT_EQ(0, initUeDefault());
+
+    // Simulate RRC layer setting BUFFERED state after buffering SIB1
+    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+
+    EXPECT_EQ(TF5_AUTH_STATE_BUFFERED, ue_state.auth_state)
+        << "Auth state should be settable to BUFFERED";
+}
+
+TEST_F(TF5UeTest, AuthState_RrcTriggerTrackedInBuffer) {
+    ASSERT_EQ(0, initUeDefault());
+    ASSERT_EQ(0, initGnbDefault(100));
+
+    // Generate valid extension
+    tf5_tesla_extension_t ext;
+    const char sib1[] = "SIB1 that triggers RRC setup";
+    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+
+    // Set up UE
+    ue_state.tesla_params = ext.tesla_params;
+    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+
+    // Buffer with triggered_rrc_setup = true
+    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
+    size_t mac_auth_input_len;
+    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
+                                   (const uint8_t*)sib1, strlen(sib1),
+                                   gnb_state.key_validity_end);
+
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
+    int ret = tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len,
+                                        ext.i, ext.tesla_tag, &rx_time, true);  // RRC trigger!
+
+    EXPECT_EQ(0, ret);
+
+    // Verify the flag is tracked in buffer
+    bool found_rrc_trigger = false;
+    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
+        if (ue_state.buffer_queue[i].valid && ue_state.buffer_queue[i].triggered_rrc_setup) {
+            found_rrc_trigger = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_rrc_trigger) << "Buffer should track RRC trigger flag";
+}
+
+TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
+    ASSERT_EQ(0, initUeDefault());
+    ASSERT_EQ(0, initGnbDefault(100));
+
+    // Generate valid extension
+    tf5_tesla_extension_t ext;
+    const char sib1[] = "SIB1 that triggers RRC setup";
+    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+
+    // Set up UE
+    ue_state.tesla_params = ext.tesla_params;
+    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
+
+    // Buffer with triggered_rrc_setup = true
+    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
+    size_t mac_auth_input_len;
+    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
+                                   (const uint8_t*)sib1, strlen(sib1),
+                                   gnb_state.key_validity_end);
+
+    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
+    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len,
+                             ext.i, ext.tesla_tag, &rx_time, true);  // RRC trigger!
+
+    // Verify and check rrc_trigger_verified
+    int verified_count = 0, failed_count = 0;
+    bool rrc_trigger_verified = false;
+
+    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+                                                ext.i, &verified_count, &failed_count,
+                                                &rrc_trigger_verified);
+
+    EXPECT_EQ(0, ret) << "Verification should succeed";
+    EXPECT_TRUE(rrc_trigger_verified) << "rrc_trigger_verified should be true when RRC-triggering SIB1 verifies";
+}
+
+TEST_F(TF5UeTest, AuthState_RrcSetupDeferredCanBeSet) {
+    ASSERT_EQ(0, initUeDefault());
+
+    // Simulate RRC layer setting RRCSETUP_DEFERRED state
+    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+    ue_state.rrcsetup_transaction_id = 42;  // Save transaction ID
+
+    // RRCSetup received while auth pending
+    ue_state.auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
+
+    EXPECT_EQ(TF5_AUTH_STATE_RRCSETUP_DEFERRED, ue_state.auth_state)
+        << "Auth state should be settable to RRCSETUP_DEFERRED";
+    EXPECT_EQ(42, ue_state.rrcsetup_transaction_id)
+        << "Transaction ID should be preserved";
+}
+
+// ============================================================================
 // Free Tests (tf5_tesla_ue_free)
 // ============================================================================
 

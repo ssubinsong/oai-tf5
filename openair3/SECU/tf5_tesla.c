@@ -954,20 +954,22 @@ int tf5_tesla_ue_verify_with_key_recovery(
         return -2;
     }
 
-    // Step 2: Verify disclosed key chains to anchor (once for entire batch)
+    // Step 2: Determine verification range BEFORE verifying key chain
+    // (because verify_key_chain updates trust_anchor_idx as a side effect)
+    // Lower bound: don't re-verify already verified intervals
+    uint32_t verify_start = earliest_buffered;
+    if (state->chain_bootstrapped &&
+        state->trust_anchor_idx != TF5_TESLA_BOOTSTRAP_IDX &&
+        state->trust_anchor_idx + 1 > verify_start) {
+        verify_start = state->trust_anchor_idx + 1;
+    }
+
+    // Step 3: Verify disclosed key chains to anchor (once for entire batch)
     // Per RFC 4082: disclosed key must chain to a previously authenticated key
     if (!tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval)) {
         LOG_E(NR_RRC, "TESLA: Key chain verification failed for K_%u - rejecting all\n",
               disclosed_interval);
         return -6;
-    }
-
-    // Step 3: Determine verification range
-    // Lower bound: don't re-verify already verified intervals
-    uint32_t verify_start = earliest_buffered;
-    if (state->chain_bootstrapped &&
-        state->trust_anchor_idx + 1 > verify_start) {
-        verify_start = state->trust_anchor_idx + 1;
     }
 
     // Upper bound: can't verify intervals newer than disclosed key
