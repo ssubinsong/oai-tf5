@@ -737,37 +737,32 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
         return TF5_VERIFY_SKIP_UNSAFE;
     }
 
-    /* Build MAC auth input for later buffering */
-    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_len = 0;
-    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
-                                    sib1_buf, sib1_len,
-                                    tf5_ext->validity_end);
+    /* Check if we have a key disclosure (i >= d) */
+    bool has_key_disclosure = (tf5_ext->i >= ue_state->tesla_params.d);
+    uint32_t key_disclosure_interval = 0;
 
-    /* Check if we have a disclosed key (i > d) */
-    bool has_disclosed_key = (tf5_ext->i > ue_state->tesla_params.d);
-    uint32_t disclosed_interval = 0;
-
-    if (has_disclosed_key) {
-        disclosed_interval = tf5_ext->i - ue_state->tesla_params.d;
+    if (has_key_disclosure) {
+        key_disclosure_interval = tf5_ext->i - ue_state->tesla_params.d;
 
         /* Step 2 (RFC 4082 3.5): New key index test
          * Check whether a key K_v has already been disclosed with v >= i-d.
-         * If disclosed_interval <= trust_anchor_idx, the key is not new. */
-        bool is_new_key = ((int32_t)disclosed_interval > ue_state->trust_anchor_idx);
+         * If key_disclosure_interval <= trust_anchor_idx, the key is not new. */
+        bool is_new_key = ((int32_t)key_disclosure_interval > ue_state->trust_anchor_idx);
 
         /* Step 3 (RFC 4082 3.5): Key verification test
          * "If key verification fails, the newly arrived packet P_j should be discarded."
          * This MUST happen BEFORE buffering. */
         if (is_new_key) {
-            if (!tf5_tesla_ue_verify_key_chain(ue_state, tf5_ext->key_disclosure, disclosed_interval)) {
+            if (!tf5_tesla_ue_verify_key_chain(ue_state, tf5_ext->key_disclosure, key_disclosure_interval)) {
                 LOG_E(NR_RRC, "TESLA: Key chain verification failed for K_%u - discarding packet\n",
-                      disclosed_interval);
+                      key_disclosure_interval);
                 return TF5_VERIFY_FAIL_KEYCHAIN;
             }
             LOG_D(NR_RRC, "TESLA: Key K_%u verified, proceeding to message verification\n",
-                  disclosed_interval);
+                  key_disclosure_interval);
         }
+
+        // TODO: don't know what to do with keys that are !is_new_key -> how should they be checked and buffered?
 
         /* Step 4 (RFC 4082 3.5): Message verification tests
          * Verify any earlier safe, buffered packets using the verified key. */
@@ -775,10 +770,10 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
             int verified_count = 0, failed_count = 0;
             bool rrc_trigger_verified = false;
 
-            int verify_rc = tf5_tesla_ue_verify_buffered_with_verified_key(
+            int verify_rc = tf5_tesla_ue_verify_buffered_with_key_disclosure(
                 ue_state,
                 tf5_ext->key_disclosure,
-                disclosed_interval,
+                key_disclosure_interval,
                 &verified_count,
                 &failed_count,
                 &rrc_trigger_verified);
@@ -799,6 +794,13 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
         }
     }
 
+    /* Build MAC auth input for later buffering */
+    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
+    size_t mac_auth_len = 0;
+    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
+                                    sib1_buf, sib1_len,
+                                    tf5_ext->validity_end);
+
     /* Step 5: Buffer current SIB1 (key verification already passed if applicable)
      * Per RFC 4082: "it adds the triplet (i, M_j, MAC(K'_i, M_j)) to a buffer" */
     bool should_trigger_rrc = (ue_state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) &&
@@ -812,7 +814,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
     }
 
     /* Return result based on overall verification status */
-    if (has_disclosed_key && ue_state->trust_anchor_idx >= (int32_t)disclosed_interval) {
+    if (has_key_disclosure && ue_state->trust_anchor_idx >= (int32_t)key_disclosure_interval) {
         /* We had a verified key and could verify some buffered packets */
         return TF5_VERIFY_OK;
     }

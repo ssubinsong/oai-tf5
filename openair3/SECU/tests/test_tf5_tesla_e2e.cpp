@@ -101,7 +101,7 @@ protected:
     // Simulate gNB extension preparation and transmission
     int gnbPrepareAndPack(uint16_t sfn, uint16_t slot,
                           const uint8_t* sib1, size_t sib1_len,
-                          tf5_tesla_extension_t* ext,
+                          tf5_extension_t* ext,
                           uint8_t* packed, size_t packed_len) {
         int ret = tf5_tesla_gnb_prepare_extension(&gnb_state, sfn, slot, sib1, sib1_len, ext);
         if (ret != 0) return ret;
@@ -112,12 +112,12 @@ protected:
 
     // Simulate UE receive and unpack
     int ueReceiveAndUnpack(const uint8_t* packed, size_t packed_len,
-                           tf5_tesla_extension_t* ext) {
+                           tf5_extension_t* ext) {
         return tf5_tesla_unpack_extension(packed, packed_len, ext);
     }
 
     // Setup UE with TESLA params and bootstrap anchor
-    void bootstrapUe(const tf5_tesla_extension_t* ext) {
+    void bootstrapUe(const tf5_extension_t* ext) {
         ue_state.tesla_params = ext->tesla_params;
         memcpy(ue_state.trust_anchor_key, gnb_state.key_chain[tf5_key_interval_to_index(-1)], TF5_TESLA_KEY_LEN);
         ue_state.trust_anchor_idx = -1;
@@ -137,7 +137,7 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     ASSERT_EQ(0, initUe());
 
     const char sib1[] = "Test SIB1 content for E2E test";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     // gNB: Prepare extension at interval 5 (SFN=10, slot=0 = 200 slots = 5 intervals)
@@ -145,7 +145,7 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, ret);
 
     // UE: Receive and unpack
-    tf5_tesla_extension_t rx_ext;
+    tf5_extension_t rx_ext;
     ret = ueReceiveAndUnpack(packed, TF5_EXTENSION_PACKED_SIZE, &rx_ext);
     ASSERT_EQ(0, ret);
 
@@ -204,7 +204,7 @@ TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
     const char sib1_6[] = "SIB1 at interval 6";
 
     // gNB: Prepare extensions at intervals 5 and 6
-    tf5_tesla_extension_t ext5, ext6;
+    tf5_extension_t ext5, ext6;
     uint8_t packed5[TF5_EXTENSION_PACKED_SIZE], packed6[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5, packed5, sizeof(packed5));
@@ -251,7 +251,7 @@ TEST_F(TF5E2ETest, E2E_BootstrapThenNormal) {
 
     // Bootstrap interval (interval 0)
     const char sib1_0[] = "SIB1 at bootstrap interval 0";
-    tf5_tesla_extension_t ext0;
+    tf5_extension_t ext0;
     uint8_t packed0[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(0, 0, (const uint8_t*)sib1_0, strlen(sib1_0), &ext0, packed0, sizeof(packed0));
@@ -263,7 +263,7 @@ TEST_F(TF5E2ETest, E2E_BootstrapThenNormal) {
 
     // Normal interval (interval 5)
     const char sib1_5[] = "SIB1 at normal interval 5";
-    tf5_tesla_extension_t ext5;
+    tf5_extension_t ext5;
     uint8_t packed5[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5, packed5, sizeof(packed5));
@@ -283,7 +283,7 @@ TEST_F(TF5E2ETest, E2E_TamperedTag_Rejected) {
     ASSERT_EQ(0, initUe());
 
     const char sib1[] = "Test SIB1 content";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
@@ -325,7 +325,7 @@ TEST_F(TF5E2ETest, E2E_TamperedSib1_Rejected) {
     ASSERT_EQ(0, initUe());
 
     const char sib1[] = "Test SIB1 content";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
@@ -363,7 +363,7 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
     ASSERT_EQ(0, initUe());
 
     const char sib1[] = "Test SIB1 content";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
@@ -411,7 +411,7 @@ TEST_F(TF5E2ETest, E2E_MissedDisclosure_KeyRecovery) {
 
     // Simulate receiving SIB1 at interval 5, but missing disclosures until interval 8
     const char sib1_5[] = "SIB1 at interval 5";
-    tf5_tesla_extension_t ext5;
+    tf5_extension_t ext5;
     uint8_t packed5[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5, packed5, sizeof(packed5));
@@ -451,7 +451,7 @@ TEST_F(TF5E2ETest, E2E_PackUnpack_PreservesAllFields) {
     ASSERT_EQ(0, initGnb(100));
 
     const char sib1[] = "Test SIB1 for serialization test";
-    tf5_tesla_extension_t original;
+    tf5_extension_t original;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     // gNB prepares extension
@@ -462,7 +462,7 @@ TEST_F(TF5E2ETest, E2E_PackUnpack_PreservesAllFields) {
     ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, pack_ret);
 
     // Unpack
-    tf5_tesla_extension_t unpacked;
+    tf5_extension_t unpacked;
     int unpack_ret = tf5_tesla_unpack_extension(packed, TF5_EXTENSION_PACKED_SIZE, &unpacked);
     ASSERT_EQ(0, unpack_ret);
 
@@ -495,7 +495,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
     gnb_state.key_validity_end = tf5_ibs_unix_to_gnb_key_validity(now_unix + 365 * 86400);
 
     const char sib1[] = "SIB1 content";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
@@ -534,7 +534,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ApplicationLevelExpirationCheck) {
     gnb_state.key_validity_end = tf5_ibs_unix_to_gnb_key_validity(now_unix + 365 * 86400);
 
     const char sib1[] = "SIB1 content";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
@@ -577,7 +577,7 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
     ASSERT_EQ(0, initUe());
 
     const char sib1[] = "SIB1 that triggers RRC setup";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
@@ -624,7 +624,7 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
     ASSERT_EQ(0, initUe());
 
     const char sib1[] = "SIB1 that triggers RRC setup";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
@@ -672,7 +672,7 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     ASSERT_EQ(0, initUe());
 
     const char sib1[] = "SIB1 content";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
@@ -724,7 +724,7 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
     ASSERT_EQ(0, initUe());
 
     const char sib1[] = "SIB1 refresh (no RRC)";
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));

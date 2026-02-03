@@ -694,37 +694,34 @@ bool tf5_tesla_ue_verify_key_chain(tf5_ue_state_t *ue_state,
     // Verify by chaining disclosed key to the trust anchor
     // Works uniformly for all cases including bootstrap (trust_anchor_idx == -1)
     int32_t disclosed_interval = (int32_t)disclosed_key_interval;
-    if (disclosed_interval > ue_state->trust_anchor_idx) {
-        // Chain from disclosed_key_interval down to trust_anchor_idx
-        uint8_t computed_key[TF5_TESLA_KEY_LEN];
-        memcpy(computed_key, disclosed_key, TF5_TESLA_KEY_LEN);
 
-        uint32_t steps = (uint32_t)(disclosed_interval - ue_state->trust_anchor_idx);
-        for (uint32_t i = 0; i < steps; i++) {
-            uint8_t next_key[TF5_TESLA_KEY_LEN];
-            tf5_tesla_chain_key(computed_key, next_key);
-            memcpy(computed_key, next_key, TF5_TESLA_KEY_LEN);
-        }
+    DevAssert(disclosed_interval > ue_state->trust_anchor_idx);
 
-        if (memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
-            LOG_D(NR_RRC, "TESLA: Key chain verified K_%u -> K_%d (%u hash ops)\n",
-                  disclosed_key_interval, ue_state->trust_anchor_idx, steps);
-            // Update anchor to newly verified key for O(1) future verifications
-            // Per RFC 4082: once a key is verified, it becomes the new trust anchor
-            memcpy(ue_state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
-            ue_state->trust_anchor_idx = disclosed_interval;
-            return true;
-        } else {
-            LOG_E(NR_RRC, "TESLA: Key chain verification FAILED K_%u -> K_%d\n",
-                  disclosed_key_interval, ue_state->trust_anchor_idx);
-            return false;
-        }
+    // Chain from disclosed_key_interval down to trust_anchor_idx
+    uint8_t computed_key[TF5_TESLA_KEY_LEN];
+    memcpy(computed_key, disclosed_key, TF5_TESLA_KEY_LEN);
+
+    uint32_t steps = (uint32_t)(disclosed_interval - ue_state->trust_anchor_idx);
+    for (uint32_t i = 0; i < steps; i++) {
+      uint8_t next_key[TF5_TESLA_KEY_LEN];
+      tf5_tesla_chain_key(computed_key, next_key);
+      memcpy(computed_key, next_key, TF5_TESLA_KEY_LEN);
     }
 
-    // disclosed_interval <= trust_anchor_idx - old key, already verified transitively
-    LOG_D(NR_RRC, "TESLA: Key K_%u already verified (anchor at K_%d)\n",
-          disclosed_key_interval, ue_state->trust_anchor_idx);
-    return true;
+    if (memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
+      LOG_D(NR_RRC,
+            "TESLA: Key chain verified K_%u -> K_%d (%u hash ops)\n",
+            disclosed_key_interval,
+            ue_state->trust_anchor_idx,
+            steps);
+      // Update anchor to newly verified key for O(1) future verifications
+      // Per RFC 4082: once a key is verified, it becomes the new trust anchor
+      memcpy(ue_state->trust_anchor_key, disclosed_key, TF5_TESLA_KEY_LEN);
+      ue_state->trust_anchor_idx = disclosed_interval;
+      return true;
+    }
+    LOG_E(NR_RRC, "TESLA: Key chain verification FAILED K_%u -> K_%d\n", disclosed_key_interval, ue_state->trust_anchor_idx);
+    return false;
 }
 
 int tf5_tesla_ue_verify_with_key_recovery(
@@ -896,15 +893,15 @@ int tf5_tesla_ue_verify_with_key_recovery(
     return (*total_failed > 0) ? -5 : -2;
 }
 
-int tf5_tesla_ue_verify_buffered_with_verified_key(
+int tf5_tesla_ue_verify_buffered_with_key_disclosure(
     tf5_ue_state_t *ue_state,
-    const uint8_t verified_key[TF5_TESLA_KEY_LEN],
-    uint32_t verified_key_interval,
+    const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
+    uint32_t key_disclosure_interval,
     int *total_verified,
     int *total_failed,
     bool *rrc_trigger_verified)
 {
-    if (!ue_state || !ue_state->initialized || !verified_key ||
+    if (!ue_state || !ue_state->initialized || !key_disclosure ||
         !total_verified || !total_failed || !rrc_trigger_verified) {
         return -1;
     }
@@ -936,20 +933,15 @@ int tf5_tesla_ue_verify_buffered_with_verified_key(
         return -2;
     }
 
+    DevAssert(earliest_buffered > ue_state->trust_anchor_idx);
+
     // Step 2: Determine verification range
     // Lower bound: don't re-verify already verified intervals
     uint32_t verify_start = earliest_buffered;
-    if (ue_state->chain_bootstrapped &&
-        ue_state->trust_anchor_idx >= 0 &&
-        (uint32_t)(ue_state->trust_anchor_idx + 1) > verify_start) {
-        // Note: trust_anchor_idx was already updated by verify_key_chain caller
-        // But entries at trust_anchor_idx may still need verification
-        verify_start = earliest_buffered;
-    }
 
     // Upper bound: can't verify intervals newer than verified key
-    uint32_t verify_end = (latest_buffered < verified_key_interval) ?
-                           latest_buffered : verified_key_interval;
+    uint32_t verify_end = (latest_buffered < key_disclosure_interval) ?
+                           latest_buffered : key_disclosure_interval;
 
     if (verify_start > verify_end) {
         LOG_D(NR_RRC, "TESLA: No intervals in verifiable range [%u, %u]\n",
@@ -960,21 +952,21 @@ int tf5_tesla_ue_verify_buffered_with_verified_key(
     // Step 3: Build key cache for all intervals in range
     // Per RFC 4082 Section 3.5: "Using a disclosed key, we can calculate all
     // previous disclosed keys" via the chain function K_i = F(K_{i+1})
-    uint32_t num_intervals = verified_key_interval - verify_start + 1;
+    uint32_t num_intervals = key_disclosure_interval - verify_start + 1;
 
     // Safety check: limit derivations to prevent excessive computation
     if (num_intervals > TF5_TESLA_BUFFER_QUEUE_SIZE + 2) {
         LOG_W(NR_RRC, "TESLA: Key recovery range too large (%u intervals), limiting\n",
               num_intervals);
-        verify_start = verified_key_interval - TF5_TESLA_BUFFER_QUEUE_SIZE - 1;
-        num_intervals = verified_key_interval - verify_start + 1;
+        verify_start = key_disclosure_interval - TF5_TESLA_BUFFER_QUEUE_SIZE - 1;
+        num_intervals = key_disclosure_interval - verify_start + 1;
     }
 
     // Stack-allocated key cache (safe because num_intervals is bounded)
     uint8_t key_cache[TF5_TESLA_BUFFER_QUEUE_SIZE + 3][TF5_TESLA_KEY_LEN];
 
-    // Start with verified_key at highest index
-    memcpy(key_cache[num_intervals - 1], verified_key, TF5_TESLA_KEY_LEN);
+    // Start with key_disclosure at highest index
+    memcpy(key_cache[num_intervals - 1], key_disclosure, TF5_TESLA_KEY_LEN);
 
     // Derive backwards: K_i = F(K_{i+1})
     for (int i = (int)num_intervals - 2; i >= 0; i--) {
@@ -982,7 +974,7 @@ int tf5_tesla_ue_verify_buffered_with_verified_key(
     }
 
     LOG_D(NR_RRC, "TESLA: Key recovery - derived %u keys for intervals [%u, %u]\n",
-          num_intervals, verify_start, verified_key_interval);
+          num_intervals, verify_start, key_disclosure_interval);
 
     // Step 4: Verify all buffered entries using derived keys
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {

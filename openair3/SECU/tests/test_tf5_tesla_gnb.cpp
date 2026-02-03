@@ -199,7 +199,7 @@ TEST_F(TF5GnbTest, GnbInit_ZeroInterval_ReturnsError) {
 TEST_F(TF5GnbTest, PrepareExtension_Success) {
     ASSERT_EQ(0, initGnbDefault(100));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     int ret = tf5_tesla_gnb_prepare_extension(
@@ -217,7 +217,7 @@ TEST_F(TF5GnbTest, PrepareExtension_Success) {
 TEST_F(TF5GnbTest, PrepareExtension_CorrectVersion) {
     ASSERT_EQ(0, initGnbDefault(100));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 10, (const uint8_t*)sib1, strlen(sib1), &ext);
@@ -228,7 +228,7 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectVersion) {
 TEST_F(TF5GnbTest, PrepareExtension_CorrectInterval) {
     ASSERT_EQ(0, initGnbDefault(100));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     // At SFN=5, slot=0, with 20 slots/frame:
@@ -242,7 +242,7 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectInterval) {
 TEST_F(TF5GnbTest, PrepareExtension_CorrectKeyDisclosure_NormalInterval) {
     ASSERT_EQ(0, initGnbDefault(100));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     // Force interval 5 (200 slots = SFN 10, slot 0)
@@ -256,7 +256,7 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectKeyDisclosure_NormalInterval) {
 TEST_F(TF5GnbTest, PrepareExtension_BootstrapInterval_DiscloseKMinus1) {
     ASSERT_EQ(0, initGnbDefault(100));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     // At interval 0 (T_0), should disclose K_{-1} (bootstrap key)
@@ -269,7 +269,7 @@ TEST_F(TF5GnbTest, PrepareExtension_BootstrapInterval_DiscloseKMinus1) {
 TEST_F(TF5GnbTest, PrepareExtension_TagComputed) {
     ASSERT_EQ(0, initGnbDefault(100));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
@@ -288,7 +288,7 @@ TEST_F(TF5GnbTest, PrepareExtension_TagComputed) {
 TEST_F(TF5GnbTest, PrepareExtension_SignatureComputed) {
     ASSERT_EQ(0, initGnbDefault(100));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
@@ -307,7 +307,7 @@ TEST_F(TF5GnbTest, PrepareExtension_SignatureComputed) {
 TEST_F(TF5GnbTest, PrepareExtension_ParamsIncluded) {
     ASSERT_EQ(0, initGnbDefault(100));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
@@ -321,7 +321,7 @@ TEST_F(TF5GnbTest, PrepareExtension_IntervalExceedsChain_ReturnsError) {
     // Initialize with small chain
     ASSERT_EQ(0, initGnbDefault(10));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     // Try to get extension for interval 15 (10 * 40 slots = SFN 20)
@@ -336,7 +336,7 @@ TEST_F(TF5GnbTest, PrepareExtension_IntervalExceedsChain_ReturnsError) {
 }
 
 TEST_F(TF5GnbTest, PrepareExtension_NullState_ReturnsError) {
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
     int ret = tf5_tesla_gnb_prepare_extension(
@@ -349,7 +349,7 @@ TEST_F(TF5GnbTest, PrepareExtension_NullState_ReturnsError) {
 TEST_F(TF5GnbTest, PrepareExtension_NullSib1_ReturnsError) {
     ASSERT_EQ(0, initGnbDefault(100));
 
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
 
     int ret = tf5_tesla_gnb_prepare_extension(
         &gnb_state, 5, 0, nullptr, 10, &ext

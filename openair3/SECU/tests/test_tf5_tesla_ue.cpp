@@ -176,7 +176,7 @@ TEST_F(TF5UeTest, SafePacketTest_SafePacket_ReturnsTrue) {
     ue_state.tesla_params.t0 = tf5_slot_time_make(0, 0);
 
     // Create extension claiming interval 5
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     memset(&ext, 0, sizeof(ext));
     ext.i = 5;
     ext.tesla_params = ue_state.tesla_params;
@@ -196,7 +196,7 @@ TEST_F(TF5UeTest, SafePacketTest_UnsafePacket_ReturnsFalse) {
     ue_state.tesla_params.t0 = tf5_slot_time_make(0, 0);
 
     // Create extension claiming interval 5
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     memset(&ext, 0, sizeof(ext));
     ext.i = 5;
     ext.tesla_params = ue_state.tesla_params;
@@ -216,7 +216,7 @@ TEST_F(TF5UeTest, SafePacketTest_BoundaryExact_ReturnsFalse) {
     ue_state.tesla_params.t0 = tf5_slot_time_make(0, 0);
 
     // Create extension claiming interval 5
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     memset(&ext, 0, sizeof(ext));
     ext.i = 5;
     ext.tesla_params = ue_state.tesla_params;
@@ -230,7 +230,7 @@ TEST_F(TF5UeTest, SafePacketTest_BoundaryExact_ReturnsFalse) {
 }
 
 TEST_F(TF5UeTest, SafePacketTest_NullState_ReturnsFalse) {
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     memset(&ext, 0, sizeof(ext));
 
     bool safe = tf5_tesla_ue_safe_packet_test(nullptr, &ext, 0, 0);
@@ -471,7 +471,7 @@ TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
     ASSERT_EQ(0, initGnbDefault(100));
 
     // Generate extensions for intervals 5 and 7
-    tf5_tesla_extension_t ext5, ext7;
+    tf5_extension_t ext5, ext7;
     const char sib1_5[] = "SIB1 at interval 5";
     const char sib1_7[] = "SIB1 at interval 7";
 
@@ -781,7 +781,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerTrackedInBuffer) {
     ASSERT_EQ(0, initGnbDefault(100));
 
     // Generate valid extension
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "SIB1 that triggers RRC setup";
     tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
@@ -817,7 +817,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
     ASSERT_EQ(0, initGnbDefault(100));
 
     // Generate valid extension
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     const char sib1[] = "SIB1 that triggers RRC setup";
     tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 

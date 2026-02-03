@@ -425,8 +425,8 @@ int tf5_tesla_ue_verify_with_key_recovery(
  * a key that has already been verified by tf5_tesla_ue_verify_key_chain.
  *
  * @param ue_state              Pointer to UE TESLA state structure
- * @param verified_key          Key that has been verified via key chain
- * @param verified_key_interval Interval index of verified key
+ * @param key_disclosure          Key that has been verified via key chain
+ * @param key_disclosure_interval Interval index of verified key
  * @param total_verified        Output: total successfully verified entries
  * @param total_failed          Output: total failed verifications
  * @param rrc_trigger_verified  Output: true if RRC-triggering entry verified
@@ -435,10 +435,10 @@ int tf5_tesla_ue_verify_with_key_recovery(
  *         -2: No buffered entries to verify
  *         -5: All entries failed verification
  */
-int tf5_tesla_ue_verify_buffered_with_verified_key(
+int tf5_tesla_ue_verify_buffered_with_key_disclosure(
     tf5_ue_state_t *ue_state,
-    const uint8_t verified_key[TF5_TESLA_KEY_LEN],
-    uint32_t verified_key_interval,
+    const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
+    uint32_t key_disclosure_interval,
     int *total_verified,
     int *total_failed,
     bool *rrc_trigger_verified);

@@ -4408,7 +4408,7 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
   cc->sib1_original_length = (enc_rval.encoded + 7) / 8;  // bits to bytes
 
   // Prepare TESLA extension for current frame/slot
-  tf5_tesla_extension_t ext;
+  tf5_extension_t ext;
   int rc = tf5_tesla_gnb_prepare_extension(cc->tesla_state,
                                            frame, slot,
                                            cc->sib1_original,

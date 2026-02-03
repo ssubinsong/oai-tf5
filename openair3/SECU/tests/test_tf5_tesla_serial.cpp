@@ -22,7 +22,7 @@ extern "C" {
 
 class TF5SerialTest : public ::testing::Test {
 protected:
-    tf5_tesla_extension_t ext;
+    tf5_extension_t ext;
     uint8_t packed_buf[TF5_EXTENSION_PACKED_SIZE + 16];  // Extra space for overflow tests
 
     void SetUp() override {
@@ -182,7 +182,7 @@ TEST_F(TF5SerialTest, UnpackExtension_Success) {
     tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // Then unpack
-    tf5_tesla_extension_t unpacked;
+    tf5_extension_t unpacked;
     int ret = tf5_tesla_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, &unpacked);
 
     EXPECT_EQ(0, ret) << "Unpack should return 0 on success";
@@ -193,7 +193,7 @@ TEST_F(TF5SerialTest, UnpackExtension_AllFieldsCorrect) {
     tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // Then unpack
-    tf5_tesla_extension_t unpacked;
+    tf5_extension_t unpacked;
     tf5_tesla_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, &unpacked);
 
     // Verify all fields
@@ -217,7 +217,7 @@ TEST_F(TF5SerialTest, PackUnpack_RoundTrip) {
     ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, pack_ret);
 
     // Unpack
-    tf5_tesla_extension_t unpacked;
+    tf5_extension_t unpacked;
     int unpack_ret = tf5_tesla_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, &unpacked);
     ASSERT_EQ(0, unpack_ret);
 
@@ -234,14 +234,14 @@ TEST_F(TF5SerialTest, PackUnpack_RoundTrip) {
 TEST_F(TF5SerialTest, UnpackExtension_BufferTooSmall_ReturnsError) {
     tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
-    tf5_tesla_extension_t unpacked;
+    tf5_extension_t unpacked;
     int ret = tf5_tesla_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE - 1, &unpacked);
 
     EXPECT_LT(ret, 0) << "Should return error when buffer too small";
 }
 
 TEST_F(TF5SerialTest, UnpackExtension_NullBuf_ReturnsError) {
-    tf5_tesla_extension_t unpacked;
+    tf5_extension_t unpacked;
     int ret = tf5_tesla_unpack_extension(nullptr, TF5_EXTENSION_PACKED_SIZE, &unpacked);
 
     EXPECT_LT(ret, 0) << "Should return error for null buffer";
