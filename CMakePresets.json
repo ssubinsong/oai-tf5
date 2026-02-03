@@ -23,6 +23,20 @@
                 "SANITIZE_ADDRESS": "ON",
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo"
             }
+        },
+        {
+            "name": "tests-coverage",
+            "displayName": "Default unit test config with coverage",
+            "inherits": "default",
+            "binaryDir": "${sourceDir}/cmake_targets/ran_build/build_test_coverage",
+            "cacheVariables": {
+                "ENABLE_TESTS": "ON",
+                "ENABLE_TF5": "ON",
+                "SANITIZE_ADDRESS": "ON",
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_CXX_FLAGS": "--coverage",
+                "CMAKE_C_FLAGS": "--coverage"
+            }
         }
     ],
     "buildPresets": [
