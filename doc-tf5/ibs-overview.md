@@ -84,6 +84,9 @@ gNB-specific Keys (issued per Cell ID + validity)
 ### 1. Core PKG Setup (One-time)
 
 ```bash
+# From oai-tf5 root, after building with ENABLE_TESTS=ON ENABLE_TF5=ON
+cd cmake_targets/ran_build/build_test
+
 # Generate master keypair
 ./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
 ```

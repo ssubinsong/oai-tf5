@@ -38,7 +38,7 @@ See [ibs-overview.md](ibs-overview.md) for the full cryptographic specification.
 ### Key Hierarchy
 
 ```
-Core PKG (tf5-core-pkg/)
+Core PKG (openair3/SECU/core-pkg/)
     │
     └──> Master Keypair (one-time generation)
          ├── msk.bin (32B) - Master Secret Key (SECURE!)
@@ -49,22 +49,29 @@ gNB-specific Keys (issued per Cell ID + validity)
     └──> sk_gnb.bin (35B) - gNB Secret Key (32B) + validity (3B)
 ```
 
-### Step 1: Build Core PKG
+### Step 1: Build Core PKG Utilities
+
+The Core PKG utilities are built automatically when building OAI with tests enabled:
 
 ```bash
-cd ../tf5-core-pkg
-mkdir build && cd build
-cmake ..
-make
+cd cmake_targets
+./build_oai --ninja --gNB --nrUE --cmake-opt "-DENABLE_TESTS=ON -DENABLE_TF5=ON"
 ```
 
-This produces two utilities:
+Alternatively, using CMake presets:
+```bash
+cmake --preset tests
+ninja -C cmake_targets/ran_build/build_test tf5_tests
+```
+
+This produces two utilities in `cmake_targets/ran_build/build_test/`:
 - `tf5_ibs_pkg_keygen` - Master keypair generation
 - `tf5_ibs_issue` - gNB secret key issuance
 
 ### Step 2: Generate Master Keypair (One-time)
 
 ```bash
+cd cmake_targets/ran_build/build_test
 ./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
 ```
 
@@ -77,6 +84,7 @@ This produces two utilities:
 For each gNB, issue a secret key based on its NR Cell ID (36 bits) and a validity period:
 
 ```bash
+cd cmake_targets/ran_build/build_test
 # Cell ID 0x123456789, valid for 2 years (1051200 minutes from 2024-01-01)
 ./tf5_ibs_issue pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_gnb.bin
 ```

@@ -68,11 +68,13 @@ The initialization is performed in `nr_mac_configure_sib1()` within the `#ifdef 
 **Command-line parameters**:
 - `--tesla-privkey <path>` - IBS secret key file (35 bytes: sk_ID + validity, issued by Core PKG)
 
-**Key generation**: Use the Core PKG to issue gNB keys:
+**Key generation**: Use the Core PKG utilities (located in `openair3/SECU/core-pkg/`) to issue gNB keys:
 ```bash
-cd tf5-core-pkg/build
+cd cmake_targets/ran_build/build_test
 ./tf5_ibs_issue pkg_keys/msk.bin <cell_id_hex> <validity_end> gnb_keys/sk_gnb.bin
 ```
+
+See [build.md](build.md#key-management-ibs) for the full key generation workflow.
 
 The validity period is embedded in the 35-byte key file (bytes 32-34, big-endian).
 
