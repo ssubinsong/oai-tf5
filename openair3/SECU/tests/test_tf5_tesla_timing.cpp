@@ -3,10 +3,9 @@
  * @brief Unit tests for TF5 TESLA timing and replay protection functions
  *
  * Tests for:
- * - tf5_tesla_slots_since_t0(): Slot time calculation
- * - tf5_tesla_get_interval_index(): Interval index calculation
  * - tf5_rp_get_wallclock_ms(): Wall-clock time retrieval
  * - tf5_rp_validate_timestamp(): Timestamp validation for replay protection
+ * - Helper functions: tf5_slot_time_make(), tf5_tesla_absolute_slots(), etc.
  */
 
 #include <gtest/gtest.h>
@@ -28,132 +27,6 @@ protected:
         // No setup needed
     }
 };
-
-// ============================================================================
-// Slots Since T0 Tests (tf5_tesla_slots_since_t0)
-// ============================================================================
-
-TEST_F(TF5TimingTest, SlotsSinceT0_AtT0_ReturnsZero) {
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(100, 5);
-    tf5_tesla_slot_time_t current = t0;
-
-    uint64_t slots = tf5_tesla_slots_since_t0(&current, &t0, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(0u, slots) << "At T_0, slots since T_0 should be 0";
-}
-
-TEST_F(TF5TimingTest, SlotsSinceT0_AfterOneSlot) {
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(100, 5);
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(100, 6);
-
-    uint64_t slots = tf5_tesla_slots_since_t0(&current, &t0, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(1u, slots) << "One slot after T_0 should return 1";
-}
-
-TEST_F(TF5TimingTest, SlotsSinceT0_AfterOneFrame) {
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(100, 0);
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(101, 0);
-
-    uint64_t slots = tf5_tesla_slots_since_t0(&current, &t0, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(SLOTS_PER_FRAME, slots) << "One frame after T_0 should return slots_per_frame";
-}
-
-TEST_F(TF5TimingTest, SlotsSinceT0_SlotWrap) {
-    // T_0 at SFN 100, slot 19 (last slot of frame)
-    // Current at SFN 101, slot 0 (first slot of next frame)
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(100, SLOTS_PER_FRAME - 1);
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(101, 0);
-
-    uint64_t slots = tf5_tesla_slots_since_t0(&current, &t0, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(1u, slots) << "Slot wraparound should be handled correctly";
-}
-
-TEST_F(TF5TimingTest, SlotsSinceT0_BeforeT0_ReturnsZero) {
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(100, 5);
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(100, 3);
-
-    uint64_t slots = tf5_tesla_slots_since_t0(&current, &t0, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(0u, slots) << "Before T_0 should return 0 (clamped)";
-}
-
-TEST_F(TF5TimingTest, SlotsSinceT0_LargeGap) {
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(0, 0);
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(512, 10);
-
-    uint64_t slots = tf5_tesla_slots_since_t0(&current, &t0, SLOTS_PER_FRAME);
-    uint64_t expected = 512 * SLOTS_PER_FRAME + 10;
-
-    EXPECT_EQ(expected, slots) << "Large time gap should be calculated correctly";
-}
-
-// ============================================================================
-// Get Interval Index Tests (tf5_tesla_get_interval_index)
-// ============================================================================
-
-TEST_F(TF5TimingTest, GetIntervalIndex_AtT0_ReturnsZero) {
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(100, 0);
-    tf5_tesla_slot_time_t current = t0;
-
-    uint32_t interval = tf5_tesla_get_interval_index(&current, &t0, T_INT_MS, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(0u, interval) << "At T_0, interval should be 0";
-}
-
-TEST_F(TF5TimingTest, GetIntervalIndex_AfterOneInterval) {
-    // T_int = 20ms, one frame = 10ms, so 2 frames = 1 interval
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(100, 0);
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(102, 0);  // 2 frames = 20ms
-
-    uint32_t interval = tf5_tesla_get_interval_index(&current, &t0, T_INT_MS, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(1u, interval) << "After one T_int (20ms), interval should be 1";
-}
-
-TEST_F(TF5TimingTest, GetIntervalIndex_PartialInterval_Floor) {
-    // T_int = 20ms = 2 frames. At 1.5 frames (15ms), should still be interval 0
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(100, 0);
-    // 1 frame + 10 slots = 30 slots = 15ms
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(101, 10);
-
-    uint32_t interval = tf5_tesla_get_interval_index(&current, &t0, T_INT_MS, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(0u, interval) << "Partial interval should floor to 0";
-}
-
-TEST_F(TF5TimingTest, GetIntervalIndex_ExactBoundary) {
-    // At exactly 40ms = interval 2
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(100, 0);
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(104, 0);  // 4 frames = 40ms
-
-    uint32_t interval = tf5_tesla_get_interval_index(&current, &t0, T_INT_MS, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(2u, interval) << "At exactly 40ms, interval should be 2";
-}
-
-TEST_F(TF5TimingTest, GetIntervalIndex_LargeValues) {
-    // Test with many intervals
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(0, 0);
-    // 1000 frames = 10 seconds = 500 intervals (at 20ms each)
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(1000, 0);
-
-    uint32_t interval = tf5_tesla_get_interval_index(&current, &t0, T_INT_MS, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(500u, interval) << "10 seconds should give 500 intervals at 20ms each";
-}
-
-TEST_F(TF5TimingTest, GetIntervalIndex_DifferentTint) {
-    // Test with different T_int (40ms)
-    tf5_tesla_slot_time_t t0 = tf5_slot_time_make(0, 0);
-    tf5_tesla_slot_time_t current = tf5_slot_time_make(8, 0);  // 8 frames = 80ms
-
-    uint32_t interval = tf5_tesla_get_interval_index(&current, &t0, 40, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(2u, interval) << "80ms with T_int=40ms should give interval 2";
-}
 
 // ============================================================================
 // Wall-clock Time Tests (tf5_rp_get_wallclock_ms)

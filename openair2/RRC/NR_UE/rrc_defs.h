@@ -163,7 +163,7 @@ typedef struct UE_RRC_SI_INFO_NR_s {
   int sib19_windowposition;
   int si_windowlength;
 #ifdef ENABLE_TF5
-  tf5_tesla_ue_state_t *tesla_state;
+  tf5_ue_state_t *tesla_state;
 #endif
 } NR_UE_RRC_SI_INFO;
 

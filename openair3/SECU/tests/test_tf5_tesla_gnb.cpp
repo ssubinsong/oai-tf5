@@ -4,7 +4,6 @@
  *
  * Tests for:
  * - tf5_tesla_gnb_init(): gNB state initialization
- * - tf5_tesla_gnb_get_interval(): Interval index calculation
  * - tf5_tesla_gnb_prepare_extension(): Extension generation
  * - tf5_tesla_gnb_free(): Resource cleanup
  */
@@ -189,66 +188,6 @@ TEST_F(TF5GnbTest, GnbInit_ZeroInterval_ReturnsError) {
     );
 
     EXPECT_LT(ret, 0) << "Zero interval duration should return error";
-}
-
-// ============================================================================
-// Interval Calculation Tests (tf5_tesla_gnb_get_interval)
-// ============================================================================
-
-TEST_F(TF5GnbTest, GetInterval_AtT0_ReturnsZero) {
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    uint32_t interval = tf5_tesla_gnb_get_interval(&gnb_state, t0.sfn, t0.slot);
-
-    EXPECT_EQ(0u, interval) << "At T_0, interval should be 0";
-}
-
-TEST_F(TF5GnbTest, GetInterval_AfterOneInterval) {
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // T_int = 20ms, with 20 slots/frame (10ms frame), each slot = 0.5ms
-    // 20ms = 40 slots
-    uint16_t sfn = 0;
-    uint16_t slot = 40;  // 40 slots = 20ms = 1 interval
-
-    uint32_t interval = tf5_tesla_gnb_get_interval(&gnb_state, sfn, slot);
-
-    EXPECT_EQ(1u, interval) << "After T_int (20ms = 40 slots), interval should be 1";
-}
-
-TEST_F(TF5GnbTest, GetInterval_PartialInterval_ReturnsFloor) {
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // Less than one full interval (30 slots = 15ms)
-    uint16_t sfn = 0;
-    uint16_t slot = 30;
-
-    uint32_t interval = tf5_tesla_gnb_get_interval(&gnb_state, sfn, slot);
-
-    EXPECT_EQ(0u, interval) << "Partial interval should floor to 0";
-}
-
-TEST_F(TF5GnbTest, GetInterval_MultipleIntervals) {
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // 5 intervals = 100ms = 200 slots
-    // With 20 slots/frame, 200 slots = 10 frames = SFN 10, slot 0
-    uint16_t sfn = 10;
-    uint16_t slot = 0;
-
-    uint32_t interval = tf5_tesla_gnb_get_interval(&gnb_state, sfn, slot);
-
-    EXPECT_EQ(5u, interval) << "200 slots at 20 slots/frame = 5 intervals";
-}
-
-TEST_F(TF5GnbTest, GetInterval_UninitializedState_ReturnsZero) {
-    // Don't initialize the state
-    tf5_gnb_state_t uninit_state;
-    memset(&uninit_state, 0, sizeof(uninit_state));
-
-    uint32_t interval = tf5_tesla_gnb_get_interval(&uninit_state, 100, 10);
-
-    EXPECT_EQ(0u, interval) << "Uninitialized state should return 0";
 }
 
 // ============================================================================

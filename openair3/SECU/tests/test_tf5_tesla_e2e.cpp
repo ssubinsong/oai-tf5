@@ -37,7 +37,7 @@ protected:
     uint8_t gnb_public_key[TF5_BLS_PUBKEY_LEN];
 
     // UE state
-    tf5_tesla_ue_state_t ue_state;
+    tf5_ue_state_t ue_state;
 
     // Simulated cell ID
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
@@ -185,7 +185,7 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     // We need to wait for next disclosure to get K_5, or use key at current interval
 
     // For this test, let's verify using the key for the buffered interval directly
-    ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[rx_ext.i],
+    ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[rx_ext.i],
                                             rx_ext.i, &verified_count, &failed_count, &rrc_trigger);
 
     EXPECT_EQ(0, ret) << "Buffered SIB1 verification should succeed";
@@ -311,7 +311,7 @@ TEST_F(TF5E2ETest, E2E_TamperedTag_Rejected) {
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger = false;
 
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[ext.i],
                                                 ext.i, &verified_count, &failed_count, &rrc_trigger);
 
     EXPECT_LT(ret, 0) << "Verification should fail with tampered tag";
@@ -349,7 +349,7 @@ TEST_F(TF5E2ETest, E2E_TamperedSib1_Rejected) {
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger = false;
 
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[ext.i],
                                                 ext.i, &verified_count, &failed_count, &rrc_trigger);
 
     EXPECT_LT(ret, 0) << "Verification should fail with tampered SIB1";
@@ -387,7 +387,7 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger = false;
 
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, wrong_key,
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, wrong_key,
                                                 ext.i, &verified_count, &failed_count, &rrc_trigger);
 
     EXPECT_LT(ret, 0) << "Verification should fail with wrong key";
@@ -519,7 +519,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
 
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger = false;
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[ext.i],
                                                 ext.i, &verified_count, &failed_count, &rrc_trigger);
 
     EXPECT_EQ(0, ret) << "Valid key should pass verification";
@@ -606,7 +606,7 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
     // Auth succeeds
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger_verified = false;
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[ext.i],
                                                 ext.i, &verified_count, &failed_count,
                                                 &rrc_trigger_verified);
 
@@ -652,7 +652,7 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
     // Auth fails
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger_verified = false;
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[ext.i],
                                                 ext.i, &verified_count, &failed_count,
                                                 &rrc_trigger_verified);
 
@@ -706,7 +706,7 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     // Auth succeeds
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger_verified = false;
-    tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+    tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[ext.i],
                                       ext.i, &verified_count, &failed_count,
                                       &rrc_trigger_verified);
 
@@ -743,7 +743,7 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
     // Verify
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger_verified = false;
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[ext.i],
                                                 ext.i, &verified_count, &failed_count,
                                                 &rrc_trigger_verified);
 

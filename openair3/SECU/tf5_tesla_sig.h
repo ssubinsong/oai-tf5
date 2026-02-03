@@ -73,30 +73,6 @@ int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
                        size_t data_len,
                        uint8_t signature[TF5_BLS_SIG_LEN]);
 
-/**
- * Verify BLS signature
- *
- * @param public_key   BLS public key (96 bytes)
- * @param data         Signed data
- * @param data_len     Length of data
- * @param signature    Signature to verify (48 bytes)
- * @return 0 on success (signature valid), negative on error
- */
-int tf5_tesla_bls_verify(const uint8_t public_key[TF5_BLS_PUBKEY_LEN],
-                         const uint8_t *data,
-                         size_t data_len,
-                         const uint8_t signature[TF5_BLS_SIG_LEN]);
-
-/**
- * Generate BLS key pair
- *
- * @param secret_key   Output: BLS secret key (32 bytes)
- * @param public_key   Output: BLS public key (96 bytes)
- * @return 0 on success, negative on error
- */
-int tf5_tesla_bls_keygen(uint8_t secret_key[TF5_GNB_SKEY_LEN],
-                         uint8_t public_key[TF5_BLS_PUBKEY_LEN]);
-
 /*
  * =============================================================================
  * IBS (Identity-Based Signature) Functions
@@ -141,24 +117,6 @@ int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBKEY_LEN],
                           const uint8_t *data,
                           size_t data_len,
                           const uint8_t signature[TF5_BLS_SIG_LEN]);
-
-/**
- * Hash Cell ID and validity to scalar (H_s function)
- *
- * Implements H_s: {0,1}* -> Z_r for IBS key derivation.
- * Identity = Cell_ID || gnb_key_validity_end
- * Used by both Core PKG (for key issuance) and UE (for verification).
- *
- * @param cell_id       NR Cell ID (5 bytes)
- * @param cell_id_len   Length of cell_id
- * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
- * @param scalar_out    Output scalar (32 bytes, big-endian)
- * @return 0 on success, negative on error
- */
-int tf5_tesla_ibs_hash_to_scalar(const uint8_t *cell_id,
-                                  size_t cell_id_len,
-                                  uint32_t gnb_key_validity_end,
-                                  uint8_t scalar_out[TF5_GNB_SKEY_LEN]);
 
 #endif /* ENABLE_TF5 */
 

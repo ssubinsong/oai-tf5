@@ -155,7 +155,7 @@ typedef struct {
     uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete (used when auth_state == RRCSETUP_DEFERRED)
     uint64_t rp_timestamp_window_ms;     // Timestamp window for signature replay protection (default 60000ms)
 
-} tf5_tesla_ue_state_t;
+} tf5_ue_state_t;
 
 /*
  * =============================================================================
@@ -191,18 +191,6 @@ int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
  * @param state         Pointer to gNB TESLA state structure
  */
 void tf5_tesla_gnb_free(tf5_gnb_state_t *state);
-
-/**
- * Get current interval index from HFN/SFN/slot
- *
- * @param state         Pointer to gNB TESLA state structure
- * @param sfn           Current SFN
- * @param slot          Current slot
- * @return Current interval index
- */
-uint32_t tf5_tesla_gnb_get_interval(tf5_gnb_state_t *state,
-                                    uint16_t sfn,
-                                    uint16_t slot);
 
 /**
  * Build MAC authentication input buffer
@@ -303,7 +291,7 @@ int tf5_tesla_pack_extension(const tf5_tesla_extension_t *ext,
  * @param rp_timestamp_window_ms Timestamp window for signature replay protection (ms)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
+int tf5_tesla_ue_init(tf5_ue_state_t *state,
                       const uint8_t mpk[TF5_MPK_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us,
@@ -314,7 +302,7 @@ int tf5_tesla_ue_init(tf5_tesla_ue_state_t *state,
  *
  * @param state         Pointer to UE TESLA state structure
  */
-void tf5_tesla_ue_free(tf5_tesla_ue_state_t *state);
+void tf5_tesla_ue_free(tf5_ue_state_t *state);
 
 /**
  * Unpack TESLA extension from binary format
@@ -348,7 +336,7 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
  * @param rx_slot       Slot when packet was received
  * @return true if packet is safe, false otherwise
  */
-bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
+bool tf5_tesla_ue_safe_packet_test(tf5_ue_state_t *state,
                                    const tf5_tesla_extension_t *ext,
                                    uint16_t rx_sfn,
                                    uint16_t rx_slot);
@@ -367,7 +355,7 @@ bool tf5_tesla_ue_safe_packet_test(tf5_tesla_ue_state_t *state,
  * @param triggered_rrc_setup True if this SIB1 triggered the current RRC session
  * @return 0 on success, negative on error
  */
-int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
+int tf5_tesla_ue_buffer_sib1(tf5_ue_state_t *state,
                              const uint8_t *auth_input,
                              size_t auth_input_len,
                              uint32_t interval_index,
@@ -375,52 +363,18 @@ int tf5_tesla_ue_buffer_sib1(tf5_tesla_ue_state_t *state,
                              bool triggered_rrc_setup);
 
 /**
- * Verify buffered SIB1 using disclosed key (single entry - legacy)
- *
- * @param state         Pointer to UE TESLA state structure
- * @param disclosed_key Disclosed key K_{key_interval}
- * @param key_interval  Interval index of disclosed key
- * @return 0 on success (MAC valid), negative on error
- */
-int tf5_tesla_ue_verify_buffered(tf5_tesla_ue_state_t *state,
-                                 const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
-                                 uint32_t key_interval);
-
-/**
- * Verify all buffered SIB1s for a given interval using disclosed key
- *
- * Per RFC 4082 Section 3.5 Step 4: "The receiver continues to verify and
- * release (or not) any remaining buffered packets that depend on the newly
- * disclosed key K_{i-d}."
- *
- * @param state              Pointer to UE TESLA state structure
- * @param disclosed_key      Disclosed key K_{key_interval}
- * @param key_interval       Interval index of disclosed key
- * @param verified_count     Output: number of successfully verified entries
- * @param failed_count       Output: number of failed verifications
- * @param rrc_trigger_verified Output: true if entry with triggered_rrc_setup was verified
- * @return 0 if at least one verified, negative if all failed or error
- */
-int tf5_tesla_ue_verify_all_buffered(tf5_tesla_ue_state_t *state,
-                                     const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
-                                     uint32_t key_interval,
-                                     int *verified_count,
-                                     int *failed_count,
-                                     bool *rrc_trigger_verified);
-
-/**
  * Verify key chain integrity
  *
  * Verifies that disclosed key chains to a previously verified key or K_0.
  *
- * @param state         Pointer to UE TESLA state structure
+ * @param ue_state         Pointer to UE TESLA state structure
  * @param disclosed_key Disclosed key to verify
- * @param key_index     Index of disclosed key
+ * @param disclosed_key_interval     Index of disclosed key
  * @return true if key is valid, false otherwise
  */
-bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
+bool tf5_tesla_ue_verify_key_chain(tf5_ue_state_t *ue_state,
                                    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
-                                   uint32_t key_index);
+                                   uint32_t disclosed_key_interval);
 
 /**
  * Verify buffered SIB1s with key recovery for lost disclosures
@@ -432,9 +386,9 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
  * This function derives intermediate keys from key_disclosure down to the
  * earliest buffered interval and verifies all pending entries.
  *
- * @param state              Pointer to UE TESLA state structure
+ * @param ue_state              Pointer to UE TESLA state structure
  * @param disclosed_key      Disclosed key K_{disclosed_interval}
- * @param disclosed_interval Interval index of disclosed key
+ * @param disclosed_key_interval Interval index of disclosed key
  * @param total_verified     Output: total successfully verified entries
  * @param total_failed       Output: total failed verifications
  * @param rrc_trigger_verified Output: true if RRC-triggering entry verified
@@ -445,9 +399,9 @@ bool tf5_tesla_ue_verify_key_chain(tf5_tesla_ue_state_t *state,
  *         -6: Key chain verification failed
  */
 int tf5_tesla_ue_verify_with_key_recovery(
-    tf5_tesla_ue_state_t *state,
+    tf5_ue_state_t *ue_state,
     const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
-    uint32_t disclosed_interval,
+    uint32_t disclosed_key_interval,
     int *total_verified,
     int *total_failed,
     bool *rrc_trigger_verified);
@@ -535,35 +489,6 @@ int tf5_tesla_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
                           const uint8_t *auth_input,
                           size_t auth_input_len,
                           uint8_t tag_out[TF5_TESLA_TAG_LEN]);
-
-/**
- * Get number of slots elapsed since T_0
- *
- * Uses HFN (Hyper-Frame Number) to handle SFN wraparound correctly.
- * SFN wraps every 10.24 seconds (1024 frames × 10ms).
- *
- * @param current         Current timing (HFN/SFN/slot)
- * @param t0              T_0 timing (HFN/SFN/slot)
- * @param slots_per_frame Number of slots per frame
- * @return Number of slots elapsed (0 if current time is before T_0)
- */
-uint64_t tf5_tesla_slots_since_t0(const tf5_tesla_slot_time_t *current,
-                                  const tf5_tesla_slot_time_t *t0,
-                                  uint16_t slots_per_frame);
-
-/**
- * Get interval index from timing
- *
- * @param current         Current timing (HFN/SFN/slot)
- * @param t0              T_0 timing (HFN/SFN/slot)
- * @param t_int_ms        Interval duration in ms
- * @param slots_per_frame Number of slots per frame
- * @return Interval index
- */
-uint32_t tf5_tesla_get_interval_index(const tf5_tesla_slot_time_t *current,
-                                      const tf5_tesla_slot_time_t *t0,
-                                      uint16_t t_int_ms,
-                                      uint16_t slots_per_frame);
 
 /**
  * Compute absolute slot count from timing struct

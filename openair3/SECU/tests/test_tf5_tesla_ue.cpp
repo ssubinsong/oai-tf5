@@ -7,10 +7,8 @@
  * - tf5_tesla_ue_safe_packet_test(): Safe packet timing verification
  * - tf5_tesla_ue_buffer_sib1(): SIB1 buffering for delayed verification
  * - tf5_tesla_ue_verify_key_chain(): Key chain integrity verification
- * - tf5_tesla_ue_verify_all_buffered(): Buffered entry verification
  * - tf5_tesla_ue_verify_with_key_recovery(): Key recovery for lost disclosures
  * - tf5_tesla_ibs_verify(): IBS signature verification (via TF5UeSignatureTest)
- * - tf5_tesla_ue_verify_buffered(): Legacy single-entry verification
  */
 
 #include <gtest/gtest.h>
@@ -41,7 +39,7 @@ void exit_function(const char *file, const char *function, const int line, const
 
 class TF5UeTest : public ::testing::Test {
 protected:
-    tf5_tesla_ue_state_t ue_state;
+    tf5_ue_state_t ue_state;
     uint8_t test_mpk[TF5_MPK_LEN];
 
     // For tests that need a gNB state
@@ -465,92 +463,6 @@ TEST_F(TF5UeTest, VerifyKeyChain_NullInputs_ReturnsFalse) {
 }
 
 // ============================================================================
-// Buffered Verification Tests (tf5_tesla_ue_verify_all_buffered)
-// ============================================================================
-
-TEST_F(TF5UeTest, VerifyAllBuffered_ValidTags_Success) {
-    ASSERT_EQ(0, initUeDefault());
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // Generate a valid gNB extension to get a proper tag
-    tf5_tesla_extension_t ext;
-    const char sib1[] = "Test SIB1 content";
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
-
-    // Set up UE with proper TESLA params and trust anchor
-    ue_state.tesla_params = ext.tesla_params;
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
-
-    // Build the MAC auth input and buffer it
-    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_input_len;
-    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
-                                   (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
-
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, false);
-
-    // Verify using the disclosed key
-    int verified_count = 0, failed_count = 0;
-    bool rrc_trigger_verified = false;
-
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
-                                                ext.i, &verified_count, &failed_count,
-                                                &rrc_trigger_verified);
-
-    EXPECT_EQ(0, ret) << "Verification should succeed";
-    EXPECT_EQ(1, verified_count) << "One entry should be verified";
-    EXPECT_EQ(0, failed_count) << "No entries should fail";
-}
-
-TEST_F(TF5UeTest, VerifyAllBuffered_InvalidTag_Fails) {
-    ASSERT_EQ(0, initUeDefault());
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // Set up UE with trust anchor
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
-    ue_state.tesla_params.t_int_ms = tf5_test::TV_EXT_T_INT_MS;
-    ue_state.tesla_params.d = tf5_test::TV_EXT_D;
-
-    // Buffer an entry with a fake tag
-    const char auth_input[] = "test auth input";
-    uint8_t fake_tag[TF5_TESLA_TAG_LEN] = {0xba, 0xad, 0xf0, 0x0d};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
-
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, fake_tag, false);
-
-    // Try to verify
-    int verified_count = 0, failed_count = 0;
-    bool rrc_trigger_verified = false;
-
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[5],
-                                                5, &verified_count, &failed_count,
-                                                &rrc_trigger_verified);
-
-    EXPECT_LT(ret, 0) << "Verification should fail with invalid tag";
-    EXPECT_EQ(0, verified_count) << "No entries should be verified";
-    EXPECT_EQ(1, failed_count) << "One entry should fail";
-}
-
-TEST_F(TF5UeTest, VerifyAllBuffered_NoEntries_ReturnsError) {
-    ASSERT_EQ(0, initUeDefault());
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
-
-    // Don't buffer anything
-    int verified_count = 0, failed_count = 0;
-    bool rrc_trigger_verified = false;
-
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[5],
-                                                5, &verified_count, &failed_count,
-                                                &rrc_trigger_verified);
-
-    EXPECT_LT(ret, 0) << "Should return error when no entries to verify";
-}
-
-// ============================================================================
 // Key Recovery Tests (tf5_tesla_ue_verify_with_key_recovery)
 // ============================================================================
 
@@ -843,94 +755,6 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullSignature_ReturnsError) {
 }
 
 // ============================================================================
-// Legacy Single-Entry Verification Tests (tf5_tesla_ue_verify_buffered)
-// ============================================================================
-
-TEST_F(TF5UeTest, VerifyBuffered_Success) {
-    ASSERT_EQ(0, initUeDefault());
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // Generate a valid extension
-    tf5_tesla_extension_t ext;
-    const char sib1[] = "Test SIB1 for verify_buffered";
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
-
-    // Set up UE
-    ue_state.tesla_params = ext.tesla_params;
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
-
-    // Build MAC auth input and buffer
-    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_input_len;
-    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
-                                   (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
-
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, false);
-
-    // Use legacy verify_buffered function
-    int ret = tf5_tesla_ue_verify_buffered(&ue_state, gnb_state.key_chain[ext.i], ext.i);
-
-    EXPECT_EQ(0, ret) << "Legacy verify_buffered should succeed with valid entry";
-}
-
-TEST_F(TF5UeTest, VerifyBuffered_InvalidTag_Fails) {
-    ASSERT_EQ(0, initUeDefault());
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // Set up UE with trust anchor
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
-    ue_state.tesla_params.t_int_ms = tf5_test::TV_EXT_T_INT_MS;
-    ue_state.tesla_params.d = tf5_test::TV_EXT_D;
-
-    // Buffer entry with invalid tag
-    const char auth_input[] = "test auth input";
-    uint8_t fake_tag[TF5_TESLA_TAG_LEN] = {0xDE, 0xAD, 0xBE, 0xEF};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
-
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, fake_tag, false);
-
-    int ret = tf5_tesla_ue_verify_buffered(&ue_state, gnb_state.key_chain[5], 5);
-
-    EXPECT_LT(ret, 0) << "Legacy verify_buffered should fail with invalid tag";
-}
-
-TEST_F(TF5UeTest, VerifyBuffered_NoMatchingEntry_Fails) {
-    ASSERT_EQ(0, initUeDefault());
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    setupUeWithTrustAnchor(gnb_state.key_chain[0], 0);
-
-    // Buffer entry for interval 5
-    const char auth_input[] = "test";
-    uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
-
-    // Try to verify interval 10 (no entry exists)
-    int ret = tf5_tesla_ue_verify_buffered(&ue_state, gnb_state.key_chain[10], 10);
-
-    EXPECT_LT(ret, 0) << "Should return error when no matching entry exists";
-}
-
-TEST_F(TF5UeTest, VerifyBuffered_NullState_ReturnsError) {
-    uint8_t key[TF5_TESLA_KEY_LEN] = {0};
-
-    int ret = tf5_tesla_ue_verify_buffered(nullptr, key, 5);
-
-    EXPECT_LT(ret, 0) << "Null state should return error";
-}
-
-TEST_F(TF5UeTest, VerifyBuffered_NullKey_ReturnsError) {
-    ASSERT_EQ(0, initUeDefault());
-
-    int ret = tf5_tesla_ue_verify_buffered(&ue_state, nullptr, 5);
-
-    EXPECT_LT(ret, 0) << "Null disclosed_key should return error";
-}
-
-// ============================================================================
 // Authentication State Machine Tests
 // ============================================================================
 
@@ -1015,7 +839,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
     int verified_count = 0, failed_count = 0;
     bool rrc_trigger_verified = false;
 
-    int ret = tf5_tesla_ue_verify_all_buffered(&ue_state, gnb_state.key_chain[ext.i],
+    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[ext.i],
                                                 ext.i, &verified_count, &failed_count,
                                                 &rrc_trigger_verified);
 

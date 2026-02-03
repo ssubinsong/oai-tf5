@@ -558,7 +558,7 @@ static void tf5_tesla_on_auth_failure(NR_UE_RRC_INST_t *rrc,
  */
 static void tf5_tesla_on_auth_success(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info)
 {
-    tf5_tesla_ue_state_t *state = SI_info->tesla_state;
+    tf5_ue_state_t *state = SI_info->tesla_state;
 
     if (state->auth_state == TF5_AUTH_STATE_RRCSETUP_DEFERRED) {
         LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
@@ -639,7 +639,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
                                                        const uint8_t *sib1_buf,
                                                        size_t sib1_len)
 {
-    tf5_tesla_ue_state_t *state = SI_info->tesla_state;
+    tf5_ue_state_t *state = SI_info->tesla_state;
 
     /* Validate wall-clock (fail fast before expensive crypto) */
     uint64_t ue_time_ms = tf5_rp_get_wallclock_ms();
@@ -729,7 +729,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
                                                        int rx_frame,
                                                        int rx_slot)
 {
-    tf5_tesla_ue_state_t *state = SI_info->tesla_state;
+    tf5_ue_state_t *state = SI_info->tesla_state;
 
     LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
 
@@ -1702,7 +1702,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
     ptr->l3_measurements.csi_RS_filter_coeff_rsrp = 1.0f;
     init_SI_timers(&ptr->SInfo);
 #ifdef ENABLE_TF5
-    ptr->SInfo.tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
+    ptr->SInfo.tesla_state = calloc(1, sizeof(tf5_ue_state_t));
     if (ptr->SInfo.tesla_state) {
       nrUE_params_t *params = get_nrUE_params();
 

@@ -4,12 +4,9 @@
  *
  * Tests for:
  * - tf5_tesla_bls_init(): BLS library initialization
- * - tf5_tesla_bls_keygen(): Key pair generation
  * - tf5_tesla_bls_derive_public(): Public key derivation
  * - tf5_tesla_bls_sign(): BLS signing
- * - tf5_tesla_bls_verify(): BLS verification
  * - tf5_tesla_ibs_verify(): Identity-Based Signature verification
- * - tf5_tesla_ibs_hash_to_scalar(): Identity hash function
  */
 
 #include <gtest/gtest.h>
@@ -71,44 +68,6 @@ bool TF5BlsTest::bls_initialized = false;
 TEST_F(TF5BlsTest, BlsInit_Success) {
     // Already initialized in SetUp, verify it worked
     EXPECT_TRUE(bls_initialized);
-}
-
-// ============================================================================
-// Key Generation Tests
-// ============================================================================
-
-TEST_F(TF5BlsTest, BlsKeygen_Success) {
-    uint8_t new_sk[TF5_GNB_SKEY_LEN];
-    uint8_t new_pk[TF5_BLS_PUBKEY_LEN];
-
-    int ret = tf5_tesla_bls_keygen(new_sk, new_pk);
-
-    EXPECT_EQ(0, ret) << "Key generation should succeed";
-
-    // Verify keys are not all zeros
-    bool sk_all_zeros = true, pk_all_zeros = true;
-    for (int i = 0; i < TF5_GNB_SKEY_LEN; i++) {
-        if (new_sk[i] != 0) sk_all_zeros = false;
-    }
-    for (int i = 0; i < TF5_BLS_PUBKEY_LEN; i++) {
-        if (new_pk[i] != 0) pk_all_zeros = false;
-    }
-
-    EXPECT_FALSE(sk_all_zeros) << "Secret key should not be all zeros";
-    EXPECT_FALSE(pk_all_zeros) << "Public key should not be all zeros";
-}
-
-TEST_F(TF5BlsTest, BlsKeygen_DifferentKeysEachTime) {
-    uint8_t sk1[TF5_GNB_SKEY_LEN], sk2[TF5_GNB_SKEY_LEN];
-    uint8_t pk1[TF5_BLS_PUBKEY_LEN], pk2[TF5_BLS_PUBKEY_LEN];
-
-    tf5_tesla_bls_keygen(sk1, pk1);
-    tf5_tesla_bls_keygen(sk2, pk2);
-
-    EXPECT_NE(0, memcmp(sk1, sk2, TF5_GNB_SKEY_LEN))
-        << "Each keygen should produce different secret keys";
-    EXPECT_NE(0, memcmp(pk1, pk2, TF5_BLS_PUBKEY_LEN))
-        << "Each keygen should produce different public keys";
 }
 
 // ============================================================================
@@ -219,146 +178,6 @@ TEST_F(TF5BlsTest, BlsSign_NullInputs_ReturnsError) {
 
     ret = tf5_tesla_bls_sign(secret_key, (const uint8_t*)"test", 4, nullptr);
     EXPECT_LT(ret, 0) << "Null signature output should return error";
-}
-
-// ============================================================================
-// BLS Verify Tests
-// ============================================================================
-
-TEST_F(TF5BlsTest, BlsVerify_ValidSignature_Success) {
-    // Derive public key
-    tf5_tesla_bls_derive_public(secret_key, public_key);
-
-    // Sign message
-    tf5_tesla_bls_sign(secret_key, (const uint8_t*)tf5_test::TV_BLS_MESSAGE,
-                       tf5_test::TV_BLS_MESSAGE_LEN, signature);
-
-    // Verify
-    int ret = tf5_tesla_bls_verify(public_key, (const uint8_t*)tf5_test::TV_BLS_MESSAGE,
-                                   tf5_test::TV_BLS_MESSAGE_LEN, signature);
-
-    EXPECT_EQ(0, ret) << "Valid signature should verify";
-}
-
-TEST_F(TF5BlsTest, BlsVerify_WrongKey_Fails) {
-    // Derive public key
-    tf5_tesla_bls_derive_public(secret_key, public_key);
-
-    // Sign message
-    tf5_tesla_bls_sign(secret_key, (const uint8_t*)tf5_test::TV_BLS_MESSAGE,
-                       tf5_test::TV_BLS_MESSAGE_LEN, signature);
-
-    // Generate a different key pair
-    uint8_t wrong_sk[TF5_GNB_SKEY_LEN], wrong_pk[TF5_BLS_PUBKEY_LEN];
-    tf5_tesla_bls_keygen(wrong_sk, wrong_pk);
-
-    // Verify with wrong public key
-    int ret = tf5_tesla_bls_verify(wrong_pk, (const uint8_t*)tf5_test::TV_BLS_MESSAGE,
-                                   tf5_test::TV_BLS_MESSAGE_LEN, signature);
-
-    EXPECT_NE(0, ret) << "Signature should not verify with wrong key";
-}
-
-TEST_F(TF5BlsTest, BlsVerify_WrongMessage_Fails) {
-    // Derive public key
-    tf5_tesla_bls_derive_public(secret_key, public_key);
-
-    // Sign original message
-    tf5_tesla_bls_sign(secret_key, (const uint8_t*)tf5_test::TV_BLS_MESSAGE,
-                       tf5_test::TV_BLS_MESSAGE_LEN, signature);
-
-    // Verify with different message
-    const char wrong_msg[] = "Wrong message";
-    int ret = tf5_tesla_bls_verify(public_key, (const uint8_t*)wrong_msg,
-                                   strlen(wrong_msg), signature);
-
-    EXPECT_NE(0, ret) << "Signature should not verify for wrong message";
-}
-
-TEST_F(TF5BlsTest, BlsVerify_TamperedSignature_Fails) {
-    // Derive public key
-    tf5_tesla_bls_derive_public(secret_key, public_key);
-
-    // Sign message
-    tf5_tesla_bls_sign(secret_key, (const uint8_t*)tf5_test::TV_BLS_MESSAGE,
-                       tf5_test::TV_BLS_MESSAGE_LEN, signature);
-
-    // Tamper with signature
-    signature[0] ^= 0xFF;
-
-    // Verify tampered signature
-    int ret = tf5_tesla_bls_verify(public_key, (const uint8_t*)tf5_test::TV_BLS_MESSAGE,
-                                   tf5_test::TV_BLS_MESSAGE_LEN, signature);
-
-    EXPECT_NE(0, ret) << "Tampered signature should not verify";
-}
-
-TEST_F(TF5BlsTest, BlsVerify_NullInputs_ReturnsError) {
-    tf5_tesla_bls_derive_public(secret_key, public_key);
-    tf5_tesla_bls_sign(secret_key, (const uint8_t*)"test", 4, signature);
-
-    int ret = tf5_tesla_bls_verify(nullptr, (const uint8_t*)"test", 4, signature);
-    EXPECT_LT(ret, 0) << "Null public key should return error";
-
-    ret = tf5_tesla_bls_verify(public_key, nullptr, 4, signature);
-    EXPECT_LT(ret, 0) << "Null data should return error";
-
-    ret = tf5_tesla_bls_verify(public_key, (const uint8_t*)"test", 4, nullptr);
-    EXPECT_LT(ret, 0) << "Null signature should return error";
-}
-
-// ============================================================================
-// IBS Hash to Scalar Tests
-// ============================================================================
-
-TEST_F(TF5BlsTest, IbsHashToScalar_Deterministic) {
-    uint8_t scalar1[TF5_GNB_SKEY_LEN], scalar2[TF5_GNB_SKEY_LEN];
-
-    tf5_tesla_ibs_hash_to_scalar(tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN,
-                                  tf5_test::TV_IBS_VALIDITY_END, scalar1);
-    tf5_tesla_ibs_hash_to_scalar(tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN,
-                                  tf5_test::TV_IBS_VALIDITY_END, scalar2);
-
-    EXPECT_EQ(0, memcmp(scalar1, scalar2, TF5_GNB_SKEY_LEN))
-        << "Same inputs should produce same scalar";
-}
-
-TEST_F(TF5BlsTest, IbsHashToScalar_DifferentCellIds) {
-    uint8_t cell_id1[TF5_IBS_CELL_ID_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05};
-    uint8_t cell_id2[TF5_IBS_CELL_ID_LEN] = {0x11, 0x12, 0x13, 0x14, 0x15};
-    uint8_t scalar1[TF5_GNB_SKEY_LEN], scalar2[TF5_GNB_SKEY_LEN];
-
-    tf5_tesla_ibs_hash_to_scalar(cell_id1, TF5_IBS_CELL_ID_LEN,
-                                  tf5_test::TV_IBS_VALIDITY_END, scalar1);
-    tf5_tesla_ibs_hash_to_scalar(cell_id2, TF5_IBS_CELL_ID_LEN,
-                                  tf5_test::TV_IBS_VALIDITY_END, scalar2);
-
-    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_GNB_SKEY_LEN))
-        << "Different cell IDs should produce different scalars";
-}
-
-TEST_F(TF5BlsTest, IbsHashToScalar_DifferentValidity) {
-    uint8_t scalar1[TF5_GNB_SKEY_LEN], scalar2[TF5_GNB_SKEY_LEN];
-
-    tf5_tesla_ibs_hash_to_scalar(tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN,
-                                  1000, scalar1);
-    tf5_tesla_ibs_hash_to_scalar(tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN,
-                                  2000, scalar2);
-
-    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_GNB_SKEY_LEN))
-        << "Different validity periods should produce different scalars";
-}
-
-TEST_F(TF5BlsTest, IbsHashToScalar_NullInputs_ReturnsError) {
-    uint8_t scalar[TF5_GNB_SKEY_LEN];
-
-    int ret = tf5_tesla_ibs_hash_to_scalar(nullptr, TF5_IBS_CELL_ID_LEN,
-                                            tf5_test::TV_IBS_VALIDITY_END, scalar);
-    EXPECT_LT(ret, 0) << "Null cell_id should return error";
-
-    ret = tf5_tesla_ibs_hash_to_scalar(tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN,
-                                        tf5_test::TV_IBS_VALIDITY_END, nullptr);
-    EXPECT_LT(ret, 0) << "Null scalar output should return error";
 }
 
 // ============================================================================
