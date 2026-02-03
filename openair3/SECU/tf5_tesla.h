@@ -711,6 +711,9 @@ static inline uint32_t tf5_decode_gnb_key_validity_end(const uint8_t *buf) {
  * =============================================================================
  */
 
+/* Only define these inline functions if tf5_ibs_pkg.h wasn't already included */
+#ifndef TF5_IBS_PKG_H
+
 /**
  * Convert Unix timestamp to gnb_key_validity_end format
  *
@@ -733,6 +736,8 @@ static inline uint32_t tf5_ibs_unix_to_gnb_key_validity(uint64_t unix_sec) {
 static inline uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end) {
     return TF5_IBS_VALIDITY_EPOCH + (uint64_t)gnb_key_validity_end * 60;
 }
+
+#endif /* TF5_IBS_PKG_H */
 
 /*
  * =============================================================================

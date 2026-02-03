@@ -354,9 +354,6 @@ int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
     // Store IBS secret key (sk_ID issued by Core PKG)
     memcpy(state->private_key, private_key, TF5_BLS_SECRET_KEY_LEN);
 
-    // Note: In IBS mode, Cell ID is set by the caller (config.c) after init
-    // Public key is derived from Cell ID and Core's MPK by the verifier (UE)
-
     // Allocate key chain
     state->key_chain = calloc(chain_len, TF5_TESLA_KEY_LEN);
     if (!state->key_chain) {
@@ -378,11 +375,8 @@ int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
     }
 
     // Compute bootstrap key K_{-1} = F(K_0) for disclosure during intervals 0 to d-1
-    // Per RFC 4082 Section 3.2: K_i = F(K_{i+1}), extending to K_{-1} = F(K_0)
     tf5_tesla_chain_key(state->key_chain[0], state->k_bootstrap);
 
-    // K_0 is the root commitment (stored in key_chain[0], not in tesla params)
-    // Note: root_key removed from tesla_params - key_disclosure serves as anchor
     LOG_I(NR_RRC, "TESLA: Key chain generated with %u intervals (K_{-1} bootstrap key computed)\n", chain_len);
 
     // Set TESLA parameters
@@ -448,7 +442,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
         return -2;
     }
 
-    // Copy TESLA params (includes T_0)
+    // Copy TESLA params
     memcpy(&ext->tesla_params, &state->tesla_params, sizeof(state->tesla_params));
     ext->te_version = TF5_VERSION;
 

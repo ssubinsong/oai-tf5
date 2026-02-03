@@ -19,8 +19,10 @@
 #include <string>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <filesystem>
 
 extern "C" {
+#include "openair3/SECU/tf5_ibs_pkg.h"
 #include "openair3/SECU/tf5_tesla.h"
 #include "common/config/config_userapi.h"
 #include "log.h"
@@ -416,18 +418,11 @@ TEST_F(TF5BlsTest, IbsVerify_NullSignature_ReturnsError) {
 // ============================================================================
 
 /**
- * Test fixture that uses the Core PKG binaries to generate IBS keys.
+ * Test fixture that uses the Core PKG library to generate IBS keys.
  * This enables full end-to-end IBS signature testing with properly issued keys.
- *
- * The PKG binaries must be available at TF5_PKG_KEYGEN_PATH and TF5_PKG_ISSUE_PATH.
- * If not found, these tests are skipped.
  */
 class TF5IbsE2ETest : public ::testing::Test {
 protected:
-    // Paths to PKG binaries (relative to test working directory: oai-tf5/cmake_targets/ran_build/build/openair3/SECU/tests)
-    static constexpr const char* PKG_KEYGEN_PATH = "../../../../../../../tf5-code/core-pkg/build/tf5_ibs_pkg_keygen";
-    static constexpr const char* PKG_ISSUE_PATH = "../../../../../../../tf5-code/core-pkg/build/tf5_ibs_issue";
-
     std::string test_dir;
     std::string msk_path;
     std::string mpk_path;
@@ -438,8 +433,6 @@ protected:
     uint8_t sk_gnb[TF5_BLS_SECRET_KEY_LEN];
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     uint32_t validity_end;
-
-    bool pkg_available;
 
     static bool bls_initialized;
 
@@ -462,79 +455,49 @@ protected:
 
         // Create temp directory
         test_dir = "/tmp/tf5_ibs_e2e_test_" + std::to_string(getpid());
-        mkdir(test_dir.c_str(), 0700);
+        std::filesystem::create_directories(test_dir);
         msk_path = test_dir + "/msk.bin";
         mpk_path = test_dir + "/mpk.bin";
         sk_gnb_path = test_dir + "/sk_gnb.bin";
 
-        // Check if PKG binaries are available
-        pkg_available = checkPkgBinaries();
-
-        if (pkg_available) {
-            // Generate keys using PKG binaries
-            generateKeysWithPkg();
-            loadGeneratedKeys();
-        }
+        // Generate keys using library functions
+        generateKeys();
     }
 
     void TearDown() override {
         // Clean up
-        unlink(msk_path.c_str());
-        unlink(mpk_path.c_str());
-        unlink(sk_gnb_path.c_str());
-        rmdir(test_dir.c_str());
+        std::filesystem::remove_all(test_dir);
     }
 
-    bool checkPkgBinaries() {
-        // Check if keygen binary exists
-        if (access(PKG_KEYGEN_PATH, X_OK) != 0) {
-            return false;
-        }
-        // Check if issue binary exists
-        if (access(PKG_ISSUE_PATH, X_OK) != 0) {
-            return false;
-        }
-        return true;
-    }
+    void generateKeys() {
+        // Generate master keypair using library function
+        int rc = tf5_ibs_generate_master_keypair(msk_path.c_str(), mpk_path.c_str());
+        ASSERT_EQ(0, rc) << "Failed to generate master keypair";
 
-    void generateKeysWithPkg() {
-        // Generate master keypair
-        char cmd[512];
-        snprintf(cmd, sizeof(cmd), "%s %s %s >/dev/null 2>&1",
-                 PKG_KEYGEN_PATH, msk_path.c_str(), mpk_path.c_str());
-        int ret = system(cmd);
-        ASSERT_EQ(0, ret) << "Failed to generate master keypair";
+        // Issue gNB key using library function
+        rc = tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, validity_end, sk_gnb_path.c_str());
+        ASSERT_EQ(0, rc) << "Failed to issue gNB key";
 
-        // Issue gNB key
-        // Cell ID 0x123456789 as hex string
-        snprintf(cmd, sizeof(cmd), "%s %s 123456789 %u %s >/dev/null 2>&1",
-                 PKG_ISSUE_PATH, msk_path.c_str(), validity_end, sk_gnb_path.c_str());
-        ret = system(cmd);
-        ASSERT_EQ(0, ret) << "Failed to issue gNB key";
+        // Load generated keys into member variables
+        loadGeneratedKeys();
     }
 
     void loadGeneratedKeys() {
-        // Load MSK
-        FILE* f = fopen(msk_path.c_str(), "rb");
-        ASSERT_NE(nullptr, f) << "Failed to open MSK file";
-        size_t n = fread(msk, 1, TF5_BLS_SECRET_KEY_LEN, f);
-        fclose(f);
-        ASSERT_EQ(TF5_BLS_SECRET_KEY_LEN, n) << "Failed to read MSK";
+        // Load MSK using library function
+        int rc = tf5_ibs_load_master_secret(msk_path.c_str(), msk);
+        ASSERT_EQ(0, rc) << "Failed to load MSK";
 
-        // Load MPK
-        f = fopen(mpk_path.c_str(), "rb");
-        ASSERT_NE(nullptr, f) << "Failed to open MPK file";
-        n = fread(mpk, 1, TF5_IBS_PUBKEY_LEN, f);
-        fclose(f);
-        ASSERT_EQ(TF5_IBS_PUBKEY_LEN, n) << "Failed to read MPK";
+        // Load MPK using library function
+        rc = tf5_ibs_load_master_public(mpk_path.c_str(), mpk);
+        ASSERT_EQ(0, rc) << "Failed to load MPK";
 
         // Load gNB secret key (35 bytes: 32 sk + 3 validity)
-        f = fopen(sk_gnb_path.c_str(), "rb");
+        FILE* f = fopen(sk_gnb_path.c_str(), "rb");
         ASSERT_NE(nullptr, f) << "Failed to open gNB SK file";
-        uint8_t sk_file[35];
-        n = fread(sk_file, 1, 35, f);
+        uint8_t sk_file[TF5_IBS_SK_FILE_SIZE];
+        size_t n = fread(sk_file, 1, TF5_IBS_SK_FILE_SIZE, f);
         fclose(f);
-        ASSERT_EQ(35, n) << "Failed to read gNB SK";
+        ASSERT_EQ(TF5_IBS_SK_FILE_SIZE, n) << "Failed to read gNB SK";
 
         // Extract secret key (first 32 bytes)
         memcpy(sk_gnb, sk_file, TF5_BLS_SECRET_KEY_LEN);
@@ -550,10 +513,6 @@ protected:
 bool TF5IbsE2ETest::bls_initialized = false;
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_ValidSignature_Success) {
-    if (!pkg_available) {
-        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
-    }
-
     const char message[] = "Test message for IBS signature verification";
     uint8_t signature[TF5_BLS_SIG_LEN];
 
@@ -571,10 +530,6 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_ValidSignature_Success) {
 }
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedMessage_Fails) {
-    if (!pkg_available) {
-        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
-    }
-
     const char message[] = "Original message";
     uint8_t signature[TF5_BLS_SIG_LEN];
 
@@ -591,10 +546,6 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedMessage_Fails) {
 }
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongCellId_Fails) {
-    if (!pkg_available) {
-        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
-    }
-
     const char message[] = "Test message";
     uint8_t signature[TF5_BLS_SIG_LEN];
 
@@ -611,10 +562,6 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongCellId_Fails) {
 }
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongValidity_Fails) {
-    if (!pkg_available) {
-        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
-    }
-
     const char message[] = "Test message";
     uint8_t signature[TF5_BLS_SIG_LEN];
 
@@ -631,10 +578,6 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongValidity_Fails) {
 }
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedSignature_Fails) {
-    if (!pkg_available) {
-        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
-    }
-
     const char message[] = "Test message";
     uint8_t signature[TF5_BLS_SIG_LEN];
 
@@ -653,10 +596,6 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedSignature_Fails) {
 }
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_DifferentMessages_DifferentSignatures) {
-    if (!pkg_available) {
-        GTEST_SKIP() << "PKG binaries not available, skipping IBS E2E test";
-    }
-
     const char msg1[] = "Message one";
     const char msg2[] = "Message two";
     uint8_t sig1[TF5_BLS_SIG_LEN], sig2[TF5_BLS_SIG_LEN];
