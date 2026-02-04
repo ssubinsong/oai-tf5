@@ -568,7 +568,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ConversionRoundTrip) {
 }
 
 // ============================================================================
-// RRC Integration Tests (auth_state and RRC trigger handling)
+// RRC Integration Tests (phase and RRC trigger handling)
 // ============================================================================
 
 TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
@@ -594,13 +594,13 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
     tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, true);
 
     // Simulate RRC state transitions
-    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+    ue_state.curr_phase = TF5_PHASE_BUFFERED;
 
     // RRCSetup arrives while auth pending
     ue_state.rrcsetup_transaction_id = 7;  // Save for later
-    ue_state.auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
+    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
 
-    EXPECT_EQ(TF5_AUTH_STATE_RRCSETUP_DEFERRED, ue_state.auth_state);
+    EXPECT_EQ(TF5_PHASE_RRCSETUP_DEFERRED, ue_state.curr_phase);
     EXPECT_EQ(7, ue_state.rrcsetup_transaction_id);
 
     // Auth succeeds
@@ -613,9 +613,9 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
     EXPECT_EQ(0, ret) << "Verification should succeed";
     EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 should be verified";
 
-    // RRC layer would now set auth_state = AUTHENTICATED and send RRCSetupComplete
-    ue_state.auth_state = TF5_AUTH_STATE_AUTHENTICATED;
-    EXPECT_EQ(TF5_AUTH_STATE_AUTHENTICATED, ue_state.auth_state);
+    // RRC layer would now set phase = AUTHENTICATED and send RRCSetupComplete
+    ue_state.curr_phase = TF5_AUTH_STATE_AUTH_SUCCESS;
+    EXPECT_EQ(TF5_AUTH_STATE_AUTH_SUCCESS, ue_state.curr_phase);
 }
 
 TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
@@ -645,9 +645,9 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
     tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag, true);
 
     // Simulate state transitions
-    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+    ue_state.curr_phase = TF5_PHASE_BUFFERED;
     ue_state.rrcsetup_transaction_id = 7;
-    ue_state.auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
+    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
 
     // Auth fails
     int verified_count = 0, failed_count = 0;
@@ -660,9 +660,9 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
     EXPECT_FALSE(rrc_trigger_verified) << "RRC trigger should NOT be verified";
     EXPECT_EQ(1, failed_count);
 
-    // RRC layer would now set auth_state = AUTH_FAILED and abort RRC setup
-    ue_state.auth_state = TF5_AUTH_STATE_AUTH_FAILED;
-    EXPECT_EQ(TF5_AUTH_STATE_AUTH_FAILED, ue_state.auth_state);
+    // RRC layer would now set phase = AUTH_FAILED and abort RRC setup
+    ue_state.curr_phase = TF5_AUTH_STATE_AUTH_FAILED;
+    EXPECT_EQ(TF5_AUTH_STATE_AUTH_FAILED, ue_state.curr_phase);
 }
 
 TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
@@ -687,20 +687,20 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
 
     tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
     tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, true);
-    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+    ue_state.curr_phase = TF5_PHASE_BUFFERED;
 
     // At this point:
     // - SIB1 is buffered, auth pending
     // - NAS message (with SUCI) MUST NOT be sent yet
-    EXPECT_NE(TF5_AUTH_STATE_AUTHENTICATED, ue_state.auth_state)
+    EXPECT_NE(TF5_AUTH_STATE_AUTH_SUCCESS, ue_state.curr_phase)
         << "Auth not complete - NAS must wait";
 
     // RRCSetup arrives
-    ue_state.auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
+    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
     ue_state.rrcsetup_transaction_id = 3;
 
     // Still must not send NAS
-    EXPECT_NE(TF5_AUTH_STATE_AUTHENTICATED, ue_state.auth_state)
+    EXPECT_NE(TF5_AUTH_STATE_AUTH_SUCCESS, ue_state.curr_phase)
         << "Still auth pending - NAS must wait";
 
     // Auth succeeds
@@ -710,10 +710,10 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
                                       ext.i, &verified_count, &failed_count,
                                       &rrc_trigger_verified);
 
-    ue_state.auth_state = TF5_AUTH_STATE_AUTHENTICATED;
+    ue_state.curr_phase = TF5_AUTH_STATE_AUTH_SUCCESS;
 
-    // NOW NAS can be sent (RRC layer checks auth_state == AUTHENTICATED)
-    EXPECT_EQ(TF5_AUTH_STATE_AUTHENTICATED, ue_state.auth_state)
+    // NOW NAS can be sent (RRC layer checks phase == AUTHENTICATED)
+    EXPECT_EQ(TF5_AUTH_STATE_AUTH_SUCCESS, ue_state.curr_phase)
         << "Auth complete - NAS can proceed";
     EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 verified";
 }

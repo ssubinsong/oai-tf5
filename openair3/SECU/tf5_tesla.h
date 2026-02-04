@@ -134,12 +134,10 @@ typedef struct {
 } tf5_gnb_state_t;
 
 typedef enum {
-    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // Initial - no SIB1 processed yet
-    TF5_AUTH_STATE_BUFFERED,             // SIB1 buffered, RACH/RRC proceeding
-    TF5_AUTH_STATE_RRCSETUP_DEFERRED,    // RRCSetup received while auth pending
-    TF5_AUTH_STATE_AUTHENTICATED,        // Auth succeeded
-    TF5_AUTH_STATE_AUTH_FAILED           // Auth failed
-} tf5_tesla_auth_state_t;
+    TF5_PHASE_INITIAL = 0,  // No SIB1 has been buffered & marked for RRC
+    TF5_PHASE_BUFFERED,             // An SIB1 has been buffered & marked for RRC
+    TF5_PHASE_RRCSETUP_DEFERRED,    // An SIB1 has been buffered & marked for RRC and RRCSetupComplete is deferred
+} tf5_phase_t;
 
 /*
  * UE-side TESLA State
@@ -162,8 +160,8 @@ typedef struct {
     uint16_t slots_per_frame; // Slots per frame (depends on numerology)
     bool initialized; // Initialization flag
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
-    tf5_tesla_auth_state_t auth_state; // Current authentication state
-    uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete (used when auth_state == RRCSETUP_DEFERRED)
+    tf5_phase_t curr_phase; // Current authentication state
+    uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete (used when phase == RRCSETUP_DEFERRED)
     uint64_t rp_timestamp_window_ms;     // Timestamp window for signature replay protection (default 60000ms)
 
 } tf5_ue_state_t;
@@ -427,21 +425,16 @@ int tf5_tesla_ue_verify_with_key_recovery(
  * @param ue_state              Pointer to UE TESLA state structure
  * @param key_disclosure          Key that has been verified via key chain
  * @param key_disclosure_interval Interval index of verified key
- * @param total_verified        Output: total successfully verified entries
- * @param total_failed          Output: total failed verifications
- * @param rrc_trigger_verified  Output: true if RRC-triggering entry verified
- * @return 0 if at least one verified, negative on error:
+ * @param rrc_trigger_verified
+ * @param rrc_trigger_verified
+ * @return 0 if operation success, negative on error:
  *         -1: Invalid parameters
  *         -2: No buffered entries to verify
- *         -5: All entries failed verification
  */
-int tf5_tesla_ue_verify_buffered_with_key_disclosure(
-    tf5_ue_state_t *ue_state,
-    const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
-    uint32_t key_disclosure_interval,
-    int *total_verified,
-    int *total_failed,
-    bool *rrc_trigger_verified);
+int tf5_tesla_ue_verify_buffered_with_key_disclosure(tf5_ue_state_t *ue_state,
+                                                     const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
+                                                     uint32_t key_disclosure_interval,
+                                                     bool *rrc_trigger_verified);
 
 /*
  * =============================================================================

@@ -551,22 +551,16 @@ static void tf5_tesla_on_auth_failure(NR_UE_RRC_INST_t *rrc,
     const char *reason = (idx >= 1 && idx <= 8) ? result_names[idx] : "unknown";
 
     LOG_E(NR_RRC, "TESLA: Verification failed (%s) - aborting RRC\n", reason);
-    SI_info->tesla_state->auth_state = TF5_AUTH_STATE_AUTH_FAILED;
+    SI_info->tesla_state->curr_phase = TF5_AUTH_STATE_AUTH_FAILED;
     nr_rrc_abort_connection(rrc, gNB_index);
 }
 
-/**
- * Handle successful authentication (send deferred RRCSetupComplete if needed).
- */
-static void tf5_tesla_on_auth_success(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info)
+static void tf5_send_deferred_rrcsetupcomplete(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info)
 {
     tf5_ue_state_t *state = SI_info->tesla_state;
-
-    if (state->auth_state == TF5_AUTH_STATE_RRCSETUP_DEFERRED) {
-        LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
-        rrc_ue_generate_RRCSetupComplete(rrc, state->rrcsetup_transaction_id);
-    }
-    state->auth_state = TF5_AUTH_STATE_AUTHENTICATED;
+    DevAssert(state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED);
+    LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
+    rrc_ue_generate_RRCSetupComplete(rrc, state->rrcsetup_transaction_id);
 }
 
 /**
@@ -695,7 +689,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     /* Success: Bootstrap the chain */
     memcpy(&state->tesla_params, &ext->tesla_params, sizeof(tf5_tesla_params_t));
     state->chain_bootstrapped = true;
-    // auth_state set by tf5_tesla_on_auth_success() below
+    // phase set by tf5_send_deferred_rrcsetupcomplete() below
 
     /* Accept disclosed key as trust anchor (signature authenticates it) */
     memcpy(state->trust_anchor_key, ext->key_disclosure, TF5_TESLA_KEY_LEN);
@@ -706,120 +700,81 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     LOG_I(NR_RRC, "TESLA IBS: First-time UE - K_%d as anchor (interval %u)\n",
           state->trust_anchor_idx, ext->i);
 
-    tf5_tesla_on_auth_success(rrc, SI_info);
+    tf5_send_deferred_rrcsetupcomplete(rrc, SI_info);
     return TF5_VERIFY_OK;
 }
 
 static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
-                                                       NR_UE_RRC_SI_INFO *SI_info,
-                                                       const tf5_extension_t *tf5_ext,
-                                                       const uint8_t *sib1_buf,
-                                                       size_t sib1_len,
-                                                       int rx_frame,
-                                                       int rx_slot)
+                                                      NR_UE_RRC_SI_INFO *SI_info,
+                                                      const tf5_extension_t *tf5_ext,
+                                                      const uint8_t *sib1_buf,
+                                                      size_t sib1_len,
+                                                      int rx_frame,
+                                                      int rx_slot)
 {
-    tf5_ue_state_t *ue_state = SI_info->tesla_state;
+  tf5_ue_state_t *ue_state = SI_info->tesla_state;
 
-    LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
+  LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
 
-    /*
-     * RFC 4082 Section 3.5 - Receiver verification steps in exact order:
-     * 1. Safe packet test
-     * 2. New key index test
-     * 3. Key verification test (BEFORE buffering)
-     * 4. Message verification tests
-     * 5. Buffer current packet (AFTER key verification passed)
-     */
+  /* Safe packet test */
+  if (!tf5_tesla_ue_safe_packet_test(ue_state, tf5_ext, rx_frame, rx_slot)) {
+    LOG_W(NR_RRC, "TESLA: Safe packet test FAILED; Skipping SIB1\n");
+    return TF5_VERIFY_SKIP_UNSAFE;
+  }
 
-    /* Step 1 (RFC 4082 3.5): Safe packet test */
-    if (!tf5_tesla_ue_safe_packet_test(ue_state, tf5_ext, rx_frame, rx_slot)) {
-        LOG_W(NR_RRC, "TESLA: Safe packet test FAILED; Skipping SIB1\n");
-        return TF5_VERIFY_SKIP_UNSAFE;
+  /* Check if we have a key disclosure (i >= d) */
+  bool has_key_disclosure = (tf5_ext->i >= ue_state->tesla_params.d);
+  uint32_t key_disclosure_interval = 0;
+
+  if (has_key_disclosure) {
+    key_disclosure_interval = tf5_ext->i - ue_state->tesla_params.d;
+
+    /* New key index test */
+    bool is_new_key = ((int32_t)key_disclosure_interval > ue_state->trust_anchor_idx);
+
+    /* Key verification test */
+    if (is_new_key) {
+      if (!tf5_tesla_ue_verify_key_chain(ue_state, tf5_ext->key_disclosure, key_disclosure_interval)) {
+        LOG_E(NR_RRC, "TESLA: Key chain verification failed for K_%u - discarding packet\n", key_disclosure_interval);
+        return TF5_VERIFY_FAIL_KEYCHAIN;
+      }
     }
+  }
 
-    /* Check if we have a key disclosure (i >= d) */
-    bool has_key_disclosure = (tf5_ext->i >= ue_state->tesla_params.d);
-    uint32_t key_disclosure_interval = 0;
+  /* Build MAC auth input for buffering */
+  uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
+  size_t mac_auth_len = 0;
+  tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len, sib1_buf, sib1_len, tf5_ext->validity_end);
 
-    if (has_key_disclosure) {
-        key_disclosure_interval = tf5_ext->i - ue_state->tesla_params.d;
+  DevAssert(ue_state->curr_phase == TF5_PHASE_INITIAL || ue_state->curr_phase == TF5_PHASE_BUFFERED || ue_state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED);
 
-        /* Step 2 (RFC 4082 3.5): New key index test
-         * Check whether a key K_v has already been disclosed with v >= i-d.
-         * If key_disclosure_interval <= trust_anchor_idx, the key is not new. */
-        bool is_new_key = ((int32_t)key_disclosure_interval > ue_state->trust_anchor_idx);
+  /* Buffer current SIB1 */
+  bool should_trigger_rrc = ue_state->curr_phase == TF5_PHASE_INITIAL;
+  tf5_tesla_ue_buffer_sib1(ue_state, mac_auth_input, mac_auth_len, tf5_ext->i, tf5_ext->tesla_tag, should_trigger_rrc);
+  if (ue_state->curr_phase == TF5_PHASE_INITIAL) {
+    ue_state->curr_phase = TF5_PHASE_BUFFERED;
+  }
 
-        /* Step 3 (RFC 4082 3.5): Key verification test
-         * "If key verification fails, the newly arrived packet P_j should be discarded."
-         * This MUST happen BEFORE buffering. */
-        if (is_new_key) {
-            if (!tf5_tesla_ue_verify_key_chain(ue_state, tf5_ext->key_disclosure, key_disclosure_interval)) {
-                LOG_E(NR_RRC, "TESLA: Key chain verification failed for K_%u - discarding packet\n",
-                      key_disclosure_interval);
-                return TF5_VERIFY_FAIL_KEYCHAIN;
-            }
-            LOG_D(NR_RRC, "TESLA: Key K_%u verified, proceeding to message verification\n",
-                  key_disclosure_interval);
+  if (has_key_disclosure) {
+    /*  Message verification tests */
+    if (ue_state->buffer_queue_count > 0) {
+      bool rrc_trigger_verified;
+      int verify_rc = tf5_tesla_ue_verify_buffered_with_key_disclosure(ue_state,
+                                                                       tf5_ext->key_disclosure,
+                                                                       key_disclosure_interval,
+                                                                       &rrc_trigger_verified);
+
+      if (verify_rc == 0) {
+        LOG_I(NR_RRC, "TESLA: Verified buffered SIB1 packets using K_%u\n", key_disclosure_interval);
+        if (ue_state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED && rrc_trigger_verified) {
+          tf5_send_deferred_rrcsetupcomplete(rrc, SI_info);
+          ue_state->curr_phase = TF5_PHASE_INITIAL;
         }
-
-        // TODO: don't know what to do with keys that are !is_new_key -> how should they be checked and buffered?
-
-        /* Step 4 (RFC 4082 3.5): Message verification tests
-         * Verify any earlier safe, buffered packets using the verified key. */
-        if (ue_state->buffer_queue_count > 0) {
-            int verified_count = 0, failed_count = 0;
-            bool rrc_trigger_verified = false;
-
-            int verify_rc = tf5_tesla_ue_verify_buffered_with_key_disclosure(
-                ue_state,
-                tf5_ext->key_disclosure,
-                key_disclosure_interval,
-                &verified_count,
-                &failed_count,
-                &rrc_trigger_verified);
-
-            if (verify_rc == 0 && verified_count > 0) {
-                LOG_I(NR_RRC, "TESLA: Returning UE - %d SIB1(s) MAC verified\n", verified_count);
-
-                if (rrc_trigger_verified) {
-                    tf5_tesla_on_auth_success(rrc, SI_info);
-                }
-            }
-
-            if (failed_count > 0 && verified_count == 0) {
-                LOG_E(NR_RRC, "TESLA: All %d MAC verification(s) FAILED\n", failed_count);
-                /* Continue to buffer current packet - earlier packets failed, but this
-                 * one passed key verification and passed safe packet test */
-            }
-        }
+      }
     }
+  }
 
-    /* Build MAC auth input for later buffering */
-    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_len = 0;
-    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_len,
-                                    sib1_buf, sib1_len,
-                                    tf5_ext->validity_end);
-
-    /* Step 5: Buffer current SIB1 (key verification already passed if applicable)
-     * Per RFC 4082: "it adds the triplet (i, M_j, MAC(K'_i, M_j)) to a buffer" */
-    bool should_trigger_rrc = (ue_state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) &&
-                              (ue_state->buffer_queue_count == 0);
-
-    tf5_tesla_ue_buffer_sib1(ue_state, mac_auth_input, mac_auth_len, tf5_ext->i,
-                             tf5_ext->tesla_tag, should_trigger_rrc);
-
-    if (ue_state->auth_state == TF5_AUTH_STATE_UNAUTHENTICATED) {
-        ue_state->auth_state = TF5_AUTH_STATE_BUFFERED;
-    }
-
-    /* Return result based on overall verification status */
-    if (has_key_disclosure && ue_state->trust_anchor_idx >= (int32_t)key_disclosure_interval) {
-        /* We had a verified key and could verify some buffered packets */
-        return TF5_VERIFY_OK;
-    }
-
-    return TF5_VERIFY_PENDING;
+  return TF5_VERIFY_PENDING;
 }
 
 /**
@@ -860,12 +815,10 @@ static tf5_verify_result_t tf5_tesla_verify_sib1(NR_UE_RRC_INST_t *rrc,
         return rc;
     }
 
-    /* Dispatch to appropriate verification path */
     if (!SI_info->tesla_state->chain_bootstrapped) {
         return tf5_tesla_verify_firsttime(rrc, SI_info, sib1, &ext, sib1_buf, sib1_len);
-    } else {
-        return tf5_tesla_verify_returning(rrc, SI_info, &ext, sib1_buf, sib1_len, rx_frame, rx_slot);
     }
+    return tf5_tesla_verify_returning(rrc, SI_info, &ext, sib1_buf, sib1_len, rx_frame, rx_slot);
 }
 #endif
 
@@ -877,10 +830,6 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef ENABLE_TF5
-  if (SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTHENTICATED || SI_info->tesla_state->auth_state == TF5_AUTH_STATE_AUTH_FAILED) { // The UE has verified SIB1 successfully before but has to re-verify for some reason. Therfore, set state to unauthenticated
-    SI_info->tesla_state->auth_state = TF5_AUTH_STATE_UNAUTHENTICATED;
-    // Preserve chain_bootstrapped/trust anchor across re-verification.
-  }
   tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
   if (tesla_rc < 0) {
     tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);
@@ -2341,7 +2290,7 @@ static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
   nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
 
   /* Clear TESLA pending state */
-  SI_info->tesla_state->auth_state = TF5_AUTH_STATE_AUTH_FAILED;
+  SI_info->tesla_state->curr_phase = TF5_AUTH_STATE_AUTH_FAILED;
 
   LOG_W(NR_RRC, "[UE %ld] TESLA: Connection aborted - UE returns to IDLE\n", rrc->ue_id);
 }
@@ -2453,15 +2402,15 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
 
     if (SI_info->tesla_state) {
 
-      switch (SI_info->tesla_state->auth_state) {
-        case TF5_AUTH_STATE_UNAUTHENTICATED:
-        case TF5_AUTH_STATE_BUFFERED:
+      switch (SI_info->tesla_state->curr_phase) {
+        case TF5_PHASE_INITIAL:
+        case TF5_PHASE_BUFFERED:
           /* Authentication pending - defer RRCSetupComplete until verified */
           LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete until verified\n");
-          SI_info->tesla_state->auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
+          SI_info->tesla_state->curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
           SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
           return;
-        case TF5_AUTH_STATE_AUTHENTICATED:
+        case TF5_AUTH_STATE_AUTH_SUCCESS:
           /* Authentication succeeded - proceed with NAS in RRCSetupComplete */
           LOG_I(NR_RRC, "TESLA: SIB1 authenticated - including NAS in RRCSetupComplete\n");
           rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);

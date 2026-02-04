@@ -893,21 +893,14 @@ int tf5_tesla_ue_verify_with_key_recovery(
     return (*total_failed > 0) ? -5 : -2;
 }
 
-int tf5_tesla_ue_verify_buffered_with_key_disclosure(
-    tf5_ue_state_t *ue_state,
-    const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
-    uint32_t key_disclosure_interval,
-    int *total_verified,
-    int *total_failed,
-    bool *rrc_trigger_verified)
+int tf5_tesla_ue_verify_buffered_with_key_disclosure(tf5_ue_state_t *ue_state,
+                                                     const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
+                                                     uint32_t key_disclosure_interval,
+                                                     bool *rrc_trigger_verified)
 {
-    if (!ue_state || !ue_state->initialized || !key_disclosure ||
-        !total_verified || !total_failed || !rrc_trigger_verified) {
+    if (!ue_state || !ue_state->initialized || !key_disclosure || !rrc_trigger_verified) {
         return -1;
     }
-
-    *total_verified = 0;
-    *total_failed = 0;
     *rrc_trigger_verified = false;
 
     // Step 1: Find the range of buffered intervals
@@ -949,100 +942,71 @@ int tf5_tesla_ue_verify_buffered_with_key_disclosure(
         return -2;
     }
 
-    // Step 3: Build key cache for all intervals in range
-    // Per RFC 4082 Section 3.5: "Using a disclosed key, we can calculate all
-    // previous disclosed keys" via the chain function K_i = F(K_{i+1})
-    uint32_t num_intervals = key_disclosure_interval - verify_start + 1;
+    // Step 3: Derive keys incrementally and verify buffered entries
+    uint8_t current_key[TF5_TESLA_KEY_LEN];
+    memcpy(current_key, key_disclosure, TF5_TESLA_KEY_LEN);
 
-    // Safety check: limit derivations to prevent excessive computation
-    if (num_intervals > TF5_TESLA_BUFFER_QUEUE_SIZE + 2) {
-        LOG_W(NR_RRC, "TESLA: Key recovery range too large (%u intervals), limiting\n",
-              num_intervals);
-        verify_start = key_disclosure_interval - TF5_TESLA_BUFFER_QUEUE_SIZE - 1;
-        num_intervals = key_disclosure_interval - verify_start + 1;
-    }
+    for (uint32_t i = key_disclosure_interval; ; i--) {
+        // Check all buffered entries for this interval
+        for (int j = 0; j < TF5_TESLA_BUFFER_QUEUE_SIZE; j++) {
+            tf5_tesla_buffer_entry_t *entry = &ue_state->buffer_queue[j];
 
-    // Stack-allocated key cache (safe because num_intervals is bounded)
-    uint8_t key_cache[TF5_TESLA_BUFFER_QUEUE_SIZE + 3][TF5_TESLA_KEY_LEN];
-
-    // Start with key_disclosure at highest index
-    memcpy(key_cache[num_intervals - 1], key_disclosure, TF5_TESLA_KEY_LEN);
-
-    // Derive backwards: K_i = F(K_{i+1})
-    for (int i = (int)num_intervals - 2; i >= 0; i--) {
-        tf5_tesla_chain_key(key_cache[i + 1], key_cache[i]);
-    }
-
-    LOG_D(NR_RRC, "TESLA: Key recovery - derived %u keys for intervals [%u, %u]\n",
-          num_intervals, verify_start, key_disclosure_interval);
-
-    // Step 4: Verify all buffered entries using derived keys
-    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
-        tf5_tesla_buffer_entry_t *entry = &ue_state->buffer_queue[i];
-
-        if (!entry->valid) {
-            continue;
-        }
-
-        uint32_t interval = entry->rx_interval_index;
-
-        // Skip if outside verifiable range
-        if (interval < verify_start || interval > verify_end) {
-            continue;
-        }
-
-        // Get the key for this interval from cache
-        uint32_t cache_index = interval - verify_start;
-        const uint8_t *key_for_interval = key_cache[cache_index];
-
-        // Compute expected tag
-        uint8_t expected_tag[TF5_TESLA_TAG_LEN];
-        int rc = tf5_tesla_compute_tag(key_for_interval,
-                                       entry->auth_input,
-                                       entry->auth_input_len,
-                                       expected_tag);
-        if (rc != 0) {
-            LOG_E(NR_RRC, "TESLA: Failed to compute tag for interval %u\n", interval);
-            entry->valid = false;
-            (*total_failed)++;
-            continue;
-        }
-
-        // Compare tags
-        if (memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
-            LOG_I(NR_RRC, "TESLA: MAC verified for interval %u (rrc_trigger=%d)\n",
-                  interval, entry->triggered_rrc_setup);
-
-            if (entry->triggered_rrc_setup) {
-                *rrc_trigger_verified = true;
+            if (!entry->valid || entry->rx_interval_index != i) {
+                continue;
             }
 
-            entry->valid = false;  // Release from buffer
-            (*total_verified)++;
-        } else {
-            LOG_E(NR_RRC, "TESLA: MAC verification FAILED for interval %u\n",
-                  interval);
-            entry->valid = false;
-            (*total_failed)++;
+            // Compute expected tag using current_key
+            uint8_t expected_tag[TF5_TESLA_TAG_LEN];
+            int rc = tf5_tesla_compute_tag(current_key,
+                                           entry->auth_input,
+                                           entry->auth_input_len,
+                                           expected_tag);
+            if (rc != 0) {
+                LOG_E(NR_RRC, "TESLA: Failed to compute tag for interval %u\n", i);
+                entry->valid = false;
+                continue;
+            }
+
+            // Compare tags
+            if (memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
+                LOG_I(NR_RRC, "TESLA: MAC verified for interval %u (rrc_trigger=%d)\n",
+                      i, entry->triggered_rrc_setup);
+
+                if (entry->triggered_rrc_setup) {
+                  *rrc_trigger_verified = true;
+                }
+
+                entry->valid = false;  // Release from buffer
+            } else {
+                LOG_E(NR_RRC, "TESLA: MAC verification FAILED for interval %u\n",
+                      i);
+              entry->valid = false;
+              if (entry->triggered_rrc_setup) {
+                *rrc_trigger_verified = false;
+              }
+            }
         }
+
+        // Stop if we've reached verify_start
+        if (i == verify_start) {
+          break;
+        }
+
+        // Derive key for next (earlier) interval: K_{i-1} = F(K_i)
+        uint8_t next_key[TF5_TESLA_KEY_LEN];
+        tf5_tesla_chain_key(current_key, next_key);
+        memcpy(current_key, next_key, TF5_TESLA_KEY_LEN);
     }
 
-    // Step 5: Update queue count
+    // Step 4: Update queue count
     ue_state->buffer_queue_count = 0;
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
-        if (ue_state->buffer_queue[i].valid) {
-            ue_state->buffer_queue_count++;
-        }
+      if (ue_state->buffer_queue[i].valid) {
+        ue_state->buffer_queue_count++;
+      }
     }
 
-    if (*total_verified > 0) {
-        LOG_I(NR_RRC, "TESLA: Verified %d SIB1(s) across intervals [%u, %u] "
-              "(%d failed, rrc_trigger=%d)\n",
-              *total_verified, verify_start, verify_end, *total_failed, *rrc_trigger_verified);
-        return 0;
-    }
-
-    return (*total_failed > 0) ? -5 : -2;
+    return 0;
 }
 
 /*

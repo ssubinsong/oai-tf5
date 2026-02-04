@@ -136,7 +136,7 @@ TEST_F(TF5UeTest, UeInit_AuthStateUnauthenticated) {
     int ret = initUeDefault();
 
     EXPECT_EQ(0, ret);
-    EXPECT_EQ(TF5_AUTH_STATE_UNAUTHENTICATED, ue_state.auth_state);
+    EXPECT_EQ(TF5_PHASE_INITIAL, ue_state.curr_phase);
 }
 
 TEST_F(TF5UeTest, UeInit_NullState_ReturnsError) {
@@ -762,7 +762,7 @@ TEST_F(TF5UeTest, AuthState_InitialStateIsUnauthenticated) {
     // Covered by UeInit_AuthStateUnauthenticated - but verify explicitly here
     ASSERT_EQ(0, initUeDefault());
 
-    EXPECT_EQ(TF5_AUTH_STATE_UNAUTHENTICATED, ue_state.auth_state)
+    EXPECT_EQ(TF5_PHASE_INITIAL, ue_state.curr_phase)
         << "Initial auth state should be UNAUTHENTICATED";
 }
 
@@ -770,9 +770,9 @@ TEST_F(TF5UeTest, AuthState_CanBeSetToBuffered) {
     ASSERT_EQ(0, initUeDefault());
 
     // Simulate RRC layer setting BUFFERED state after buffering SIB1
-    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+    ue_state.curr_phase = TF5_PHASE_BUFFERED;
 
-    EXPECT_EQ(TF5_AUTH_STATE_BUFFERED, ue_state.auth_state)
+    EXPECT_EQ(TF5_PHASE_BUFFERED, ue_state.curr_phase)
         << "Auth state should be settable to BUFFERED";
 }
 
@@ -851,13 +851,13 @@ TEST_F(TF5UeTest, AuthState_RrcSetupDeferredCanBeSet) {
     ASSERT_EQ(0, initUeDefault());
 
     // Simulate RRC layer setting RRCSETUP_DEFERRED state
-    ue_state.auth_state = TF5_AUTH_STATE_BUFFERED;
+    ue_state.curr_phase = TF5_PHASE_BUFFERED;
     ue_state.rrcsetup_transaction_id = 42;  // Save transaction ID
 
     // RRCSetup received while auth pending
-    ue_state.auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
+    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
 
-    EXPECT_EQ(TF5_AUTH_STATE_RRCSETUP_DEFERRED, ue_state.auth_state)
+    EXPECT_EQ(TF5_PHASE_RRCSETUP_DEFERRED, ue_state.curr_phase)
         << "Auth state should be settable to RRCSETUP_DEFERRED";
     EXPECT_EQ(42, ue_state.rrcsetup_transaction_id)
         << "Transaction ID should be preserved";
