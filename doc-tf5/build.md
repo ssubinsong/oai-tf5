@@ -51,11 +51,17 @@ gNB-specific Keys (issued per Cell ID + validity)
 
 ### Step 1: Build Core PKG Utilities
 
-The Core PKG utilities are built automatically when building OAI with tests enabled:
+The Core PKG utilities are built automatically when building OAI with TESLA enabled:
 
 ```bash
 cd cmake_targets
-./build_oai --ninja --gNB --nrUE --cmake-opt "-DENABLE_TESTS=ON -DENABLE_TF5=ON"
+./build_oai --ninja --gNB --nrUE --cmake-opt -DENABLE_TF5=ON
+```
+
+Or using CMake presets:
+```bash
+cmake --preset default
+cmake --build --preset 5gdefault
 ```
 
 This produces two utilities in `cmake_targets/ran_build/build/`:

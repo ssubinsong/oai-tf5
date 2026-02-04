@@ -687,11 +687,6 @@ if(ENABLE_TF5)
   target_include_directories(SECURITY PRIVATE ${BLST_DIR}/bindings)
   target_link_libraries(SECURITY PRIVATE blst)
 
-  # BLS key generation utility
-  add_executable(tf5_bls_keygen ${OPENAIR3_DIR}/SECU/tf5_bls_keygen.c)
-  target_include_directories(tf5_bls_keygen PRIVATE ${BLST_DIR}/bindings)
-  target_link_libraries(tf5_bls_keygen PRIVATE blst)
-
   # TF5 IBS PKG utilities (keygen and issue executables)
   add_subdirectory(${OPENAIR3_DIR}/SECU/core-pkg ${CMAKE_CURRENT_BINARY_DIR}/openair3/SECU/core-pkg)
 endif()
