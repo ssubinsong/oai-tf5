@@ -6,19 +6,19 @@
 
 ## Initialization
 
-**Location**: [rrc_UE.c:1691-1737](../openair2/RRC/NR_UE/rrc_UE.c#L1691-L1737)
+**Location**: [rrc_UE.c](../openair2/RRC/NR_UE/rrc_UE.c)
 
 ```c
 // Allocate TESLA state
-SI_info->tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
+SI_info->tf5_state = calloc(1, sizeof(tf5_ue_state_t));
 
 // Load Core's Master Public Key (MPK) for IBS verification
 nrUE_params_t *params = get_nrUE_params();
-uint8_t mpk[96];
+uint8_t mpk[TF5_MPK_LEN];  // 96 bytes
 int rc = tf5_tesla_load_pubkey(params->tf5_core_mpk_file, mpk);
 if (rc == 0) {
-    tf5_tesla_ue_init(SI_info->tesla_state, mpk, slots_per_frame,
-                      params->tesla_d_bound_us, params->signature_timestamp_window_ms);
+    tf5_tesla_ue_init(SI_info->tf5_state, mpk, slots_per_frame,
+                      params->tf5_d_bound_us, params->tf5_rp_timestamp_window_ms);
 }
 ```
 
@@ -52,30 +52,31 @@ If authentication fails, the RRC connection is aborted before any NAS message is
 
 ### State Fields for Parallel Authentication
 
-**Location**: [tf5_tesla.h:231-266](../openair3/SECU/tf5_tesla.h#L231-L266)
+**Location**: [tf5_tesla.h:148-170](../openair3/SECU/tf5_tesla.h#L148-L170)
 
 ```c
 typedef struct {
     // ... existing fields ...
 
     // Parallel authentication state (for NAS gating)
-    bool     chain_bootstrapped;       // TESLA chain established via IBS (persistent)
-    tf5_tesla_auth_state_t auth_state; // Current authentication state
+    bool        chain_bootstrapped;       // TESLA chain established via IBS (persistent)
+    tf5_phase_t curr_phase;               // Current authentication phase
 
-    // Saved transaction ID (used when auth_state == RRCSETUP_DEFERRED)
-    uint8_t  rrcsetup_transaction_id;
-} tf5_tesla_ue_state_t;
+    // Saved transaction ID (used when curr_phase == RRCSETUP_DEFERRED)
+    uint8_t     rrcsetup_transaction_id;
+} tf5_ue_state_t;
 ```
 
-**Authentication state enum** (see [data-structures.md](data-structures.md)):
+**Authentication phase enum** (see [data-structures.md](data-structures.md)):
 ```c
 typedef enum {
-    TF5_AUTH_STATE_UNAUTHENTICATED = 0,  // Initial - no SIB1 processed yet
-    TF5_AUTH_STATE_BUFFERED,             // SIB1 buffered, RACH/RRC proceeding
-    TF5_AUTH_STATE_RRCSETUP_DEFERRED,    // RRCSetup received while auth pending
-    TF5_AUTH_STATE_AUTHENTICATED,        // SIB1 successfully authenticated
-    TF5_AUTH_STATE_AUTH_FAILED           // Authentication failed - abort RRC
-} tf5_tesla_auth_state_t;
+    TF5_PHASE_INITIAL = 0,                    // No SIB1 has been buffered & marked for RRC
+    TF5_PHASE_BUFFERED,                       // An SIB1 has been buffered & marked for RRC
+    TF5_PHASE_BUFFERED_AUTHENTICATED,         // Buffered SIB1 authenticated
+    TF5_PHASE_RRCSETUP_DEFERRED,              // RRCSetup received while auth pending
+    TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,// Deferred RRCSetup + auth complete
+    TF5_PHASE_RRCSETUP_COMPLETE               // RRC setup complete
+} tf5_phase_t;
 ```
 
 ---
@@ -95,23 +96,23 @@ flowchart TB
         AUTH["Start Authentication"]
         AUTH --> CHECK{"chain_bootstrapped?"}
         CHECK -->|"false<br/>(First-time UE)"| IBS["IBS verify"]
-        CHECK -->|"true<br/>(Returning UE)"| BUFFER["Buffer SIB1<br/>auth_state=BUFFERED"]
+        CHECK -->|"true<br/>(Returning UE)"| BUFFER["Buffer SIB1<br/>curr_phase=BUFFERED"]
         IBS --> RESULT
         BUFFER --> TESLA["Wait for TESLA<br/>key disclosure"]
         TESLA --> RESULT
         RESULT{"Result"}
-        RESULT -->|SUCCESS| SUCCESS["auth_state=AUTHENTICATED<br/>chain_bootstrapped=true"]
-        RESULT -->|FAILED| FAILED["auth_state=AUTH_FAILED"]
+        RESULT -->|SUCCESS| SUCCESS["curr_phase=BUFFERED_AUTHENTICATED<br/>chain_bootstrapped=true"]
+        RESULT -->|FAILED| FAILED["Abort RRC"]
     end
 
     subgraph right["RACH/RRC Setup (Parallel)"]
         RACH["Proceed to Random Access"]
         RACH --> MSGS["MSG1 → MSG2 → MSG3 → MSG4"]
         MSGS --> RRCSETUP["RRCSetup received<br/>SRB1 established"]
-        RRCSETUP --> GATE{"auth_state?"}
-        GATE -->|"AUTHENTICATED"| NAS["Send NAS in<br/>RRCSetupComplete"]
-        GATE -->|"AUTH_FAILED"| ABORT["ABORT RRC"]
-        GATE -->|"UNAUTHENTICATED<br/>or BUFFERED"| DEFER["auth_state=RRCSETUP_DEFERRED<br/>Defer RRCSetupComplete"]
+        RRCSETUP --> GATE{"curr_phase?"}
+        GATE -->|"BUFFERED_AUTHENTICATED"| NAS["Send NAS in<br/>RRCSetupComplete"]
+        GATE -->|"Failed"| ABORT["ABORT RRC"]
+        GATE -->|"INITIAL<br/>or BUFFERED"| DEFER["curr_phase=RRCSETUP_DEFERRED<br/>Defer RRCSetupComplete"]
     end
 
     SUCCESS -.->|"trigger"| GATE
@@ -131,29 +132,25 @@ The main `nr_rrc_process_sib1()` function delegates TESLA verification to a clea
 
 ```c
 #ifdef ENABLE_TF5
-  tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
+  tf5_verify_result_t tesla_rc = tf5_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
   if (tesla_rc < 0) {
-    tf5_tesla_on_auth_failure(rrc, SI_info, tesla_rc);
+    // Handle failure - abort RRC
     return;
   }
 #endif
 ```
 
-**Note**: `gNB_index` parameter was removed from `tf5_tesla_verify_sib1()`.
-
 ### Helper Functions
 
 | Function | Location | Purpose |
 |----------|----------|---------|
-| `tf5_tesla_verify_sib1()` | rrc_UE.c:807 | Main entry point with early returns |
-| `tf5_tesla_unpack_and_validate()` | rrc_UE.c | Unpack extension + key expiry check |
-| `tf5_tesla_encode_sib1_for_auth()` | rrc_UE.c:573 | Re-encode SIB1 without extension |
-| `tf5_tesla_verify_firsttime()` | rrc_UE.c | IBS signature path (first-time UE) |
-| `tf5_tesla_verify_returning()` | rrc_UE.c:713 | TESLA MAC path (returning UE, RFC 4082 3.5) |
-| `tf5_tesla_ue_verify_key_chain()` | tf5_tesla.c:680 | Verify disclosed key (RFC 4082 3.5 Step 3) |
-| `tf5_tesla_ue_verify_buffered_with_key_disclosure()` | tf5_tesla.c:899 | Verify buffered messages (RFC 4082 3.5 Step 4) |
-| `tf5_tesla_on_auth_success()` | rrc_UE.c | Send deferred RRCSetupComplete |
-| `tf5_tesla_on_auth_failure()` | rrc_UE.c | Mark failed + abort RRC |
+| `tf5_verify_sib1()` | rrc_UE.c:760-800 | Main entry point with early returns |
+| `tf5_tesla_unpack_and_validate()` | rrc_UE.c:573-600 | Unpack extension + key expiry check |
+| `tf5_encode_sib1_for_auth()` | rrc_UE.c:543-568 | Re-encode SIB1 without extension |
+| `tf5_verify_firsttime()` | rrc_UE.c:605-679 | IBS signature path (first-time UE) |
+| `tf5_verify_returning()` | rrc_UE.c:681-800 | TESLA MAC path (returning UE, RFC 4082 3.5) |
+| `tf5_tesla_ue_verify_key_chain()` | tf5_tesla.c | Verify disclosed key (RFC 4082 3.5 Step 3) |
+| `tf5_tesla_ue_verify_buffered_with_key_disclosure()` | tf5_tesla.c | Verify buffered messages (RFC 4082 3.5 Step 4) |
 | `tf5_extract_cell_id_from_sib1()` | rrc_UE.c:499 | Extract Cell ID from SIB1 |
 
 ### Result Codes
@@ -162,7 +159,7 @@ The main `nr_rrc_process_sib1()` function delegates TESLA verification to a clea
 typedef enum {
     TF5_VERIFY_OK = 0,              // Verification succeeded
     TF5_VERIFY_SKIP_DEDICATED = 1,  // Dedicated delivery - skip TESLA
-    TF5_VERIFY_SKIP_NO_STATE = 2,   // No tesla_state configured
+    TF5_VERIFY_SKIP_NO_STATE = 2,   // No tf5_state configured
     TF5_VERIFY_PENDING = 3,         // Buffered, waiting for key disclosure
     TF5_VERIFY_SKIP_UNSAFE = 4,     // Safe packet test failed
 
@@ -184,21 +181,20 @@ typedef enum {
 
 2. Build signature auth_input
    └── Re-encode SIB1 (without lateNonCriticalExtension)
-   └── tf5_tesla_build_sig_auth_input(sib1, tesla_params, interval_index, disclosed_key)
+   └── tf5_tesla_build_sig_auth_input(sib1, tesla_params, i, key_disclosure)
        (tesla_params includes T_0, authenticated by signature)
 
 3. Extract Cell ID from SIB1's cellAccessRelatedInfo
    └── tf5_extract_cell_id_from_sib1(sib1, cell_id)
 
 4. Verify IBS signature (synchronous - fast)
-   └── tf5_tesla_ibs_verify(mpk, cell_id, gnb_key_validity_end, auth_input, auth_len, signature)
+   └── tf5_tesla_ibs_verify(mpk, cell_id, validity_end, auth_input, auth_len, signature)
    ├── SUCCESS:
    │   └── Chain bootstrapped: chain_bootstrapped = true
-   │   └── auth_state = TF5_AUTH_STATE_AUTHENTICATED
-   │   └── If rrcsetup_deferred: send RRCSetupComplete now
+   │   └── curr_phase = TF5_PHASE_BUFFERED_AUTHENTICATED (or RRCSETUP_COMPLETE)
+   │   └── If RRCSETUP_DEFERRED: send RRCSetupComplete now
    └── FAILED:
-       └── auth_state = TF5_AUTH_STATE_AUTH_FAILED
-       └── nr_rrc_abort_connection() → return
+       └── Abort RRC connection
 ```
 
 ### Returning UE (chain_bootstrapped == true)
@@ -212,9 +208,9 @@ Per RFC 4082 Section 3.5, the receiver MUST perform key verification BEFORE buff
    └── FAILED: Skip this SIB1 → return (packet is unsafe)
    └── PASSED: Continue to step 3
 
-3. Build MAC auth_input (excludes interval_index, disclosed_key, tesla_params)
+3. Build MAC auth_input (excludes i, key_disclosure, tesla_params)
    └── Re-encode SIB1 (without lateNonCriticalExtension)
-   └── tf5_tesla_build_mac_auth_input(sib1, gnb_key_validity_end)
+   └── tf5_tesla_build_mac_auth_input(sib1, validity_end)
        (tesla_params authenticated via BLS signature during first-time verification)
 
 4. New key index test (RFC 4082 3.5 Step 2)
@@ -222,16 +218,16 @@ Per RFC 4082 Section 3.5, the receiver MUST perform key verification BEFORE buff
    └── If not new: skip to step 6 (key already verified transitively)
 
 5. Key verification test (RFC 4082 3.5 Step 3) - BEFORE buffering
-   └── tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval)
+   └── tf5_tesla_ue_verify_key_chain(state, key_disclosure, disclosed_interval)
    └── FAILED: Discard packet, return TF5_VERIFY_FAIL_KEYCHAIN
        NOTE: "If key verification fails, the newly arrived packet P_j should be discarded"
-   └── PASSED: Trust anchor updated to disclosed key
+   └── PASSED: Trust anchor updated to key_disclosure
 
 6. Message verification tests (RFC 4082 3.5 Step 4)
    └── Verify any earlier safe, buffered packets using verified key
    └── tf5_tesla_ue_verify_buffered_with_key_disclosure()
        ├── SUCCESS:
-       │   └── auth_state = TF5_AUTH_STATE_AUTHENTICATED
+       │   └── curr_phase = TF5_PHASE_BUFFERED_AUTHENTICATED
        │   └── If RRCSETUP_DEFERRED: send RRCSetupComplete now
        └── FAILED:
            └── Log MAC failures, but continue (current packet passed key verification)
@@ -239,46 +235,46 @@ Per RFC 4082 Section 3.5, the receiver MUST perform key verification BEFORE buff
 7. Buffer current SIB1 (RFC 4082 3.5 end of Step 1)
    └── ONLY buffered AFTER key verification passed
    └── tf5_tesla_ue_buffer_sib1(..., triggered_rrc_setup)
-   └── auth_state = TF5_AUTH_STATE_BUFFERED (RACH/RRC proceeding)
+   └── curr_phase = TF5_PHASE_BUFFERED (RACH/RRC proceeding)
 ```
 
 ---
 
 ## NAS Gating in RRCSetup Processing
 
-**Location**: [rrc_UE.c:2360](../openair2/RRC/NR_UE/rrc_UE.c#L2360) `nr_rrc_process_rrcsetup()`
+**Location**: [rrc_UE.c](../openair2/RRC/NR_UE/rrc_UE.c) `nr_rrc_process_rrcsetup()`
 
-The RRC connection setup (bearers, cell group config) proceeds normally, but NAS message transmission is gated on authentication state:
+The RRC connection setup (bearers, cell group config) proceeds normally, but NAS message transmission is gated on authentication phase:
 
 ```c
 #ifdef ENABLE_TF5
-if (SI_info->tesla_state) {
-    switch (SI_info->tesla_state->auth_state) {
-      case TF5_AUTH_STATE_UNAUTHENTICATED:
-      case TF5_AUTH_STATE_BUFFERED:
+if (SI_info->tf5_state) {
+    switch (SI_info->tf5_state->curr_phase) {
+      case TF5_PHASE_INITIAL:
+      case TF5_PHASE_BUFFERED:
         // Auth pending - defer RRCSetupComplete until verified
         LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete\n");
-        SI_info->tesla_state->auth_state = TF5_AUTH_STATE_RRCSETUP_DEFERRED;
-        SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
+        SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
+        SI_info->tf5_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
         return;  // Wait for auth to complete
-      case TF5_AUTH_STATE_AUTHENTICATED:
+      case TF5_PHASE_BUFFERED_AUTHENTICATED:
         LOG_I(NR_RRC, "TESLA: SIB1 authenticated - proceeding with RRCSetupComplete\n");
         rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
+        SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
         return;
       default:
-        DevAssert(false, "Unexpected auth state in RRCSetup processing");
+        // Handle other phases appropriately
+        break;
     }
 }
 #endif
 ```
 
-**State reset before verification**: Before calling `tf5_tesla_verify_sib1()`, the auth_state is reset to `TF5_AUTH_STATE_UNAUTHENTICATED` if it was previously `AUTHENTICATED` or `AUTH_FAILED` (see [rrc_UE.c:848-849](../openair2/RRC/NR_UE/rrc_UE.c#L848-L849)).
-
 ---
 
 ## RRC Connection Abort
 
-**Location**: [rrc_UE.c:2274](../openair2/RRC/NR_UE/rrc_UE.c#L2274) `nr_rrc_abort_connection()`
+**Location**: [rrc_UE.c](../openair2/RRC/NR_UE/rrc_UE.c) `nr_rrc_abort_connection()`
 
 Called when TESLA authentication fails (signature or MAC verification):
 
@@ -310,15 +306,15 @@ bool tf5_tesla_ue_safe_packet_test(state, ext, rx_sfn, rx_slot) {
     uint32_t x = compute_interval(rx_sfn, rx_slot,
                                   state->tesla_params.t0,
                                   state->tesla_params.t_int_ms);
-    uint32_t i = ext->interval_index;  // claimed interval from sender
-    uint8_t d = state->tesla_params.disclosure_delay;  // cached, authenticated
+    uint32_t i = ext->i;  // claimed interval from sender
+    uint8_t d = state->tesla_params.d;  // cached, authenticated
 
     // Safe if: x < i + d
     return (x < i + d);
 }
 ```
 
-**Note**: The safe packet test uses `state->tesla_params` (cached from first authenticated SIB1) for timing calculations, while `ext->interval_index` is the claimed interval from the sender. This ensures the UE uses authenticated parameters rather than potentially untrusted values from the current extension.
+**Note**: The safe packet test uses `state->tesla_params` (cached from first authenticated SIB1) for timing calculations, while `ext->i` is the claimed interval from the sender. This ensures the UE uses authenticated parameters rather than potentially untrusted values from the current extension.
 
 ---
 
@@ -354,13 +350,13 @@ Interval i+2: verify K_{i+1} → K_i (1 hash), anchor = K_{i+1}
 ### Implementation
 
 ```c
-bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
+bool tf5_tesla_ue_verify_key_chain(state, key_disclosure, key_index) {
     // Require valid trust anchor (set by IBS signature or previous TESLA verification)
     // chain_bootstrapped indicates the anchor is valid
     if (!state->chain_bootstrapped) return false;
 
     if (key_index > state->trust_anchor_idx) {
-        // Chain from disclosed key down to trust anchor
+        // Chain from key_disclosure down to trust anchor
         uint32_t steps = key_index - state->trust_anchor_idx;
         // Apply F 'steps' times and compare with anchor
         // O(1) for consecutive intervals
@@ -424,13 +420,13 @@ Per RFC 4082 Section 3.5, key verification (Step 3) MUST happen BEFORE packet bu
 2. **`tf5_tesla_ue_verify_buffered_with_key_disclosure()`** - Called after key verification to verify buffered messages
 
 ```c
-// In tf5_tesla_verify_returning():
+// In tf5_verify_returning():
 // Step 3: Key verification test - BEFORE buffering
-if (!tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval))
+if (!tf5_tesla_ue_verify_key_chain(state, key_disclosure, disclosed_interval))
     return TF5_VERIFY_FAIL_KEYCHAIN;  // Discard packet without buffering
 
 // Step 4: Message verification - verify previously buffered packets
-tf5_tesla_ue_verify_buffered_with_key_disclosure(state, disclosed_key, disclosed_interval, ...);
+tf5_tesla_ue_verify_buffered_with_key_disclosure(state, key_disclosure, disclosed_interval, ...);
 
 // Step 5: Buffer current packet - ONLY after key verification passed
 tf5_tesla_ue_buffer_sib1(...);
@@ -451,7 +447,7 @@ int tf5_tesla_ue_verify_buffered_with_key_disclosure(state, verified_key, verifi
 
     // Step 3: Verify all buffered entries
     for each buffered entry in [verify_start, verify_end]:
-        verify_mac(entry, key_cache[entry.interval_index]);
+        verify_mac(entry, key_cache[entry.rx_interval_index]);
 }
 ```
 

@@ -149,26 +149,27 @@ The signature and MAC use different authentication inputs:
 **Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_build_sig_auth_input()`
 
 ```
-sig_auth_input = original_SIB1 || tesla_params || gnb_key_validity_end || interval_index || disclosed_key || timestamp_ms
+sig_auth_input = original_SIB1 || te_version || tesla_params || validity_end || i || key_disclosure || timestamp_ms
 ```
 
 - **original_SIB1**: SIB1 content without TESLA extension
-- **tesla_params**: 12 bytes of TESLA parameters (includes T_0)
-- **gnb_key_validity_end**: 3 bytes key expiration (minutes since 2024-01-01)
-- **interval_index**: 4 bytes current interval
-- **disclosed_key**: 16 bytes K_{i-d}
+- **te_version**: 1 byte protocol version
+- **tesla_params**: 11 bytes of TESLA parameters (includes T_0)
+- **validity_end**: 3 bytes key expiration (minutes since 2024-01-01)
+- **i**: 4 bytes current interval index
+- **key_disclosure**: 16 bytes K_{i-d}
 - **timestamp_ms**: 3 bytes Unix epoch timestamp LSB (milliseconds) for signature replay protection
 
 ### MAC Auth Input
 
 **Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_build_mac_auth_input()`
 
-Per RFC 4082, the MAC does NOT include interval_index and disclosed_key.
+Per RFC 4082, the MAC does NOT include interval index and key disclosure.
 Additionally, `tesla_params` is excluded as it is already authenticated by
 the BLS signature during first-time UE verification:
 ```
-mac_auth_input = original_SIB1 || gnb_key_validity_end
+mac_auth_input = original_SIB1 || validity_end
 ```
 
 - **original_SIB1**: SIB1 content without TESLA extension
-- **gnb_key_validity_end**: 3 bytes key expiration (minutes since 2024-01-01, big-endian)
+- **validity_end**: 3 bytes key expiration (minutes since 2024-01-01, big-endian)

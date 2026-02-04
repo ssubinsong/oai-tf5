@@ -6,27 +6,27 @@
 
 ## Initialization Flow
 
-**Location**: [config.c:1120-1282](../openair2/LAYER2/NR_MAC_gNB/config.c#L1120-L1282)
+**Location**: [config.c:1174-1254](../openair2/LAYER2/NR_MAC_gNB/config.c#L1174-L1254)
 
-The initialization is performed in `nr_mac_configure_sib1()` within the `#ifdef ENABLE_TF5` block:
+The initialization is performed in `configure_common_channels_nr()` within the `#ifdef ENABLE_TF5` block:
 
 ```
 1. Allocate TESLA state
-   └── Allocate tf5_tesla_gnb_state_t
+   └── Allocate tf5_gnb_state_t
 
 2. Get slots per frame from numerology
    └── slots_per_frame = nr_slots_per_frame[mu]
 
 3. Check key path is provided
-   └── Verify tesla_privkey_file is set
+   └── Verify tf5_privkey_file is set
 
 4. Initialize BLS library
    └── tf5_tesla_bls_init()
 
 5. Load IBS secret key + validity period (35 bytes)
-   └── tf5_tesla_load_privkey(tesla_privkey_file, private_key, &gnb_key_validity_end)
+   └── tf5_tesla_load_privkey(tf5_privkey_file, private_key, &key_validity_end)
 
-6. Validate gnb_key_validity_end range
+6. Validate key_validity_end range
    └── Assert validity fits in 24 bits
 
 7. Check if key has expired
@@ -48,20 +48,17 @@ The initialization is performed in `nr_mac_configure_sib1()` within the `#ifdef 
     └── Compute key chain K_{N-1}, ..., K_0
     └── Store params (T_int, d, chain_len, private_key, T_0, slots_per_frame)
 
-12. Store Cell ID in TESLA state
-    └── memcpy(tesla_state->gnb_cell_id, ...)
+12. Store key validity period in TESLA state
+    └── tf5_state->key_validity_end = key_validity_end
 
-13. Store key validity period in TESLA state
-    └── tesla_state->gnb_key_validity_end = gnb_key_validity_end
-
-14. Log validity info
+13. Log validity info
     └── LOG_I() with expiration timestamp
 
-15. Encode initial SIB1
+14. Encode initial SIB1
     └── encode_SIB_NR() -> cc->sib1_bcch_pdu[]
 ```
 
-**Helper function**: `tf5_get_first_sib1_occasion()` at [config.c:1120-1162](../openair2/LAYER2/NR_MAC_gNB/config.c#L1120-L1162)
+**Helper function**: `tf5_get_first_sib1_occasion()` in [config.c](../openair2/LAYER2/NR_MAC_gNB/config.c)
 - Calculates T_0 based on Type0-PDCCH CSS configuration
 - Validates only CORESET mux pattern 1 is used
 
@@ -85,12 +82,12 @@ The `cellID` in your gNB config must match the Cell ID used during key issuance.
 
 ## Per-Transmission Flow
 
-**Location**: [nr_radio_config.c:4383-4453](../openair2/LAYER2/NR_MAC_gNB/nr_radio_config.c#L4383-L4453) → `nr_mac_update_sib1_tesla()`
+**Location**: [nr_radio_config.c:4381-4448](../openair2/LAYER2/NR_MAC_gNB/nr_radio_config.c#L4381-L4448) → `nr_mac_update_sib1_tf5()`
 
 Called from scheduler before each SIB1 transmission:
 
 ```
-1. Check tesla_state is initialized
+1. Check tf5_state is initialized
    └── Early return if not initialized
 
 2. Capture original SIB1 (without extension) for signature computation
@@ -102,10 +99,10 @@ Called from scheduler before each SIB1 transmission:
 3. Prepare TESLA extension
    └── tf5_tesla_gnb_prepare_extension(state, sfn, slot, sib1_original, sib1_len, &ext)
        ├── Compute current interval from SFN/slot
-       ├── Set dynamic params (interval_index, disclosed_key, timestamp_ms)
-       ├── Build signature auth_input = SIB1 || tesla_params || gnb_key_validity_end || ...
+       ├── Set dynamic params (i, key_disclosure, timestamp_ms)
+       ├── Build signature auth_input = SIB1 || tesla_params || validity_end || ...
        ├── Sign auth_input with IBS (uses sk_ID)
-       ├── Build MAC auth_input = SIB1 || gnb_key_validity_end
+       ├── Build MAC auth_input = SIB1 || validity_end
        └── Compute TESLA tag with K_i
 
 4. Pack extension to binary (102 bytes)
@@ -129,18 +126,17 @@ Called from scheduler before each SIB1 transmission:
 ```c
 #ifdef ENABLE_TF5
       // Update TESLA extension with current frame/slot before transmission
-      if (cc->tesla_state && cc->tesla_state->initialized) {
-        nr_mac_update_sib1_tesla(gNB_mac, cc, frameP, slotP);
+      if (cc->tf5_state && cc->tf5_state->initialized) {
+        nr_mac_update_sib1_tf5(cc, frameP, slotP);
       }
 #endif
 ```
 
-**Function signature** (declared in [mac_proto.h:63](../openair2/LAYER2/NR_MAC_gNB/mac_proto.h#L63)):
+**Function signature** (declared in [mac_proto.h](../openair2/LAYER2/NR_MAC_gNB/mac_proto.h)):
 ```c
-void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
-                              NR_COMMON_channels_t *cc,
-                              frame_t frame,
-                              slot_t slot);
+void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc,
+                            frame_t frame,
+                            slot_t slot);
 ```
 
 ---
@@ -154,7 +150,7 @@ Fields added to `NR_COMMON_channels_t`:
 ```c
 #ifdef ENABLE_TF5
   /// TESLA broadcast authentication state
-  tf5_tesla_gnb_state_t *tesla_state;
+  tf5_gnb_state_t *tf5_state;
   /// Original SIB1 (without TESLA extension) for MAC computation
   uint8_t sib1_original[NR_MAX_SIB_LENGTH / 8];
   int sib1_original_length;

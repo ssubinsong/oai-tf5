@@ -160,17 +160,18 @@ $$\text{Therefore: } e(\Sigma, Q) = e(h, sk_{ID} \cdot Q) = e(h, pk_{ID} \cdot M
 The signature is computed over the TESLA authentication input:
 
 ```
-auth_input = SIB1_content || static_params || timesync_info ||
-             interval_index || disclosed_key || timestamp_ms
+auth_input = SIB1_content || te_version || tesla_params || validity_end ||
+             i || key_disclosure || timestamp_ms
 ```
 
 Where:
 - `SIB1_content`: Original SIB1 without lateNonCriticalExtension
-- `static_params`: TESLA parameters (30 bytes)
-- `timesync_info`: TX timing (4 bytes)
-- `interval_index`: Current TESLA interval (4 bytes)
-- `disclosed_key`: Key $K_{i-d}$ (16 bytes)
-- `timestamp_ms`: Unix timestamp in milliseconds (8 bytes)
+- `te_version`: Protocol version (1 byte)
+- `tesla_params`: TESLA parameters including T_0 (11 bytes)
+- `validity_end`: Key expiration (3 bytes, minutes since 2024-01-01)
+- `i`: Current TESLA interval (4 bytes)
+- `key_disclosure`: Key $K_{i-d}$ (16 bytes)
+- `timestamp_ms`: Unix timestamp LSB in milliseconds (3 bytes)
 
 ## 6. Identity Format
 
