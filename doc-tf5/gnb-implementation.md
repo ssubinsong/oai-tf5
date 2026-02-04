@@ -66,7 +66,7 @@ The initialization is performed in `nr_mac_configure_sib1()` within the `#ifdef 
 - Validates only CORESET mux pattern 1 is used
 
 **Command-line parameters**:
-- `--tesla-privkey <path>` - IBS secret key file (35 bytes: sk_ID + validity, issued by Core PKG)
+- `--tf5-privkey <path>` - IBS secret key file (35 bytes: sk_ID + validity, issued by Core PKG)
 
 **Key generation**: Use the Core PKG utilities (located in `openair3/SECU/core-pkg/`) to issue gNB keys:
 ```bash

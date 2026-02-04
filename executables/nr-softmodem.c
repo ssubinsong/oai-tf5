@@ -104,9 +104,9 @@ uint64_t downlink_frequency[MAX_NUM_CCs][4];
 int32_t uplink_frequency_offset[MAX_NUM_CCs][4];
 char *uecap_file;
 #ifdef ENABLE_TF5
-char *tesla_privkey_file = NULL;
-char *tesla_pubkey_file = NULL;
-unsigned int tesla_chain_len;
+char *tf5_privkey_file = NULL;
+char *tf5_pubkey_file = NULL;
+unsigned int tf5_tesla_chain_len;
 #endif
 
 runmode_t mode = normal_txrx;

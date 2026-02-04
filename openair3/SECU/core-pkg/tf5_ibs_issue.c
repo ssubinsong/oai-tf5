@@ -225,7 +225,7 @@ int main(int argc, char *argv[])
     printf("\n");
     printf("Next steps:\n");
     printf("  1. Securely transfer %s to the gNB\n", sk_path);
-    printf("  2. Configure gNB with: --tesla-privkey %s\n", sk_path);
+    printf("  2. Configure gNB with: --tf5-privkey %s\n", sk_path);
     printf("  3. Ensure gNB's Cell ID matches 0x%s\n", cell_id_str);
     printf("  4. Key expires: %s\n", validity_time_str);
 

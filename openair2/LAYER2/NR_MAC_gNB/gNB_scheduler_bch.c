@@ -600,8 +600,8 @@ void schedule_nr_sib1(module_id_t module_idP,
 
 #ifdef ENABLE_TF5
       // Update TESLA extension with current frame/slot before transmission
-      if (cc->tesla_state && cc->tesla_state->initialized) {
-        nr_mac_update_sib1_tesla(gNB_mac, cc, frameP, slotP);
+      if (cc->tf5_state && cc->tf5_state->initialized) {
+        nr_mac_update_sib1_tf5(cc, frameP, slotP);
       }
 #endif
 

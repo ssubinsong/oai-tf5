@@ -333,7 +333,7 @@ typedef struct {
   nr_prach_info_t prach_info;
 #ifdef ENABLE_TF5
   /// TESLA broadcast authentication state
-  tf5_gnb_state_t *tesla_state;
+  tf5_gnb_state_t *tf5_state;
   /// Original SIB1 (without TESLA extension) for MAC computation
   uint8_t sib1_original[NR_MAX_SIB_LENGTH / 8];
   int sib1_original_length;

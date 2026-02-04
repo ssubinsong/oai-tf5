@@ -15,7 +15,7 @@ SI_info->tesla_state = calloc(1, sizeof(tf5_tesla_ue_state_t));
 // Load Core's Master Public Key (MPK) for IBS verification
 nrUE_params_t *params = get_nrUE_params();
 uint8_t mpk[96];
-int rc = tf5_tesla_load_pubkey(params->tesla_core_mpk_file, mpk);
+int rc = tf5_tesla_load_pubkey(params->tf5_core_mpk_file, mpk);
 if (rc == 0) {
     tf5_tesla_ue_init(SI_info->tesla_state, mpk, slots_per_frame,
                       params->tesla_d_bound_us, params->signature_timestamp_window_ms);

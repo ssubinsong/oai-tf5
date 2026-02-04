@@ -125,7 +125,7 @@ Key paths **must** be specified explicitly on the command line (no defaults):
 
 | Component | Parameter | Description |
 |-----------|-----------|-------------|
-| gNB | `--tesla-privkey` | Path to gNB's secret key file (35 bytes: sk_ID + validity) |
+| gNB | `--tf5-privkey` | Path to gNB's secret key file (35 bytes: sk_ID + validity) |
 | UE | `--tesla-core-mpk` | Path to Core's Master Public Key (MPK) |
 
 **Note**: The validity period is embedded in the 35-byte key file (bytes 32-34, big-endian).
@@ -146,7 +146,7 @@ cd cmake_targets/ran_build/build
 sudo ./nr-softmodem \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
     --rfsim \
-    --tesla-privkey /path/to/gnb_keys/sk_gnb.bin
+    --tf5-privkey /path/to/gnb_keys/sk_gnb.bin
 
 # Run UE with Core's MPK (in another terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi 001010000000001 --rfsim \

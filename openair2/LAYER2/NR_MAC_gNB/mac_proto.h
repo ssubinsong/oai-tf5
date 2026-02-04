@@ -60,7 +60,7 @@ void nr_mac_send_f1_setup_req(void);
 void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, const nr_mac_config_t *mac_config);
 void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t cellID, int tac);
 #ifdef ENABLE_TF5
-void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac, NR_COMMON_channels_t *cc, frame_t frame, slot_t slot);
+void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot);
 #endif
 bool nr_mac_configure_other_sib(gNB_MAC_INST *nrmac, int num_cu_sib, const f1ap_sib_msg_t cu_sib[num_cu_sib]);
 bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t *CellGroup);

@@ -104,7 +104,7 @@ cd cmake_targets/ran_build/build
 
 ```bash
 ./nr-softmodem -O gnb.conf \
-    --tesla-privkey /path/to/sk_gnb.bin
+    --tf5-privkey /path/to/sk_gnb.bin
 ```
 
 The validity period is embedded in the 35-byte key file (bytes 32-34, big-endian).

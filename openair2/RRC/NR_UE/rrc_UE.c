@@ -488,7 +488,7 @@ static void get_sib19_schedinfo(NR_UE_RRC_SI_INFO *SI_info, NR_SI_SchedulingInfo
 
 #ifdef ENABLE_TF5
 /* Forward declarations for TESLA parallel authentication */
-static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const uint8_t Transaction_id);
+static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, uint8_t Transaction_id);
 static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index);
 
 /*
@@ -540,7 +540,7 @@ static void tf5_send_deferred_rrcsetupcomplete(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_
 /**
  * Re-encode SIB1 without lateNonCriticalExtension for authentication.
  */
-static tf5_verify_result_t tf5_tesla_encode_sib1_for_auth(NR_SIB1_t *sib1,
+static tf5_verify_result_t tf5_encode_sib1_for_auth(NR_SIB1_t *sib1,
                                                           uint8_t *out_buf,
                                                           size_t buf_size,
                                                           size_t *out_len)
@@ -789,7 +789,7 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
     /* Re-encode SIB1 for authentication */
     uint8_t sib1_buf[512];
     size_t sib1_len;
-    rc = tf5_tesla_encode_sib1_for_auth(sib1, sib1_buf, sizeof(sib1_buf), &sib1_len);
+    rc = tf5_encode_sib1_for_auth(sib1, sib1_buf, sizeof(sib1_buf), &sib1_len);
     if (rc < 0) {
         return rc;
     }
@@ -1675,7 +1675,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
 
       // Check that MPK path is provided (no default - must be explicit)
       // Core's Master Public Key (MPK) for IBS verification
-      if (params->tesla_core_mpk_file == NULL || params->tesla_core_mpk_file[0] == '\0') {
+      if (params->tf5_core_mpk_file == NULL || params->tf5_core_mpk_file[0] == '\0') {
         LOG_E(NR_RRC, "TESLA IBS: --tesla-core-mpk is required. Specify path to Core's MPK file.\n");
         LOG_E(NR_RRC, "TESLA IBS: Obtain MPK from Core PKG: tf5_ibs_pkg_keygen <msk_path> <mpk_path>\n");
         free(ptr->SInfo.tf5_state);
@@ -1689,16 +1689,16 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
           ptr->SInfo.tf5_state = NULL;
         } else {
           uint8_t mpk[TF5_MPK_LEN];
-          rc = tf5_tesla_load_pubkey(params->tesla_core_mpk_file, mpk);
+          rc = tf5_tesla_load_pubkey(params->tf5_core_mpk_file, mpk);
           if (rc == 0) {
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info
             uint16_t slots_per_frame = 20;
             tf5_tesla_ue_init(ptr->SInfo.tf5_state, mpk, slots_per_frame,
-                              params->tesla_d_bound_us,
-                              params->signature_timestamp_window_ms);
+                              params->tf5_d_bound_us,
+                              params->tf5_rp_timestamp_window_ms);
             LOG_I(NR_RRC, "TESLA IBS: Loaded Core MPK from %s (D=%u us, window=%u ms)\n",
-                  params->tesla_core_mpk_file, params->tesla_d_bound_us,
-                  params->signature_timestamp_window_ms);
+                  params->tf5_core_mpk_file, params->tf5_d_bound_us,
+                  params->tf5_rp_timestamp_window_ms);
             // Log MPK for verification (first 32 bytes)
             char hex_buf[65];
             for (int j = 0; j < 32; j++) {
@@ -1707,7 +1707,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
             LOG_I(NR_RRC, "TESLA IBS: MPK (first 32 bytes hex): %s...\n", hex_buf);
           } else {
             LOG_E(NR_RRC, "TESLA IBS: Failed to load MPK from %s (rc=%d)\n",
-                  params->tesla_core_mpk_file, rc);
+                  params->tf5_core_mpk_file, rc);
             LOG_E(NR_RRC, "TESLA IBS: Obtain MPK from Core PKG\n");
             // Free state and set to NULL to disable TESLA
             free(ptr->SInfo.tf5_state);

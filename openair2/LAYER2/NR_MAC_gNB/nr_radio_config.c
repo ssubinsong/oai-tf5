@@ -51,7 +51,6 @@
 #include "openair3/SECU/tf5_tesla.h"
 #include "common/ran_context.h"
 #include "openair2/RRC/NR/nr_rrc_defs.h"
-#include "NR_SIB1.h"  // For asn_DEF_NR_SIB1 in TESLA signature computation
 #endif
 
 #define NR_MAX_SUPPORTED_DL_LAYERS 4
@@ -4375,17 +4374,13 @@ int encode_measgap_config(const measgap_config_t *c, uint8_t *buf)
  * 2. Pack extension into lateNonCriticalExtension
  * 3. Re-encode SIB1
  *
- * @param mac       gNB MAC instance
  * @param cc        Common channel structure
  * @param frame     Current frame number
  * @param slot      Current slot number
  */
-void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
-                              NR_COMMON_channels_t *cc,
-                              frame_t frame,
-                              slot_t slot)
+void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
 {
-  if (!cc->tesla_state || !cc->tesla_state->initialized) {
+  if (!cc->tf5_state || !cc->tf5_state->initialized) {
     AssertFatal(0, "TESLA: SIB1 TESLA state not initialized\n");
   }
 
@@ -4409,7 +4404,7 @@ void nr_mac_update_sib1_tesla(gNB_MAC_INST *mac,
 
   // Prepare TESLA extension for current frame/slot
   tf5_extension_t ext;
-  int rc = tf5_tesla_gnb_prepare_extension(cc->tesla_state,
+  int rc = tf5_tesla_gnb_prepare_extension(cc->tf5_state,
                                            frame, slot,
                                            cc->sib1_original,
                                            cc->sib1_original_length,
