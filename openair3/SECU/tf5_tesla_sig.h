@@ -1,25 +1,4 @@
 /*
- * Licensed to the OpenAirInterface (OAI) Software Alliance under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The OpenAirInterface Software Alliance licenses this file to You under
- * the OAI Public License, Version 1.1  (the "License"); you may not use this file
- * except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.openairinterface.org/?page_id=698
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *-------------------------------------------------------------------------------
- * For more information about the OpenAirInterface (OAI) Software Alliance:
- *      contact@openairinterface.org
- */
-
-/*
  * TESLA Broadcast Authentication - BLS Signature Operations
  *
  * Uses blst library (Supranational) with BLS12-381 curve.
@@ -35,9 +14,9 @@
 #include <stddef.h>
 
 /* BLS12-381 key and signature sizes (non-ETH mode) */
-#define TF5_GNB_SKEY_LEN   32   /* Fr element */
-#define TF5_BLS_PUBKEY_LEN   96   /* G2 point (compressed) */
-#define TF5_BLS_SIG_LEN    48   /* G1 point (compressed) */
+#define TF5_GNB_SECRET_KEY_LEN   32   /* Fr element */
+#define TF5_GNB_PUBKEY_LEN   96   /* G2 point (compressed) */
+#define TF5_SIG_LEN    48   /* G1 point (compressed) */
 
 /**
  * Initialize BLS library
@@ -47,7 +26,7 @@
  *
  * @return 0 on success, negative on error
  */
-int tf5_tesla_bls_init(void);
+int tf5_bls_init(void);
 
 /**
  * Derive BLS public key from secret key
@@ -56,8 +35,8 @@ int tf5_tesla_bls_init(void);
  * @param public_key   Output: BLS public key (96 bytes)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
-                                uint8_t public_key[TF5_BLS_PUBKEY_LEN]);
+int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
+                                uint8_t public_key[TF5_GNB_PUBKEY_LEN]);
 
 /**
  * Sign data with BLS
@@ -68,10 +47,10 @@ int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
  * @param signature    Output: BLS signature (48 bytes)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
+int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
                        const uint8_t *data,
                        size_t data_len,
-                       uint8_t signature[TF5_BLS_SIG_LEN]);
+                       uint8_t signature[TF5_SIG_LEN]);
 
 /*
  * =============================================================================
@@ -85,8 +64,8 @@ int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
 #endif
 
 /* IBS Key validity period: 24 bits = 3 bytes (minutes since 2024-01-01) */
-#ifndef TF5_VALIDITY_PERIOD_LEN
-#define TF5_VALIDITY_PERIOD_LEN  3
+#ifndef TF5_IBS_VALIDITY_PERIOD_LEN
+#define TF5_IBS_VALIDITY_PERIOD_LEN  3
 #endif
 
 /**
@@ -111,12 +90,12 @@ int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
  *   -4: Invalid signature format
  *   -5: Signature verification failed
  */
-int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBKEY_LEN],
+int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                           uint32_t gnb_key_validity_end,
                           const uint8_t *data,
                           size_t data_len,
-                          const uint8_t signature[TF5_BLS_SIG_LEN]);
+                          const uint8_t signature[TF5_SIG_LEN]);
 
 #endif /* ENABLE_TF5 */
 

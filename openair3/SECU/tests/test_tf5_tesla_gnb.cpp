@@ -30,30 +30,30 @@ void exit_function(const char *file, const char *function, const int line, const
 class TF5GnbTest : public ::testing::Test {
 protected:
     tf5_gnb_state_t gnb_state;
-    uint8_t test_private_key[TF5_GNB_SKEY_LEN];
-    tf5_tesla_slot_time_t t0;
+    uint8_t test_private_key[TF5_GNB_SECRET_KEY_LEN];
+    tf5_slot_time_t t0;
 
     void SetUp() override {
         // Initialize BLS library
-        tf5_tesla_bls_init();
+        tf5_bls_init();
 
         // Clear state
         memset(&gnb_state, 0, sizeof(gnb_state));
 
         // Use test private key
-        memcpy(test_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SKEY_LEN);
+        memcpy(test_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SECRET_KEY_LEN);
 
         // Set T_0 to SFN=0, slot=0
         t0 = tf5_slot_time_make(tf5_test::TV_T0_SFN, tf5_test::TV_T0_SLOT);
     }
 
     void TearDown() override {
-        tf5_tesla_gnb_free(&gnb_state);
+        tf5_gnb_free(&gnb_state);
     }
 
     // Helper to initialize gNB with default test parameters
     int initGnbDefault(uint32_t chain_len = 100) {
-        return tf5_tesla_gnb_init(
+        return tf5_gnb_init(
             &gnb_state,
             tf5_test::TV_EXT_T_INT_MS,   // t_int_ms = 20
             tf5_test::TV_EXT_D,          // d = 1
@@ -66,7 +66,7 @@ protected:
 };
 
 // ============================================================================
-// Initialization Tests (tf5_tesla_gnb_init)
+// Initialization Tests (tf5_gnb_init)
 // ============================================================================
 
 TEST_F(TF5GnbTest, GnbInit_Success) {
@@ -91,7 +91,7 @@ TEST_F(TF5GnbTest, GnbInit_BootstrapKeyComputed) {
     // Bootstrap key K_{-1} = F(K_0), stored at index 0
     // K_0 is stored at index 1
     uint8_t computed_bootstrap[TF5_TESLA_KEY_LEN];
-    tf5_tesla_chain_key(gnb_state.key_chain[tf5_key_interval_to_index(0)], computed_bootstrap);
+    tf5_chain_key(gnb_state.key_chain[tf5_key_interval_to_index(0)], computed_bootstrap);
 
     EXPECT_EQ(0, memcmp(gnb_state.key_chain[tf5_key_interval_to_index(-1)], computed_bootstrap, TF5_TESLA_KEY_LEN))
         << "Bootstrap key K_{-1} at index 0 should equal F(K_0)";
@@ -105,7 +105,7 @@ TEST_F(TF5GnbTest, GnbInit_KeyChainValid) {
     // Key chain now includes K_{-1} at index 0
     for (int32_t i = -1; i < (int32_t)gnb_state.key_chain_len - 1; i++) {
         uint8_t computed[TF5_TESLA_KEY_LEN];
-        tf5_tesla_chain_key(gnb_state.key_chain[tf5_key_interval_to_index(i + 1)], computed);
+        tf5_chain_key(gnb_state.key_chain[tf5_key_interval_to_index(i + 1)], computed);
 
         EXPECT_EQ(0, memcmp(gnb_state.key_chain[tf5_key_interval_to_index(i)], computed, TF5_TESLA_KEY_LEN))
             << "K_" << i << " should equal F(K_" << (i + 1) << ")";
@@ -123,7 +123,7 @@ TEST_F(TF5GnbTest, GnbInit_ParamsStored) {
 }
 
 TEST_F(TF5GnbTest, GnbInit_NullState_ReturnsError) {
-    int ret = tf5_tesla_gnb_init(
+    int ret = tf5_gnb_init(
         nullptr,
         tf5_test::TV_EXT_T_INT_MS,
         tf5_test::TV_EXT_D,
@@ -137,7 +137,7 @@ TEST_F(TF5GnbTest, GnbInit_NullState_ReturnsError) {
 }
 
 TEST_F(TF5GnbTest, GnbInit_NullPrivateKey_ReturnsError) {
-    int ret = tf5_tesla_gnb_init(
+    int ret = tf5_gnb_init(
         &gnb_state,
         tf5_test::TV_EXT_T_INT_MS,
         tf5_test::TV_EXT_D,
@@ -151,7 +151,7 @@ TEST_F(TF5GnbTest, GnbInit_NullPrivateKey_ReturnsError) {
 }
 
 TEST_F(TF5GnbTest, GnbInit_NullT0_ReturnsError) {
-    int ret = tf5_tesla_gnb_init(
+    int ret = tf5_gnb_init(
         &gnb_state,
         tf5_test::TV_EXT_T_INT_MS,
         tf5_test::TV_EXT_D,
@@ -165,7 +165,7 @@ TEST_F(TF5GnbTest, GnbInit_NullT0_ReturnsError) {
 }
 
 TEST_F(TF5GnbTest, GnbInit_ZeroChainLen_ReturnsError) {
-    int ret = tf5_tesla_gnb_init(
+    int ret = tf5_gnb_init(
         &gnb_state,
         tf5_test::TV_EXT_T_INT_MS,
         tf5_test::TV_EXT_D,
@@ -179,7 +179,7 @@ TEST_F(TF5GnbTest, GnbInit_ZeroChainLen_ReturnsError) {
 }
 
 TEST_F(TF5GnbTest, GnbInit_ZeroInterval_ReturnsError) {
-    int ret = tf5_tesla_gnb_init(
+    int ret = tf5_gnb_init(
         &gnb_state,
         0,  // Invalid interval duration
         tf5_test::TV_EXT_D,
@@ -193,7 +193,7 @@ TEST_F(TF5GnbTest, GnbInit_ZeroInterval_ReturnsError) {
 }
 
 // ============================================================================
-// Extension Preparation Tests (tf5_tesla_gnb_prepare_extension)
+// Extension Preparation Tests (tf5_gnb_prepare_extension)
 // ============================================================================
 
 TEST_F(TF5GnbTest, PrepareExtension_Success) {
@@ -202,7 +202,7 @@ TEST_F(TF5GnbTest, PrepareExtension_Success) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    int ret = tf5_tesla_gnb_prepare_extension(
+    int ret = tf5_gnb_prepare_extension(
         &gnb_state,
         5,   // SFN
         10,  // slot
@@ -220,7 +220,7 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectVersion) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 10, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 5, 10, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_EQ(TF5_VERSION, ext.te_version) << "Extension version should be TF5_VERSION";
 }
@@ -234,7 +234,7 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectInterval) {
     // At SFN=5, slot=0, with 20 slots/frame:
     // Total slots = 5*20 + 0 = 100 slots
     // At 0.5ms/slot, this is 50ms = 2.5 intervals, floor = 2
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_EQ(2u, ext.i) << "Interval index should match calculation";
 }
@@ -246,7 +246,7 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectKeyDisclosure_NormalInterval) {
     const char sib1[] = "Test SIB1 content";
 
     // Force interval 5 (200 slots = SFN 10, slot 0)
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     // At interval 5 with d=1, should disclose K_{5-1} = K_4
     EXPECT_EQ(0, memcmp(ext.key_disclosure, gnb_state.key_chain[tf5_key_interval_to_index(4)], TF5_TESLA_KEY_LEN))
@@ -260,7 +260,7 @@ TEST_F(TF5GnbTest, PrepareExtension_BootstrapInterval_DiscloseKMinus1) {
     const char sib1[] = "Test SIB1 content";
 
     // At interval 0 (T_0), should disclose K_{-1} (bootstrap key)
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 0, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 0, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_EQ(0, memcmp(ext.key_disclosure, gnb_state.key_chain[tf5_key_interval_to_index(-1)], TF5_TESLA_KEY_LEN))
         << "At interval 0 with d=1, should disclose K_{-1} (bootstrap key)";
@@ -272,7 +272,7 @@ TEST_F(TF5GnbTest, PrepareExtension_TagComputed) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     // Tag should not be all zeros
     bool all_zeros = true;
@@ -291,7 +291,7 @@ TEST_F(TF5GnbTest, PrepareExtension_SignatureComputed) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     // Signature should not be all zeros
     bool all_zeros = true;
@@ -310,7 +310,7 @@ TEST_F(TF5GnbTest, PrepareExtension_ParamsIncluded) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_EQ(gnb_state.tesla_params.t_int_ms, ext.tesla_params.t_int_ms);
     EXPECT_EQ(gnb_state.tesla_params.d, ext.tesla_params.d);
@@ -326,7 +326,7 @@ TEST_F(TF5GnbTest, PrepareExtension_IntervalExceedsChain_ReturnsError) {
 
     // Try to get extension for interval 15 (10 * 40 slots = SFN 20)
     // which exceeds chain length of 10
-    int ret = tf5_tesla_gnb_prepare_extension(
+    int ret = tf5_gnb_prepare_extension(
         &gnb_state,
         20, 0,  // Way beyond chain length
         (const uint8_t*)sib1, strlen(sib1), &ext
@@ -339,7 +339,7 @@ TEST_F(TF5GnbTest, PrepareExtension_NullState_ReturnsError) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    int ret = tf5_tesla_gnb_prepare_extension(
+    int ret = tf5_gnb_prepare_extension(
         nullptr, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext
     );
 
@@ -351,7 +351,7 @@ TEST_F(TF5GnbTest, PrepareExtension_NullSib1_ReturnsError) {
 
     tf5_extension_t ext;
 
-    int ret = tf5_tesla_gnb_prepare_extension(
+    int ret = tf5_gnb_prepare_extension(
         &gnb_state, 5, 0, nullptr, 10, &ext
     );
 
@@ -363,7 +363,7 @@ TEST_F(TF5GnbTest, PrepareExtension_NullExt_ReturnsError) {
 
     const char sib1[] = "Test SIB1 content";
 
-    int ret = tf5_tesla_gnb_prepare_extension(
+    int ret = tf5_gnb_prepare_extension(
         &gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), nullptr
     );
 
@@ -371,14 +371,14 @@ TEST_F(TF5GnbTest, PrepareExtension_NullExt_ReturnsError) {
 }
 
 // ============================================================================
-// Free Tests (tf5_tesla_gnb_free)
+// Free Tests (tf5_gnb_free)
 // ============================================================================
 
 TEST_F(TF5GnbTest, GnbFree_Success) {
     ASSERT_EQ(0, initGnbDefault(100));
     ASSERT_NE(nullptr, gnb_state.key_chain);
 
-    tf5_tesla_gnb_free(&gnb_state);
+    tf5_gnb_free(&gnb_state);
 
     EXPECT_FALSE(gnb_state.initialized) << "State should be marked as not initialized";
     EXPECT_EQ(nullptr, gnb_state.key_chain) << "Key chain should be freed";
@@ -386,7 +386,7 @@ TEST_F(TF5GnbTest, GnbFree_Success) {
 
 TEST_F(TF5GnbTest, GnbFree_NullState_NoOp) {
     // Should not crash
-    tf5_tesla_gnb_free(nullptr);
+    tf5_gnb_free(nullptr);
     SUCCEED();
 }
 
@@ -395,7 +395,7 @@ TEST_F(TF5GnbTest, GnbFree_UninitializedState_NoOp) {
     memset(&uninit_state, 0, sizeof(uninit_state));
 
     // Should not crash
-    tf5_tesla_gnb_free(&uninit_state);
+    tf5_gnb_free(&uninit_state);
     SUCCEED();
 }
 

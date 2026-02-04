@@ -45,25 +45,25 @@ protected:
 };
 
 // ============================================================================
-// Pack Extension Tests (tf5_tesla_pack_extension)
+// Pack Extension Tests (tf5_pack_extension)
 // ============================================================================
 
 TEST_F(TF5SerialTest, PackExtension_Success) {
-    int ret = tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    int ret = tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     EXPECT_EQ(TF5_EXTENSION_PACKED_SIZE, ret)
         << "Pack should return 102 bytes";
 }
 
 TEST_F(TF5SerialTest, PackExtension_VersionAtOffset0) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     EXPECT_EQ(TF5_VERSION, packed_buf[0])
         << "Version should be at offset 0";
 }
 
 TEST_F(TF5SerialTest, PackExtension_TIntAtOffset1) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // T_int is 2 bytes big-endian at offset 1
     uint16_t t_int = tf5_decode_u16_be(&packed_buf[1]);
@@ -73,14 +73,14 @@ TEST_F(TF5SerialTest, PackExtension_TIntAtOffset1) {
 }
 
 TEST_F(TF5SerialTest, PackExtension_DAtOffset3) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     EXPECT_EQ(tf5_test::TV_EXT_D, packed_buf[3])
         << "d should be at offset 3";
 }
 
 TEST_F(TF5SerialTest, PackExtension_T0AtOffset4) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // T_0 SFN is 2 bytes at offset 4
     uint16_t t0_sfn = tf5_decode_u16_be(&packed_buf[4]);
@@ -92,7 +92,7 @@ TEST_F(TF5SerialTest, PackExtension_T0AtOffset4) {
 }
 
 TEST_F(TF5SerialTest, PackExtension_ChainLenAtOffset8) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // chain_len is 4 bytes at offset 8
     uint32_t chain_len = tf5_decode_u32_be(&packed_buf[8]);
@@ -102,7 +102,7 @@ TEST_F(TF5SerialTest, PackExtension_ChainLenAtOffset8) {
 }
 
 TEST_F(TF5SerialTest, PackExtension_ValidityEndAtOffset12) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // validity_end is 3 bytes at offset 12
     uint32_t validity_end = tf5_decode_u24_be(&packed_buf[12]);
@@ -112,7 +112,7 @@ TEST_F(TF5SerialTest, PackExtension_ValidityEndAtOffset12) {
 }
 
 TEST_F(TF5SerialTest, PackExtension_IntervalAtOffset15) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // interval is 4 bytes at offset 15
     uint32_t interval = tf5_decode_u32_be(&packed_buf[15]);
@@ -122,7 +122,7 @@ TEST_F(TF5SerialTest, PackExtension_IntervalAtOffset15) {
 }
 
 TEST_F(TF5SerialTest, PackExtension_KeyDisclosureAtOffset19) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // key_disclosure is 16 bytes at offset 19
     EXPECT_EQ(0, memcmp(&packed_buf[19], tf5_test::TV_EXT_DISCLOSED_KEY, TF5_TESLA_KEY_LEN))
@@ -130,7 +130,7 @@ TEST_F(TF5SerialTest, PackExtension_KeyDisclosureAtOffset19) {
 }
 
 TEST_F(TF5SerialTest, PackExtension_TimestampAtOffset35) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // timestamp_ms is 3 bytes at offset 35
     uint32_t timestamp = tf5_decode_u24_be(&packed_buf[35]);
@@ -140,7 +140,7 @@ TEST_F(TF5SerialTest, PackExtension_TimestampAtOffset35) {
 }
 
 TEST_F(TF5SerialTest, PackExtension_SignatureAtOffset38) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // signature is 48 bytes at offset 38
     EXPECT_EQ(0, memcmp(&packed_buf[38], tf5_test::TV_EXT_SIGNATURE, TF5_TESLA_SIG_LEN))
@@ -148,7 +148,7 @@ TEST_F(TF5SerialTest, PackExtension_SignatureAtOffset38) {
 }
 
 TEST_F(TF5SerialTest, PackExtension_TagAtOffset86) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // tesla_tag is 16 bytes at offset 86
     EXPECT_EQ(0, memcmp(&packed_buf[86], tf5_test::TV_EXT_TAG, TF5_TESLA_TAG_LEN))
@@ -156,45 +156,45 @@ TEST_F(TF5SerialTest, PackExtension_TagAtOffset86) {
 }
 
 TEST_F(TF5SerialTest, PackExtension_BufferTooSmall_ReturnsError) {
-    int ret = tf5_tesla_pack_extension(&ext, packed_buf, TF5_EXTENSION_PACKED_SIZE - 1);
+    int ret = tf5_pack_extension(&ext, packed_buf, TF5_EXTENSION_PACKED_SIZE - 1);
 
     EXPECT_LT(ret, 0) << "Should return error when buffer too small";
 }
 
 TEST_F(TF5SerialTest, PackExtension_NullExt_ReturnsError) {
-    int ret = tf5_tesla_pack_extension(nullptr, packed_buf, sizeof(packed_buf));
+    int ret = tf5_pack_extension(nullptr, packed_buf, sizeof(packed_buf));
 
     EXPECT_LT(ret, 0) << "Should return error for null extension";
 }
 
 TEST_F(TF5SerialTest, PackExtension_NullBuf_ReturnsError) {
-    int ret = tf5_tesla_pack_extension(&ext, nullptr, sizeof(packed_buf));
+    int ret = tf5_pack_extension(&ext, nullptr, sizeof(packed_buf));
 
     EXPECT_LT(ret, 0) << "Should return error for null buffer";
 }
 
 // ============================================================================
-// Unpack Extension Tests (tf5_tesla_unpack_extension)
+// Unpack Extension Tests (tf5_unpack_extension)
 // ============================================================================
 
 TEST_F(TF5SerialTest, UnpackExtension_Success) {
     // First pack the extension
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // Then unpack
     tf5_extension_t unpacked;
-    int ret = tf5_tesla_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, &unpacked);
+    int ret = tf5_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, &unpacked);
 
     EXPECT_EQ(0, ret) << "Unpack should return 0 on success";
 }
 
 TEST_F(TF5SerialTest, UnpackExtension_AllFieldsCorrect) {
     // First pack the extension
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // Then unpack
     tf5_extension_t unpacked;
-    tf5_tesla_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, &unpacked);
+    tf5_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, &unpacked);
 
     // Verify all fields
     EXPECT_EQ(ext.te_version, unpacked.te_version);
@@ -213,17 +213,17 @@ TEST_F(TF5SerialTest, UnpackExtension_AllFieldsCorrect) {
 
 TEST_F(TF5SerialTest, PackUnpack_RoundTrip) {
     // Pack
-    int pack_ret = tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    int pack_ret = tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
     ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, pack_ret);
 
     // Unpack
     tf5_extension_t unpacked;
-    int unpack_ret = tf5_tesla_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, &unpacked);
+    int unpack_ret = tf5_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, &unpacked);
     ASSERT_EQ(0, unpack_ret);
 
     // Repack
     uint8_t repacked_buf[TF5_EXTENSION_PACKED_SIZE];
-    int repack_ret = tf5_tesla_pack_extension(&unpacked, repacked_buf, sizeof(repacked_buf));
+    int repack_ret = tf5_pack_extension(&unpacked, repacked_buf, sizeof(repacked_buf));
     ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, repack_ret);
 
     // Compare
@@ -232,25 +232,25 @@ TEST_F(TF5SerialTest, PackUnpack_RoundTrip) {
 }
 
 TEST_F(TF5SerialTest, UnpackExtension_BufferTooSmall_ReturnsError) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     tf5_extension_t unpacked;
-    int ret = tf5_tesla_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE - 1, &unpacked);
+    int ret = tf5_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE - 1, &unpacked);
 
     EXPECT_LT(ret, 0) << "Should return error when buffer too small";
 }
 
 TEST_F(TF5SerialTest, UnpackExtension_NullBuf_ReturnsError) {
     tf5_extension_t unpacked;
-    int ret = tf5_tesla_unpack_extension(nullptr, TF5_EXTENSION_PACKED_SIZE, &unpacked);
+    int ret = tf5_unpack_extension(nullptr, TF5_EXTENSION_PACKED_SIZE, &unpacked);
 
     EXPECT_LT(ret, 0) << "Should return error for null buffer";
 }
 
 TEST_F(TF5SerialTest, UnpackExtension_NullExt_ReturnsError) {
-    tf5_tesla_pack_extension(&ext, packed_buf, sizeof(packed_buf));
+    tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
-    int ret = tf5_tesla_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, nullptr);
+    int ret = tf5_unpack_extension(packed_buf, TF5_EXTENSION_PACKED_SIZE, nullptr);
 
     EXPECT_LT(ret, 0) << "Should return error for null extension output";
 }

@@ -14,7 +14,7 @@
  */
 #define TF5_TESLA_KEY_LEN           16      // 128-bit TESLA chain keys (hardcoded)
 #define TF5_TESLA_TAG_LEN           16      // Truncated HMAC-SHA256 to 128 bits
-#define TF5_TESLA_SIG_LEN           TF5_BLS_SIG_LEN   // BLS signature length (48 bytes)
+#define TF5_TESLA_SIG_LEN           TF5_SIG_LEN   // BLS signature length (48 bytes)
 #define TF5_TESLA_CHAIN_LEN         65536   // ~21 minutes at T_int=20ms
 #define TF5_TESLA_DEFAULT_D_BOUND_US           1005    // Pre-calculated D bound (microseconds)
 #define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered
@@ -32,13 +32,13 @@
 /*
  * IBS (Identity-Based Signature) Constants
  */
-#define TF5_MPK_LEN        TF5_BLS_PUBKEY_LEN  // BLS-IBS public key length (96 bytes)
+#define TF5_MPK_LEN        TF5_GNB_PUBKEY_LEN  // BLS-IBS public key length (96 bytes)
 #define TF5_IBS_CELL_ID_LEN   5    // 36 bits = 5 bytes
-#define TF5_VALIDITY_PERIOD_LEN   3     // 24-bit minutes since epoch
-#define TF5_IBS_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
+#define TF5_IBS_VALIDITY_PERIOD_LEN   3     // 24-bit minutes since epoch
+#define TF5_GNB_KEY_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
 
 // gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
-#define TF5_IBS_SK_FILE_SIZE   (TF5_GNB_SKEY_LEN + TF5_VALIDITY_PERIOD_LEN)  // 35 bytes
+#define TF5_IBS_SK_FILE_SIZE   (TF5_GNB_SECRET_KEY_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)  // 35 bytes
 
 // Signature replay protection
 #define TF5_RP_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
@@ -49,7 +49,7 @@
 typedef struct {
     uint16_t sfn;   // 2B - System Frame Number (0-1023)
     uint16_t slot;  // 2B - Slot within frame
-} tf5_tesla_slot_time_t;
+} tf5_slot_time_t;
 
 
 /**
@@ -62,13 +62,13 @@ typedef struct {
     uint8_t  tag[TF5_TESLA_TAG_LEN];
     bool     valid;                  // Entry contains valid data
     bool     triggered_rrc_setup;    // This SIB1 triggered the current RRC session
-} tf5_tesla_buffer_entry_t;
+} tf5_buffer_entry_t;
 
 /* Helper to construct slot_time_t inline */
-static inline tf5_tesla_slot_time_t tf5_slot_time_make(uint16_t sfn,
+static inline tf5_slot_time_t tf5_slot_time_make(uint16_t sfn,
                                                         uint16_t slot)
 {
-    return (tf5_tesla_slot_time_t){.sfn = sfn, .slot = slot};
+    return (tf5_slot_time_t){.sfn = sfn, .slot = slot};
 }
 
 /**
@@ -92,7 +92,7 @@ static inline uint32_t tf5_key_interval_to_index(int32_t interval)
 typedef struct {
     uint16_t t_int_ms;             // 2B - Interval duration in ms (e.g., 20ms)
     uint8_t  d;     // 1B - Key disclosure delay d (e.g., 1)
-    tf5_tesla_slot_time_t t0;      // 4B - T_0: interval 0 start (transmitted in wire format)
+    tf5_slot_time_t t0;      // 4B - T_0: interval 0 start (transmitted in wire format)
     uint32_t chain_len;            // 4B - Number of intervals N
 } tf5_tesla_params_t;
 
@@ -123,7 +123,7 @@ typedef struct {
     uint32_t key_chain_len;                         // Number of intervals N (array has N+1 entries)
 
     // IBS keys
-    uint8_t  private_key[TF5_GNB_SKEY_LEN];   // 32B - sk_ID (issued by Core PKG)
+    uint8_t  private_key[TF5_GNB_SECRET_KEY_LEN];   // 32B - sk_ID (issued by Core PKG)
     uint32_t key_validity_end;                      // Key expiration (minutes since 2024-01-01)
 
     // Slots per frame (depends on numerology)
@@ -140,7 +140,7 @@ typedef enum {
   TF5_PHASE_RRCSETUP_DEFERRED, // An SIB1 has been buffered & marked for RRC and RRCSetupComplete is deferred
   TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,
   TF5_PHASE_RRCSETUP_COMPLETE
-} tf5_phase_t;
+} tf5_ue_phase_t;
 
 /*
  * UE-side TESLA State
@@ -157,13 +157,13 @@ typedef struct {
     uint8_t  trust_anchor_key[TF5_TESLA_KEY_LEN];  // Key used as anchor for chain verification
 
     // Buffer queue for pending TESLA verification
-    tf5_tesla_buffer_entry_t buffer_queue[TF5_TESLA_BUFFER_QUEUE_SIZE];
+    tf5_buffer_entry_t buffer_queue[TF5_TESLA_BUFFER_QUEUE_SIZE];
     uint8_t buffer_queue_count;  // Number of valid entries in queue
 
     uint16_t slots_per_frame; // Slots per frame (depends on numerology)
     bool initialized; // Initialization flag
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
-    tf5_phase_t curr_phase; // Current authentication state
+    tf5_ue_phase_t curr_phase; // Current authentication state
     uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete (used when phase == RRCSETUP_DEFERRED)
     uint64_t rp_timestamp_window_ms;     // Timestamp window for signature replay protection (default 60000ms)
 
@@ -189,12 +189,12 @@ typedef struct {
  * @param slots_per_frame Number of slots per frame
  * @return 0 on success, negative on error
  */
-int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
+int tf5_gnb_init(tf5_gnb_state_t *state,
                        uint16_t t_int_ms,
                        uint8_t d,
                        uint32_t chain_len,
-                       const uint8_t private_key[TF5_GNB_SKEY_LEN],
-                       const tf5_tesla_slot_time_t *t0,
+                       const uint8_t private_key[TF5_GNB_SECRET_KEY_LEN],
+                       const tf5_slot_time_t *t0,
                        uint16_t slots_per_frame);
 
 /**
@@ -202,7 +202,7 @@ int tf5_tesla_gnb_init(tf5_gnb_state_t *state,
  *
  * @param state         Pointer to gNB TESLA state structure
  */
-void tf5_tesla_gnb_free(tf5_gnb_state_t *state);
+void tf5_gnb_free(tf5_gnb_state_t *state);
 
 /**
  * Build MAC authentication input buffer
@@ -220,7 +220,7 @@ void tf5_tesla_gnb_free(tf5_gnb_state_t *state);
  * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_build_mac_auth_input(uint8_t *out,
+int tf5_build_mac_auth_input(uint8_t *out,
                                    size_t *out_len,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
@@ -244,7 +244,7 @@ int tf5_tesla_build_mac_auth_input(uint8_t *out,
  * @param timestamp_ms  Wall-clock timestamp LSB (ms since Unix epoch) for replay protection (24-bit)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_build_sig_auth_input(uint8_t *out,
+int tf5_build_sig_auth_input(uint8_t *out,
                                    size_t *out_len,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
@@ -268,7 +268,7 @@ int tf5_tesla_build_sig_auth_input(uint8_t *out,
  * @param ext           Output: complete TESLA extension
  * @return 0 on success, negative on error
  */
-int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
+int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                     uint16_t sfn,
                                     uint16_t slot,
                                     const uint8_t *original_sib1,
@@ -283,7 +283,7 @@ int tf5_tesla_gnb_prepare_extension(tf5_gnb_state_t *state,
  * @param buf_len       Size of output buffer
  * @return Number of bytes written, or negative on error
  */
-int tf5_tesla_pack_extension(const tf5_extension_t *ext,
+int tf5_pack_extension(const tf5_extension_t *ext,
                              uint8_t *buf,
                              size_t buf_len);
 
@@ -303,7 +303,7 @@ int tf5_tesla_pack_extension(const tf5_extension_t *ext,
  * @param rp_timestamp_window_ms Timestamp window for signature replay protection (ms)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_ue_init(tf5_ue_state_t *state,
+int tf5_ue_init(tf5_ue_state_t *state,
                       const uint8_t mpk[TF5_MPK_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us,
@@ -314,7 +314,7 @@ int tf5_tesla_ue_init(tf5_ue_state_t *state,
  *
  * @param state         Pointer to UE TESLA state structure
  */
-void tf5_tesla_ue_free(tf5_ue_state_t *state);
+void tf5_ue_free(tf5_ue_state_t *state);
 
 /**
  * Unpack TESLA extension from binary format
@@ -324,7 +324,7 @@ void tf5_tesla_ue_free(tf5_ue_state_t *state);
  * @param ext           Output: unpacked TESLA extension
  * @return 0 on success, negative on error
  */
-int tf5_tesla_unpack_extension(const uint8_t *buf,
+int tf5_unpack_extension(const uint8_t *buf,
                                size_t buf_len,
                                tf5_extension_t *ext);
 
@@ -348,7 +348,7 @@ int tf5_tesla_unpack_extension(const uint8_t *buf,
  * @param rx_slot       Slot when packet was received
  * @return true if packet is safe, false otherwise
  */
-bool tf5_tesla_ue_safe_packet_test(tf5_ue_state_t *ue_state,
+bool tf5_ue_safe_packet_test(tf5_ue_state_t *ue_state,
                                    const tf5_extension_t *tf5_ext,
                                    uint16_t rx_sfn,
                                    uint16_t rx_slot);
@@ -367,7 +367,7 @@ bool tf5_tesla_ue_safe_packet_test(tf5_ue_state_t *ue_state,
  * @param triggered_rrc_setup True if this SIB1 triggered the current RRC session
  * @return 0 on success, negative on error
  */
-int tf5_tesla_ue_buffer_sib1(tf5_ue_state_t *state,
+int tf5_ue_buffer_msg(tf5_ue_state_t *state,
                              const uint8_t *auth_input,
                              size_t auth_input_len,
                              uint32_t interval_index,
@@ -384,7 +384,7 @@ int tf5_tesla_ue_buffer_sib1(tf5_ue_state_t *state,
  * @param disclosed_key_interval     Index of disclosed key
  * @return true if key is valid, false otherwise
  */
-bool tf5_tesla_ue_verify_key_chain(tf5_ue_state_t *ue_state,
+bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
                                    const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
                                    uint32_t disclosed_key_interval);
 
@@ -393,7 +393,7 @@ bool tf5_tesla_ue_verify_key_chain(tf5_ue_state_t *ue_state,
  *
  * Per RFC 4082 Section 3.5: Key verification (step 3) must be done BEFORE
  * packet buffering. This function handles message verification (step 4) using
- * a key that has already been verified by tf5_tesla_ue_verify_key_chain.
+ * a key that has already been verified by tf5_ue_verify_key_disclosure.
  *
  * @param ue_state              Pointer to UE TESLA state structure
  * @param key_disclosure          Key that has been verified via key chain
@@ -404,7 +404,7 @@ bool tf5_tesla_ue_verify_key_chain(tf5_ue_state_t *ue_state,
  *         -1: Invalid parameters
  *         -2: No buffered entries to verify
  */
-int tf5_tesla_ue_verify_buffered_with_key_disclosure(tf5_ue_state_t *ue_state,
+int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
                                                      const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
                                                      uint32_t key_disclosure_interval,
                                                      bool *rrc_trigger_verified);
@@ -428,8 +428,8 @@ int tf5_tesla_ue_verify_buffered_with_key_disclosure(tf5_ue_state_t *ue_state,
  *         -2: File read error or wrong size
  *         -3: Invalid key format
  */
-int tf5_tesla_load_privkey(const char *filepath,
-                           uint8_t privkey_out[TF5_GNB_SKEY_LEN],
+int tf5_load_gnb_privkey(const char *filepath,
+                           uint8_t privkey_out[TF5_GNB_SECRET_KEY_LEN],
                            uint32_t *validity_out);
 
 /**
@@ -442,7 +442,7 @@ int tf5_tesla_load_privkey(const char *filepath,
  *         -2: File read error or wrong size
  *         -3: Invalid key format
  */
-int tf5_tesla_load_pubkey(const char *filepath,
+int tf5_load_gnb_pubkey(const char *filepath,
                           uint8_t pubkey_out[TF5_MPK_LEN]);
 
 /*
@@ -461,7 +461,7 @@ int tf5_tesla_load_pubkey(const char *filepath,
  * @param key_in        Input TESLA key K_i (16 bytes)
  * @param mac_key_out   Output MAC key K'_i (32 bytes)
  */
-void tf5_tesla_derive_mac_key(const uint8_t key_in[TF5_TESLA_KEY_LEN],
+void tf5_derive_mac_key(const uint8_t key_in[TF5_TESLA_KEY_LEN],
                               uint8_t mac_key_out[32]);
 
 /**
@@ -474,7 +474,7 @@ void tf5_tesla_derive_mac_key(const uint8_t key_in[TF5_TESLA_KEY_LEN],
  * @param key_next      Input key K_{i+1} (16 bytes)
  * @param key_out       Output key K_i (16 bytes)
  */
-void tf5_tesla_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
+void tf5_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
                          uint8_t key_out[TF5_TESLA_KEY_LEN]);
 
 /**
@@ -488,7 +488,7 @@ void tf5_tesla_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
  * @param tag_out       Output tag (16 bytes)
  * @return 0 on success, negative on error
  */
-int tf5_tesla_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
+int tf5_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
                           const uint8_t *auth_input,
                           size_t auth_input_len,
                           uint8_t tag_out[TF5_TESLA_TAG_LEN]);
@@ -502,7 +502,7 @@ int tf5_tesla_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
  * @param slots_per_frame Number of slots per frame
  * @return Absolute slot count since SFN=0, slot=0
  */
-static inline uint64_t tf5_tesla_absolute_slots(const tf5_tesla_slot_time_t *time,
+static inline uint64_t tf5_absolute_slots(const tf5_slot_time_t *time,
                                                  uint16_t slots_per_frame)
 {
     // Total slots = SFN * slots_per_frame + slot
@@ -510,24 +510,24 @@ static inline uint64_t tf5_tesla_absolute_slots(const tf5_tesla_slot_time_t *tim
 }
 
 /**
- * Alias for tf5_tesla_absolute_slots (consistency with inverse function name)
+ * Alias for tf5_absolute_slots (consistency with inverse function name)
  */
-static inline uint64_t tf5_slot_time_to_slots(const tf5_tesla_slot_time_t *time,
+static inline uint64_t tf5_slot_time_to_slots(const tf5_slot_time_t *time,
                                                uint16_t slots_per_frame)
 {
-    return tf5_tesla_absolute_slots(time, slots_per_frame);
+    return tf5_absolute_slots(time, slots_per_frame);
 }
 
 /**
  * Convert absolute slot count back to timing struct
  *
- * Inverse of tf5_tesla_absolute_slots / tf5_slot_time_to_slots.
+ * Inverse of tf5_absolute_slots / tf5_slot_time_to_slots.
  *
  * @param abs_slots      Absolute slot count
  * @param slots_per_frame Number of slots per frame
  * @return Timing struct (SFN/slot)
  */
-static inline tf5_tesla_slot_time_t tf5_slots_to_slot_time(uint64_t abs_slots,
+static inline tf5_slot_time_t tf5_slots_to_slot_time(uint64_t abs_slots,
                                                             uint16_t slots_per_frame)
 {
     // abs_slots = sfn * slots_per_frame + slot
@@ -608,40 +608,6 @@ static inline void tf5_encode_gnb_key_validity_end(uint8_t *buf, uint32_t gnb_ke
 static inline uint32_t tf5_decode_gnb_key_validity_end(const uint8_t *buf) {
     return ((uint32_t)buf[0] << 16) | ((uint32_t)buf[1] << 8) | buf[2];
 }
-
-/*
- * =============================================================================
- * Validity Period Conversion Utilities
- * =============================================================================
- */
-
-/* Only define these inline functions if tf5_ibs_pkg.h wasn't already included */
-#ifndef TF5_IBS_PKG_H
-
-/**
- * Convert Unix timestamp to gnb_key_validity_end format
- *
- * @param unix_sec  Unix timestamp (seconds since 1970-01-01)
- * @return Minutes since 2024-01-01 00:00:00 UTC (24-bit value)
- */
-static inline uint32_t tf5_ibs_unix_to_gnb_key_validity(uint64_t unix_sec) {
-    if (unix_sec <= TF5_IBS_VALIDITY_EPOCH) {
-        return 0;
-    }
-    return (uint32_t)((unix_sec - TF5_IBS_VALIDITY_EPOCH) / 60);
-}
-
-/**
- * Convert gnb_key_validity_end format to Unix timestamp
- *
- * @param gnb_key_validity_end  Minutes since 2024-01-01 00:00:00 UTC
- * @return Unix timestamp (seconds since 1970-01-01)
- */
-static inline uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end) {
-    return TF5_IBS_VALIDITY_EPOCH + (uint64_t)gnb_key_validity_end * 60;
-}
-
-#endif /* TF5_IBS_PKG_H */
 
 /*
  * =============================================================================

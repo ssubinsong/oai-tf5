@@ -103,7 +103,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
  */
 static void format_gnb_key_validity_time(uint32_t gnb_key_validity_end, char *buf, size_t buf_len)
 {
-    time_t unix_time = (time_t)tf5_ibs_gnb_key_validity_to_unix(gnb_key_validity_end);
+    time_t unix_time = (time_t)tf5_gnb_key_validity_to_unix(gnb_key_validity_end);
     struct tm *tm = gmtime(&unix_time);
     strftime(buf, buf_len, "%Y-%m-%d %H:%M UTC", tm);
 }

@@ -205,7 +205,7 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
  * @param unix_sec  Unix timestamp (seconds since 1970-01-01)
  * @return Minutes since 2024-01-01 00:00:00 UTC (24-bit value)
  */
-static inline uint32_t tf5_ibs_unix_to_gnb_key_validity(uint64_t unix_sec)
+static inline uint32_t tf5_unix_to_gnb_key_validity(uint64_t unix_sec)
 {
     if (unix_sec <= TF5_VALIDITY_EPOCH) {
         return 0;
@@ -219,7 +219,7 @@ static inline uint32_t tf5_ibs_unix_to_gnb_key_validity(uint64_t unix_sec)
  * @param gnb_key_validity_end  Minutes since 2024-01-01 00:00:00 UTC
  * @return Unix timestamp (seconds since 1970-01-01)
  */
-static inline uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end)
+static inline uint64_t tf5_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end)
 {
     return TF5_VALIDITY_EPOCH + (uint64_t)gnb_key_validity_end * 60;
 }

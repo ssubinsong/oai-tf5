@@ -4404,7 +4404,7 @@ void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot
 
   // Prepare TESLA extension for current frame/slot
   tf5_extension_t ext;
-  int rc = tf5_tesla_gnb_prepare_extension(cc->tf5_state,
+  int rc = tf5_gnb_prepare_extension(cc->tf5_state,
                                            frame, slot,
                                            cc->sib1_original,
                                            cc->sib1_original_length,
@@ -4413,7 +4413,7 @@ void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot
 
   // Pack TESLA extension into binary
   uint8_t ext_buf[256];
-  int ext_len = tf5_tesla_pack_extension(&ext, ext_buf, sizeof(ext_buf));
+  int ext_len = tf5_pack_extension(&ext, ext_buf, sizeof(ext_buf));
   AssertFatal(ext_len >= 0, "TESLA: Failed to pack extension\n");
 
   // Set lateNonCriticalExtension

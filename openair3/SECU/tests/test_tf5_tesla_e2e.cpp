@@ -33,8 +33,8 @@ class TF5E2ETest : public ::testing::Test {
 protected:
     // gNB state
     tf5_gnb_state_t gnb_state;
-    uint8_t gnb_private_key[TF5_GNB_SKEY_LEN];
-    uint8_t gnb_public_key[TF5_BLS_PUBKEY_LEN];
+    uint8_t gnb_private_key[TF5_GNB_SECRET_KEY_LEN];
+    uint8_t gnb_public_key[TF5_GNB_PUBKEY_LEN];
 
     // UE state
     tf5_ue_state_t ue_state;
@@ -43,14 +43,14 @@ protected:
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
 
     // T_0 timing
-    tf5_tesla_slot_time_t t0;
+    tf5_slot_time_t t0;
 
     static bool bls_initialized;
 
     void SetUp() override {
         // Initialize BLS library once
         if (!bls_initialized) {
-            tf5_tesla_bls_init();
+            tf5_bls_init();
             bls_initialized = true;
         }
 
@@ -59,8 +59,8 @@ protected:
         memset(&ue_state, 0, sizeof(ue_state));
 
         // Generate gNB key pair
-        memcpy(gnb_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SKEY_LEN);
-        tf5_tesla_bls_derive_public(gnb_private_key, gnb_public_key);
+        memcpy(gnb_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SECRET_KEY_LEN);
+        tf5_bls_derive_pubkey(gnb_private_key, gnb_public_key);
 
         // Set cell ID
         memcpy(cell_id, tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN);
@@ -70,13 +70,13 @@ protected:
     }
 
     void TearDown() override {
-        tf5_tesla_gnb_free(&gnb_state);
-        tf5_tesla_ue_free(&ue_state);
+        tf5_gnb_free(&gnb_state);
+        tf5_ue_free(&ue_state);
     }
 
     // Initialize gNB with test parameters
     int initGnb(uint32_t chain_len = 100) {
-        return tf5_tesla_gnb_init(
+        return tf5_gnb_init(
             &gnb_state,
             tf5_test::TV_EXT_T_INT_MS,   // t_int_ms = 20
             tf5_test::TV_EXT_D,          // d = 1
@@ -89,7 +89,7 @@ protected:
 
     // Initialize UE with test parameters
     int initUe() {
-        return tf5_tesla_ue_init(
+        return tf5_ue_init(
             &ue_state,
             gnb_public_key,  // Use gNB's public key as MPK for testing
             tf5_test::TV_SLOTS_PER_FRAME,
@@ -103,17 +103,17 @@ protected:
                           const uint8_t* sib1, size_t sib1_len,
                           tf5_extension_t* ext,
                           uint8_t* packed, size_t packed_len) {
-        int ret = tf5_tesla_gnb_prepare_extension(&gnb_state, sfn, slot, sib1, sib1_len, ext);
+        int ret = tf5_gnb_prepare_extension(&gnb_state, sfn, slot, sib1, sib1_len, ext);
         if (ret != 0) return ret;
 
-        ret = tf5_tesla_pack_extension(ext, packed, packed_len);
+        ret = tf5_pack_extension(ext, packed, packed_len);
         return ret;
     }
 
     // Simulate UE receive and unpack
     int ueReceiveAndUnpack(const uint8_t* packed, size_t packed_len,
                            tf5_extension_t* ext) {
-        return tf5_tesla_unpack_extension(packed, packed_len, ext);
+        return tf5_unpack_extension(packed, packed_len, ext);
     }
 
     // Setup UE with TESLA params and bootstrap anchor
@@ -163,16 +163,16 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     // UE: Build MAC auth input and buffer
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_input_len;
-    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
+    tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    ret = tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, rx_ext.i, rx_ext.tesla_tag, false);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    ret = tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, rx_ext.i, rx_ext.tesla_tag, false);
     ASSERT_EQ(0, ret);
 
     // UE: Verify key chain (disclosed key K_{i-d} chains to anchor)
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, rx_ext.key_disclosure, rx_ext.i - 1);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, rx_ext.key_disclosure, rx_ext.i - 1);
     EXPECT_TRUE(key_valid) << "Disclosed key should chain to trust anchor";
 
     // UE: Verify buffered SIB1 using disclosed key
@@ -185,10 +185,10 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
 
     // For this test, let's verify using the key for the buffered interval directly
     // First verify key chain
-    key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(rx_ext.i)], rx_ext.i);
+    key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(rx_ext.i)], rx_ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
-    ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(rx_ext.i)],
+    ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(rx_ext.i)],
                                                             rx_ext.i, &rrc_trigger);
 
     EXPECT_EQ(0, ret) << "Buffered SIB1 verification should succeed";
@@ -218,18 +218,18 @@ TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
     uint8_t mac_auth5[TF5_MAX_AUTH_INPUT], mac_auth6[TF5_MAX_AUTH_INPUT];
     size_t mac_auth5_len, mac_auth6_len;
 
-    tf5_tesla_build_mac_auth_input(mac_auth5, &mac_auth5_len,
+    tf5_build_mac_auth_input(mac_auth5, &mac_auth5_len,
                                    (const uint8_t*)sib1_5, strlen(sib1_5),
                                    gnb_state.key_validity_end);
-    tf5_tesla_build_mac_auth_input(mac_auth6, &mac_auth6_len,
+    tf5_build_mac_auth_input(mac_auth6, &mac_auth6_len,
                                    (const uint8_t*)sib1_6, strlen(sib1_6),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time5 = tf5_slot_time_make(10, 0);
-    tf5_tesla_slot_time_t rx_time6 = tf5_slot_time_make(12, 0);
+    tf5_slot_time_t rx_time5 = tf5_slot_time_make(10, 0);
+    tf5_slot_time_t rx_time6 = tf5_slot_time_make(12, 0);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth5, mac_auth5_len, ext5.i, ext5.tesla_tag, false);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth6, mac_auth6_len, ext6.i, ext6.tesla_tag, false);
+    tf5_ue_buffer_msg(&ue_state, mac_auth5, mac_auth5_len, ext5.i, ext5.tesla_tag, false);
+    tf5_ue_buffer_msg(&ue_state, mac_auth6, mac_auth6_len, ext6.i, ext6.tesla_tag, false);
 
     EXPECT_EQ(2, ue_state.buffer_queue_count);
 
@@ -237,10 +237,10 @@ TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
     bool rrc_trigger = false;
 
     // First verify key chain
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)], 7);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)], 7);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)],
                                                                 7, &rrc_trigger);
 
     EXPECT_EQ(0, ret) << "Key recovery verification should succeed";
@@ -298,7 +298,7 @@ TEST_F(TF5E2ETest, E2E_TamperedTag_Rejected) {
     // Build MAC auth input
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
-    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
@@ -308,15 +308,15 @@ TEST_F(TF5E2ETest, E2E_TamperedTag_Rejected) {
     tampered_tag[0] ^= 0xFF;  // Flip bits
 
     // Buffer with tampered tag
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag, false);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag, false);
 
     // Try to verify - first verify key chain
     bool rrc_trigger = false;
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify (key is valid, tag is tampered)";
 
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                                 ext.i, &rrc_trigger);
 
     EXPECT_LT(ret, 0) << "Verification should fail with tampered tag";
@@ -340,22 +340,22 @@ TEST_F(TF5E2ETest, E2E_TamperedSib1_Rejected) {
     const char tampered_sib1[] = "TAMPERED SIB1 content";
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
-    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)tampered_sib1, strlen(tampered_sib1),
                                    gnb_state.key_validity_end);
 
     // Buffer with original tag but tampered content
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
 
     // Try to verify - should fail because MAC auth input doesn't match tag
     bool rrc_trigger = false;
 
     // First verify key chain
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify (key is valid, content is tampered)";
 
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                                 ext.i, &rrc_trigger);
 
     EXPECT_LT(ret, 0) << "Verification should fail with tampered SIB1";
@@ -378,18 +378,18 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
     // Build correct MAC auth input
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
-    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
 
     // Try to verify with WRONG key
     uint8_t wrong_key[TF5_TESLA_KEY_LEN] = {0xba, 0xad, 0xf0, 0x0d};
 
     // Key chain verification should fail with wrong key
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, wrong_key, ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, wrong_key, ext.i);
     EXPECT_FALSE(key_valid) << "Key chain should fail with wrong key";
 }
 
@@ -418,12 +418,12 @@ TEST_F(TF5E2ETest, E2E_MissedDisclosure_KeyRecovery) {
     // Buffer SIB1 from interval 5
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
-    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1_5, strlen(sib1_5),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext5.i, ext5.tesla_tag, false);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext5.i, ext5.tesla_tag, false);
 
     // Simulate missing disclosures for intervals 6, 7
     // Now receive at interval 8 with K_7 disclosed (since d=1)
@@ -432,10 +432,10 @@ TEST_F(TF5E2ETest, E2E_MissedDisclosure_KeyRecovery) {
     bool rrc_trigger = false;
 
     // First verify key chain
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(8)], 8);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(8)], 8);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(8)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(8)],
                                                                 8, &rrc_trigger);
 
     EXPECT_EQ(0, ret) << "Key recovery should succeed";
@@ -453,15 +453,15 @@ TEST_F(TF5E2ETest, E2E_PackUnpack_PreservesAllFields) {
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     // gNB prepares extension
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1, strlen(sib1), &original);
+    tf5_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1, strlen(sib1), &original);
 
     // Pack
-    int pack_ret = tf5_tesla_pack_extension(&original, packed, sizeof(packed));
+    int pack_ret = tf5_pack_extension(&original, packed, sizeof(packed));
     ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, pack_ret);
 
     // Unpack
     tf5_extension_t unpacked;
-    int unpack_ret = tf5_tesla_unpack_extension(packed, TF5_EXTENSION_PACKED_SIZE, &unpacked);
+    int unpack_ret = tf5_unpack_extension(packed, TF5_EXTENSION_PACKED_SIZE, &unpacked);
     ASSERT_EQ(0, unpack_ret);
 
     // Verify all fields match
@@ -490,7 +490,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
 
     // Set key validity to 1 year from now
     uint64_t now_unix = (uint64_t)time(NULL);
-    gnb_state.key_validity_end = tf5_ibs_unix_to_gnb_key_validity(now_unix + 365 * 86400);
+    gnb_state.key_validity_end = tf5_unix_to_gnb_key_validity(now_unix + 365 * 86400);
 
     const char sib1[] = "SIB1 content";
     tf5_extension_t ext;
@@ -499,7 +499,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
 
     // Verify the validity_end is in the future
-    uint64_t validity_unix = tf5_ibs_gnb_key_validity_to_unix(ext.validity_end);
+    uint64_t validity_unix = tf5_gnb_key_validity_to_unix(ext.validity_end);
 
     EXPECT_GT(validity_unix, now_unix) << "Key validity should be in the future";
 
@@ -508,20 +508,20 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
 
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
-    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
 
     bool rrc_trigger = false;
 
     // First verify key chain
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                                 ext.i, &rrc_trigger);
 
     EXPECT_EQ(0, ret) << "Valid key should pass verification";
@@ -533,7 +533,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ApplicationLevelExpirationCheck) {
 
     // Set key validity to 1 year from now
     uint64_t now_unix = (uint64_t)time(NULL);
-    gnb_state.key_validity_end = tf5_ibs_unix_to_gnb_key_validity(now_unix + 365 * 86400);
+    gnb_state.key_validity_end = tf5_unix_to_gnb_key_validity(now_unix + 365 * 86400);
 
     const char sib1[] = "SIB1 content";
     tf5_extension_t ext;
@@ -542,7 +542,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ApplicationLevelExpirationCheck) {
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
 
     // Simulate application-level expiration check
-    uint64_t validity_unix = tf5_ibs_gnb_key_validity_to_unix(ext.validity_end);
+    uint64_t validity_unix = tf5_gnb_key_validity_to_unix(ext.validity_end);
 
     // Check: is key expired?
     bool key_expired = (now_unix > validity_unix);
@@ -550,8 +550,8 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ApplicationLevelExpirationCheck) {
 
     // Simulate checking an expired key
     // Create a validity that's already expired
-    uint32_t expired_validity = tf5_ibs_unix_to_gnb_key_validity(now_unix - 3600);  // 1 hour ago
-    uint64_t expired_validity_unix = tf5_ibs_gnb_key_validity_to_unix(expired_validity);
+    uint32_t expired_validity = tf5_unix_to_gnb_key_validity(now_unix - 3600);  // 1 hour ago
+    uint64_t expired_validity_unix = tf5_gnb_key_validity_to_unix(expired_validity);
 
     bool expired_key = (now_unix > expired_validity_unix);
     EXPECT_TRUE(expired_key) << "Key with past validity should be detected as expired";
@@ -561,8 +561,8 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ConversionRoundTrip) {
     // Test validity conversion utilities
     uint64_t original_unix = (uint64_t)time(NULL) + 86400 * 30;  // 30 days from now
 
-    uint32_t validity = tf5_ibs_unix_to_gnb_key_validity(original_unix);
-    uint64_t recovered_unix = tf5_ibs_gnb_key_validity_to_unix(validity);
+    uint32_t validity = tf5_unix_to_gnb_key_validity(original_unix);
+    uint64_t recovered_unix = tf5_gnb_key_validity_to_unix(validity);
 
     // Should be within 60 seconds (1 minute resolution)
     EXPECT_LE(llabs((long long)(original_unix - recovered_unix)), 60)
@@ -588,12 +588,12 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
     // Buffer SIB1 with RRC trigger flag
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
-    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, true);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, true);
 
     // Simulate RRC state transitions
     ue_state.curr_phase = TF5_PHASE_BUFFERED;
@@ -609,10 +609,10 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
     bool rrc_trigger_verified = false;
 
     // First verify key chain
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                                 ext.i, &rrc_trigger_verified);
 
     EXPECT_EQ(0, ret) << "Verification should succeed";
@@ -638,7 +638,7 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
     // Buffer SIB1 with TAMPERED tag (simulating attack)
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
-    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
@@ -646,8 +646,8 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
     memcpy(tampered_tag, ext.tesla_tag, TF5_TESLA_TAG_LEN);
     tampered_tag[0] ^= 0xFF;  // Tamper!
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag, true);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag, true);
 
     // Simulate state transitions
     ue_state.curr_phase = TF5_PHASE_BUFFERED;
@@ -658,10 +658,10 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
     bool rrc_trigger_verified = false;
 
     // First verify key chain (should succeed, key is valid)
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify (key is valid, tag is tampered)";
 
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                                 ext.i, &rrc_trigger_verified);
 
     EXPECT_LT(ret, 0) << "Verification should fail with tampered tag";
@@ -688,12 +688,12 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     // Buffer SIB1 (RACH has started)
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
-    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, true);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, true);
     ue_state.curr_phase = TF5_PHASE_BUFFERED;
 
     // At this point:
@@ -714,10 +714,10 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     bool rrc_trigger_verified = false;
 
     // First verify key chain
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
-    tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
+    tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                       ext.i, &rrc_trigger_verified);
 
     ue_state.curr_phase = TF5_AUTH_STATE_AUTH_SUCCESS;
@@ -743,21 +743,21 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
     // Buffer SIB1 WITHOUT RRC trigger flag
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
-    tf5_tesla_build_mac_auth_input(mac_auth, &mac_auth_len,
+    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
 
     // Verify
     bool rrc_trigger_verified = false;
 
     // First verify key chain
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                                 ext.i, &rrc_trigger_verified);
 
     EXPECT_EQ(0, ret) << "Verification should succeed";

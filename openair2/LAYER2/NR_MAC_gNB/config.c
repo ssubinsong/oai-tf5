@@ -61,6 +61,7 @@
 #include "nfapi_interface.h"
 #include "nfapi_nr_interface.h"
 #include "nfapi_nr_interface_scf.h"
+#include "tf5_ibs_pkg.h"
 #include "utils.h"
 
 c16_t convert_precoder_weight(double complex c_in)
@@ -1184,7 +1185,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   extern char *tf5_privkey_file;
   extern unsigned int tf5_chain_len;
 
-  uint8_t private_key[TF5_GNB_SKEY_LEN];
+  uint8_t private_key[TF5_GNB_SECRET_KEY_LEN];
   uint32_t key_validity_end;
   int rc;
 
@@ -1196,11 +1197,11 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   }
 
   // Initialize BLS library
-  rc = tf5_tesla_bls_init();
+  rc = tf5_bls_init();
   AssertFatal(rc == 0, "TESLA IBS: Failed to initialize BLS library (rc=%d)\n", rc);
 
   // Load IBS secret key and embedded validity period (35-byte file: sk + validity)
-  rc = tf5_tesla_load_privkey(tf5_privkey_file, private_key, &key_validity_end);
+  rc = tf5_load_gnb_privkey(tf5_privkey_file, private_key, &key_validity_end);
   AssertFatal(rc == 0,
               "TESLA IBS: Failed to load sk_ID from %s (rc=%d)\n"
               "TESLA IBS: Use tf5_ibs_issue to generate key for this gNB\n",
@@ -1211,7 +1212,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
               "TESLA IBS: gnb_key_validity_end=%u exceeds max (16777215)\n", key_validity_end);
 
   // Check if key has expired
-  uint64_t expiry_unix = tf5_ibs_gnb_key_validity_to_unix(key_validity_end);
+  uint64_t expiry_unix = tf5_gnb_key_validity_to_unix(key_validity_end);
   uint64_t current_unix = tf5_rp_get_wallclock_ms() / 1000;
   AssertFatal(current_unix < expiry_unix,
               "TESLA IBS: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n"
@@ -1237,8 +1238,8 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   LOG_I(NR_MAC, "TESLA IBS: chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
 
   // Initialize TESLA with computed parameters
-  tf5_tesla_slot_time_t t0 = tf5_slot_time_make(t0_sfn, t0_slot);
-  rc = tf5_tesla_gnb_init(cc->tf5_state,
+  tf5_slot_time_t t0 = tf5_slot_time_make(t0_sfn, t0_slot);
+  rc = tf5_gnb_init(cc->tf5_state,
                           t_int_ms,    // T_int (aligned with SIB1 repetition)
                           1,           // d = 1 (disclosure delay)
                           chain_len,   // Chain length
@@ -1251,7 +1252,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   cc->tf5_state->key_validity_end = key_validity_end;
 
   // Log validity info
-  time_t expiry_time = (time_t)tf5_ibs_gnb_key_validity_to_unix(key_validity_end);
+  time_t expiry_time = (time_t)tf5_gnb_key_validity_to_unix(key_validity_end);
   struct tm *tm_expiry = gmtime(&expiry_time);
   char expiry_str[64];
   strftime(expiry_str, sizeof(expiry_str), "%Y-%m-%d %H:%M UTC", tm_expiry);

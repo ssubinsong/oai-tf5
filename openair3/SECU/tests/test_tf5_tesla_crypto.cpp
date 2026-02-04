@@ -32,14 +32,14 @@ protected:
 };
 
 // ============================================================================
-// Key Chain Function Tests (tf5_tesla_chain_key)
+// Key Chain Function Tests (tf5_chain_key)
 // ============================================================================
 
 TEST_F(TF5CryptoTest, ChainKey_BasicDerivation) {
     uint8_t key_out[TF5_TESLA_KEY_LEN];
 
     // Derive K_4 from K_5
-    tf5_tesla_chain_key(tf5_test::TV_KEY_CHAIN_K5, key_out);
+    tf5_chain_key(tf5_test::TV_KEY_CHAIN_K5, key_out);
 
     // Should produce a 16-byte output
     // Verify it's not all zeros (basic sanity check)
@@ -57,7 +57,7 @@ TEST_F(TF5CryptoTest, ChainKey_KnownVector) {
     uint8_t key_out[TF5_TESLA_KEY_LEN];
 
     // Derive K_4 from K_5
-    tf5_tesla_chain_key(tf5_test::TV_KEY_CHAIN_K5, key_out);
+    tf5_chain_key(tf5_test::TV_KEY_CHAIN_K5, key_out);
 
     // Compare with expected value
     EXPECT_EQ(0, memcmp(key_out, tf5_test::TV_KEY_CHAIN_K4_EXPECTED, TF5_TESLA_KEY_LEN))
@@ -74,7 +74,7 @@ TEST_F(TF5CryptoTest, ChainKey_ChainProperty) {
 
     // Derive K_4, K_3, K_2, K_1, K_0
     for (int i = chain_len - 1; i >= 0; i--) {
-        tf5_tesla_chain_key(keys[i + 1], keys[i]);
+        tf5_chain_key(keys[i + 1], keys[i]);
     }
 
     // Now verify: starting from K_5, applying F five times should give K_0
@@ -83,7 +83,7 @@ TEST_F(TF5CryptoTest, ChainKey_ChainProperty) {
 
     for (int i = 0; i < chain_len; i++) {
         uint8_t next[TF5_TESLA_KEY_LEN];
-        tf5_tesla_chain_key(computed, next);
+        tf5_chain_key(computed, next);
         memcpy(computed, next, TF5_TESLA_KEY_LEN);
     }
 
@@ -96,8 +96,8 @@ TEST_F(TF5CryptoTest, ChainKey_Deterministic) {
     uint8_t key_out2[TF5_TESLA_KEY_LEN];
 
     // Derive twice with same input
-    tf5_tesla_chain_key(tf5_test::TV_KEY_CHAIN_K5, key_out1);
-    tf5_tesla_chain_key(tf5_test::TV_KEY_CHAIN_K5, key_out2);
+    tf5_chain_key(tf5_test::TV_KEY_CHAIN_K5, key_out1);
+    tf5_chain_key(tf5_test::TV_KEY_CHAIN_K5, key_out2);
 
     // Outputs should be identical
     EXPECT_EQ(0, memcmp(key_out1, key_out2, TF5_TESLA_KEY_LEN))
@@ -112,21 +112,21 @@ TEST_F(TF5CryptoTest, ChainKey_DifferentInputs_DifferentOutputs) {
     uint8_t out1[TF5_TESLA_KEY_LEN];
     uint8_t out2[TF5_TESLA_KEY_LEN];
 
-    tf5_tesla_chain_key(key1, out1);
-    tf5_tesla_chain_key(key2, out2);
+    tf5_chain_key(key1, out1);
+    tf5_chain_key(key2, out2);
 
     EXPECT_NE(0, memcmp(out1, out2, TF5_TESLA_KEY_LEN))
         << "Different inputs should produce different outputs";
 }
 
 // ============================================================================
-// MAC Key Derivation Tests (tf5_tesla_derive_mac_key)
+// MAC Key Derivation Tests (tf5_derive_mac_key)
 // ============================================================================
 
 TEST_F(TF5CryptoTest, DeriveMacKey_BasicDerivation) {
     uint8_t mac_key_out[32];
 
-    tf5_tesla_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key_out);
+    tf5_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key_out);
 
     // Should produce a 32-byte output (full SHA-256)
     bool all_zeros = true;
@@ -142,7 +142,7 @@ TEST_F(TF5CryptoTest, DeriveMacKey_BasicDerivation) {
 TEST_F(TF5CryptoTest, DeriveMacKey_KnownVector) {
     uint8_t mac_key_out[32];
 
-    tf5_tesla_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key_out);
+    tf5_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key_out);
 
     EXPECT_EQ(0, memcmp(mac_key_out, tf5_test::TV_MAC_KEY_OUTPUT_EXPECTED, 32))
         << "MAC key derivation does not match expected value";
@@ -152,8 +152,8 @@ TEST_F(TF5CryptoTest, DeriveMacKey_Deterministic) {
     uint8_t mac_key1[32];
     uint8_t mac_key2[32];
 
-    tf5_tesla_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key1);
-    tf5_tesla_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key2);
+    tf5_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key1);
+    tf5_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key2);
 
     EXPECT_EQ(0, memcmp(mac_key1, mac_key2, 32))
         << "MAC key derivation should be deterministic";
@@ -165,8 +165,8 @@ TEST_F(TF5CryptoTest, DeriveMacKey_DomainSeparation) {
     uint8_t chain_key_out[TF5_TESLA_KEY_LEN];
     uint8_t mac_key_out[32];
 
-    tf5_tesla_chain_key(tf5_test::TV_MAC_KEY_INPUT, chain_key_out);
-    tf5_tesla_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key_out);
+    tf5_chain_key(tf5_test::TV_MAC_KEY_INPUT, chain_key_out);
+    tf5_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key_out);
 
     // First 16 bytes of MAC key should be different from chain key
     EXPECT_NE(0, memcmp(chain_key_out, mac_key_out, TF5_TESLA_KEY_LEN))
@@ -174,13 +174,13 @@ TEST_F(TF5CryptoTest, DeriveMacKey_DomainSeparation) {
 }
 
 // ============================================================================
-// Tag Computation Tests (tf5_tesla_compute_tag)
+// Tag Computation Tests (tf5_compute_tag)
 // ============================================================================
 
 TEST_F(TF5CryptoTest, ComputeTag_BasicComputation) {
     uint8_t tag_out[TF5_TESLA_TAG_LEN];
 
-    int ret = tf5_tesla_compute_tag(
+    int ret = tf5_compute_tag(
         tf5_test::TV_TAG_KEY,
         (const uint8_t*)tf5_test::TV_TAG_MESSAGE,
         tf5_test::TV_TAG_MESSAGE_LEN,
@@ -204,14 +204,14 @@ TEST_F(TF5CryptoTest, ComputeTag_Deterministic) {
     uint8_t tag1[TF5_TESLA_TAG_LEN];
     uint8_t tag2[TF5_TESLA_TAG_LEN];
 
-    tf5_tesla_compute_tag(
+    tf5_compute_tag(
         tf5_test::TV_TAG_KEY,
         (const uint8_t*)tf5_test::TV_TAG_MESSAGE,
         tf5_test::TV_TAG_MESSAGE_LEN,
         tag1
     );
 
-    tf5_tesla_compute_tag(
+    tf5_compute_tag(
         tf5_test::TV_TAG_KEY,
         (const uint8_t*)tf5_test::TV_TAG_MESSAGE,
         tf5_test::TV_TAG_MESSAGE_LEN,
@@ -230,9 +230,9 @@ TEST_F(TF5CryptoTest, ComputeTag_DifferentKeys_DifferentTags) {
     uint8_t tag1[TF5_TESLA_TAG_LEN];
     uint8_t tag2[TF5_TESLA_TAG_LEN];
 
-    tf5_tesla_compute_tag(key1, (const uint8_t*)tf5_test::TV_TAG_MESSAGE,
+    tf5_compute_tag(key1, (const uint8_t*)tf5_test::TV_TAG_MESSAGE,
                           tf5_test::TV_TAG_MESSAGE_LEN, tag1);
-    tf5_tesla_compute_tag(key2, (const uint8_t*)tf5_test::TV_TAG_MESSAGE,
+    tf5_compute_tag(key2, (const uint8_t*)tf5_test::TV_TAG_MESSAGE,
                           tf5_test::TV_TAG_MESSAGE_LEN, tag2);
 
     EXPECT_NE(0, memcmp(tag1, tag2, TF5_TESLA_TAG_LEN))
@@ -245,8 +245,8 @@ TEST_F(TF5CryptoTest, ComputeTag_DifferentData_DifferentTags) {
     uint8_t tag1[TF5_TESLA_TAG_LEN];
     uint8_t tag2[TF5_TESLA_TAG_LEN];
 
-    tf5_tesla_compute_tag(tf5_test::TV_TAG_KEY, (const uint8_t*)msg1, strlen(msg1), tag1);
-    tf5_tesla_compute_tag(tf5_test::TV_TAG_KEY, (const uint8_t*)msg2, strlen(msg2), tag2);
+    tf5_compute_tag(tf5_test::TV_TAG_KEY, (const uint8_t*)msg1, strlen(msg1), tag1);
+    tf5_compute_tag(tf5_test::TV_TAG_KEY, (const uint8_t*)msg2, strlen(msg2), tag2);
 
     EXPECT_NE(0, memcmp(tag1, tag2, TF5_TESLA_TAG_LEN))
         << "Different data should produce different tags";
@@ -256,7 +256,7 @@ TEST_F(TF5CryptoTest, ComputeTag_NullKey_ReturnsError) {
     uint8_t tag_out[TF5_TESLA_TAG_LEN];
     const char msg[] = "test";
 
-    int ret = tf5_tesla_compute_tag(nullptr, (const uint8_t*)msg, strlen(msg), tag_out);
+    int ret = tf5_compute_tag(nullptr, (const uint8_t*)msg, strlen(msg), tag_out);
 
     EXPECT_LT(ret, 0) << "Null key should return error";
 }
@@ -264,7 +264,7 @@ TEST_F(TF5CryptoTest, ComputeTag_NullKey_ReturnsError) {
 TEST_F(TF5CryptoTest, ComputeTag_NullData_ReturnsError) {
     uint8_t tag_out[TF5_TESLA_TAG_LEN];
 
-    int ret = tf5_tesla_compute_tag(tf5_test::TV_TAG_KEY, nullptr, 10, tag_out);
+    int ret = tf5_compute_tag(tf5_test::TV_TAG_KEY, nullptr, 10, tag_out);
 
     EXPECT_LT(ret, 0) << "Null data should return error";
 }
@@ -272,7 +272,7 @@ TEST_F(TF5CryptoTest, ComputeTag_NullData_ReturnsError) {
 TEST_F(TF5CryptoTest, ComputeTag_NullOutput_ReturnsError) {
     const char msg[] = "test";
 
-    int ret = tf5_tesla_compute_tag(tf5_test::TV_TAG_KEY, (const uint8_t*)msg, strlen(msg), nullptr);
+    int ret = tf5_compute_tag(tf5_test::TV_TAG_KEY, (const uint8_t*)msg, strlen(msg), nullptr);
 
     EXPECT_LT(ret, 0) << "Null output buffer should return error";
 }
@@ -281,7 +281,7 @@ TEST_F(TF5CryptoTest, ComputeTag_ZeroLength_ReturnsError) {
     uint8_t tag_out[TF5_TESLA_TAG_LEN];
     const char msg[] = "test";
 
-    int ret = tf5_tesla_compute_tag(tf5_test::TV_TAG_KEY, (const uint8_t*)msg, 0, tag_out);
+    int ret = tf5_compute_tag(tf5_test::TV_TAG_KEY, (const uint8_t*)msg, 0, tag_out);
 
     EXPECT_LT(ret, 0) << "Zero-length data should return error";
 }
@@ -380,7 +380,7 @@ TEST_F(TF5CryptoTest, Sha256_DifferentInputs) {
 }
 
 // ============================================================================
-// Build MAC Auth Input Tests (tf5_tesla_build_mac_auth_input)
+// Build MAC Auth Input Tests (tf5_build_mac_auth_input)
 // ============================================================================
 
 TEST_F(TF5CryptoTest, BuildMacAuthInput_Success) {
@@ -389,7 +389,7 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_Success) {
     const uint8_t sib1[] = {0x01, 0x02, 0x03, 0x04, 0x05};
     uint32_t validity_end = 525600;  // 1 year
 
-    int ret = tf5_tesla_build_mac_auth_input(out, &out_len, sib1, sizeof(sib1), validity_end);
+    int ret = tf5_build_mac_auth_input(out, &out_len, sib1, sizeof(sib1), validity_end);
 
     EXPECT_EQ(0, ret) << "Building MAC auth input should succeed";
     EXPECT_EQ(sizeof(sib1) + 3, out_len) << "Output length should be sib1_len + 3 (validity)";
@@ -401,7 +401,7 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_Layout) {
     const uint8_t sib1[] = {0xAA, 0xBB, 0xCC};
     uint32_t validity_end = 0x123456;
 
-    tf5_tesla_build_mac_auth_input(out, &out_len, sib1, sizeof(sib1), validity_end);
+    tf5_build_mac_auth_input(out, &out_len, sib1, sizeof(sib1), validity_end);
 
     // Verify SIB1 is at the beginning
     EXPECT_EQ(0xAA, out[0]);
@@ -418,7 +418,7 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_NullOut) {
     size_t out_len;
     const uint8_t sib1[] = {0x01, 0x02};
 
-    int ret = tf5_tesla_build_mac_auth_input(nullptr, &out_len, sib1, sizeof(sib1), 0);
+    int ret = tf5_build_mac_auth_input(nullptr, &out_len, sib1, sizeof(sib1), 0);
 
     EXPECT_LT(ret, 0) << "Null output buffer should return error";
 }
@@ -427,7 +427,7 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_NullOutLen) {
     uint8_t out[TF5_MAX_AUTH_INPUT];
     const uint8_t sib1[] = {0x01, 0x02};
 
-    int ret = tf5_tesla_build_mac_auth_input(out, nullptr, sib1, sizeof(sib1), 0);
+    int ret = tf5_build_mac_auth_input(out, nullptr, sib1, sizeof(sib1), 0);
 
     EXPECT_LT(ret, 0) << "Null out_len should return error";
 }
@@ -436,7 +436,7 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_NullSib1) {
     uint8_t out[TF5_MAX_AUTH_INPUT];
     size_t out_len;
 
-    int ret = tf5_tesla_build_mac_auth_input(out, &out_len, nullptr, 5, 0);
+    int ret = tf5_build_mac_auth_input(out, &out_len, nullptr, 5, 0);
 
     EXPECT_LT(ret, 0) << "Null SIB1 should return error";
 }
@@ -447,8 +447,8 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_Deterministic) {
     size_t out_len1, out_len2;
     const uint8_t sib1[] = {0x01, 0x02, 0x03, 0x04};
 
-    tf5_tesla_build_mac_auth_input(out1, &out_len1, sib1, sizeof(sib1), 123456);
-    tf5_tesla_build_mac_auth_input(out2, &out_len2, sib1, sizeof(sib1), 123456);
+    tf5_build_mac_auth_input(out1, &out_len1, sib1, sizeof(sib1), 123456);
+    tf5_build_mac_auth_input(out2, &out_len2, sib1, sizeof(sib1), 123456);
 
     EXPECT_EQ(out_len1, out_len2);
     EXPECT_EQ(0, memcmp(out1, out2, out_len1))
@@ -456,7 +456,7 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_Deterministic) {
 }
 
 // ============================================================================
-// Build Signature Auth Input Tests (tf5_tesla_build_sig_auth_input)
+// Build Signature Auth Input Tests (tf5_build_sig_auth_input)
 // ============================================================================
 
 TEST_F(TF5CryptoTest, BuildSigAuthInput_Success) {
@@ -471,7 +471,7 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_Success) {
         .chain_len = 65536
     };
 
-    int ret = tf5_tesla_build_sig_auth_input(out, &out_len, sib1, sizeof(sib1),
+    int ret = tf5_build_sig_auth_input(out, &out_len, sib1, sizeof(sib1),
                                               0x01, &params, 525600, 42, disclosed_key, 1000);
 
     EXPECT_EQ(0, ret) << "Building signature auth input should succeed";
@@ -493,7 +493,7 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_Layout) {
         .chain_len = 1000
     };
 
-    tf5_tesla_build_sig_auth_input(out, &out_len, sib1, sizeof(sib1),
+    tf5_build_sig_auth_input(out, &out_len, sib1, sizeof(sib1),
                                     0x01, &params, 0x112233, 0x42, disclosed_key, 0x778899);
 
     // Verify SIB1 at beginning
@@ -531,7 +531,7 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_NullOut) {
     uint8_t key[TF5_TESLA_KEY_LEN] = {0};
     tf5_tesla_params_t params = {};
 
-    int ret = tf5_tesla_build_sig_auth_input(nullptr, &out_len, sib1, 1,
+    int ret = tf5_build_sig_auth_input(nullptr, &out_len, sib1, 1,
                                               0x01, &params, 0, 0, key, 0);
 
     EXPECT_LT(ret, 0) << "Null output should return error";
@@ -543,7 +543,7 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_NullParams) {
     const uint8_t sib1[] = {0x01};
     uint8_t key[TF5_TESLA_KEY_LEN] = {0};
 
-    int ret = tf5_tesla_build_sig_auth_input(out, &out_len, sib1, 1,
+    int ret = tf5_build_sig_auth_input(out, &out_len, sib1, 1,
                                               0x01, nullptr, 0, 0, key, 0);
 
     EXPECT_LT(ret, 0) << "Null params should return error";
@@ -555,7 +555,7 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_NullKey) {
     const uint8_t sib1[] = {0x01};
     tf5_tesla_params_t params = {};
 
-    int ret = tf5_tesla_build_sig_auth_input(out, &out_len, sib1, 1,
+    int ret = tf5_build_sig_auth_input(out, &out_len, sib1, 1,
                                               0x01, &params, 0, 0, nullptr, 0);
 
     EXPECT_LT(ret, 0) << "Null disclosed_key should return error";
@@ -577,8 +577,8 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_IncludesMacAuthInput) {
     };
     uint32_t validity = 123456;
 
-    tf5_tesla_build_mac_auth_input(mac_out, &mac_len, sib1, sizeof(sib1), validity);
-    tf5_tesla_build_sig_auth_input(sig_out, &sig_len, sib1, sizeof(sib1),
+    tf5_build_mac_auth_input(mac_out, &mac_len, sib1, sizeof(sib1), validity);
+    tf5_build_sig_auth_input(sig_out, &sig_len, sib1, sizeof(sib1),
                                     0x01, &params, validity, 0, key, 0);
 
     // First mac_len bytes should be identical

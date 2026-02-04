@@ -511,8 +511,8 @@ TEST_F(TF5IbsPkgTest, ValidityConversion_RoundTrip) {
     // Test round-trip conversion
     uint64_t original_unix = 1735689600;  // 2025-01-01 00:00:00 UTC
 
-    uint32_t validity = tf5_ibs_unix_to_gnb_key_validity(original_unix);
-    uint64_t recovered_unix = tf5_ibs_gnb_key_validity_to_unix(validity);
+    uint32_t validity = tf5_unix_to_gnb_key_validity(original_unix);
+    uint64_t recovered_unix = tf5_gnb_key_validity_to_unix(validity);
 
     // Should be within 1 minute (60 seconds) due to minute granularity
     EXPECT_LE(std::abs((int64_t)(recovered_unix - original_unix)), 60)
@@ -521,20 +521,20 @@ TEST_F(TF5IbsPkgTest, ValidityConversion_RoundTrip) {
 
 TEST_F(TF5IbsPkgTest, ValidityConversion_Epoch) {
     // At epoch (2024-01-01 00:00:00 UTC), validity should be 0
-    uint32_t validity = tf5_ibs_unix_to_gnb_key_validity(TF5_VALIDITY_EPOCH);
+    uint32_t validity = tf5_unix_to_gnb_key_validity(TF5_VALIDITY_EPOCH);
     EXPECT_EQ(0, validity);
 }
 
 TEST_F(TF5IbsPkgTest, ValidityConversion_BeforeEpoch) {
     // Before epoch should return 0
-    uint32_t validity = tf5_ibs_unix_to_gnb_key_validity(TF5_VALIDITY_EPOCH - 1000);
+    uint32_t validity = tf5_unix_to_gnb_key_validity(TF5_VALIDITY_EPOCH - 1000);
     EXPECT_EQ(0, validity);
 }
 
 TEST_F(TF5IbsPkgTest, ValidityConversion_OneYear) {
     // 1 year = 525600 minutes
     uint64_t one_year_after = TF5_VALIDITY_EPOCH + (525600UL * 60);
-    uint32_t validity = tf5_ibs_unix_to_gnb_key_validity(one_year_after);
+    uint32_t validity = tf5_unix_to_gnb_key_validity(one_year_after);
     EXPECT_EQ(525600, validity);
 }
 

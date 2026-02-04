@@ -1,31 +1,3 @@
-/*
- * Licensed to the OpenAirInterface (OAI) Software Alliance under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The OpenAirInterface Software Alliance licenses this file to You under
- * the OAI Public License, Version 1.1  (the "License"); you may not use this file
- * except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.openairinterface.org/?page_id=698
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *-------------------------------------------------------------------------------
- * For more information about the OpenAirInterface (OAI) Software Alliance:
- *      contact@openairinterface.org
- */
-
-/*
- * TESLA Broadcast Authentication - BLS Signature Implementation
- *
- * Uses blst library (Supranational) with BLS12-381 curve.
- * Minimal-signature-size variant: Signatures in G1 (48 bytes), Public keys in G2 (96 bytes).
- */
-
 #ifdef ENABLE_TF5
 
 #include "tf5_tesla_sig.h"
@@ -39,15 +11,15 @@
 static const uint8_t TF5_BLS_DST[] = "BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_";
 static const size_t TF5_BLS_DST_LEN = sizeof(TF5_BLS_DST) - 1;
 
-int tf5_tesla_bls_init(void)
+int tf5_bls_init(void)
 {
     /* blst library requires no initialization - it is stateless */
     LOG_I(NR_RRC, "TESLA: BLST library ready (BLS12-381, pk-in-G2 mode)\n");
     return 0;
 }
 
-int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
-                                uint8_t public_key[TF5_BLS_PUBKEY_LEN])
+int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
+                                uint8_t public_key[TF5_GNB_PUBKEY_LEN])
 {
     if (!secret_key || !public_key) {
         return -1;
@@ -77,10 +49,10 @@ int tf5_tesla_bls_derive_public(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
     return 0;
 }
 
-int tf5_tesla_bls_sign(const uint8_t secret_key[TF5_GNB_SKEY_LEN],
+int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
                        const uint8_t *data,
                        size_t data_len,
-                       uint8_t signature[TF5_BLS_SIG_LEN])
+                       uint8_t signature[TF5_SIG_LEN])
 {
     if (!secret_key || !data || !signature || data_len == 0) {
         return -1;
@@ -126,14 +98,14 @@ static const uint8_t TF5_IBS_DST_HS[] = "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1";
 static const size_t TF5_IBS_DST_HS_LEN = sizeof(TF5_IBS_DST_HS) - 1;
 
 /* IKM size: DST (35) + Cell_ID (5) + gnb_key_validity_end (3) = 43 bytes */
-#define TF5_IBS_IKM_LEN  (TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_VALIDITY_PERIOD_LEN)
+#define TF5_IBS_IKM_LEN  (TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)
 
-int tf5_tesla_ibs_verify(const uint8_t mpk[TF5_BLS_PUBKEY_LEN],
+int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                           uint32_t gnb_key_validity_end,
                           const uint8_t *data,
                           size_t data_len,
-                          const uint8_t signature[TF5_BLS_SIG_LEN])
+                          const uint8_t signature[TF5_SIG_LEN])
 {
     if (!mpk || !cell_id || !data || !signature || data_len == 0) {
         return -1;

@@ -44,31 +44,31 @@ protected:
 
     // For tests that need a gNB state
     tf5_gnb_state_t gnb_state;
-    uint8_t test_private_key[TF5_GNB_SKEY_LEN];
+    uint8_t test_private_key[TF5_GNB_SECRET_KEY_LEN];
 
     void SetUp() override {
         // Initialize BLS library
-        tf5_tesla_bls_init();
+        tf5_bls_init();
 
         // Clear states
         memset(&ue_state, 0, sizeof(ue_state));
         memset(&gnb_state, 0, sizeof(gnb_state));
 
         // Generate test MPK from test private key
-        memcpy(test_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SKEY_LEN);
+        memcpy(test_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SECRET_KEY_LEN);
 
         // For basic tests, use a dummy MPK (96 bytes)
         memset(test_mpk, 0x42, TF5_MPK_LEN);
     }
 
     void TearDown() override {
-        tf5_tesla_ue_free(&ue_state);
-        tf5_tesla_gnb_free(&gnb_state);
+        tf5_ue_free(&ue_state);
+        tf5_gnb_free(&gnb_state);
     }
 
     // Helper to initialize UE with default test parameters
     int initUeDefault() {
-        return tf5_tesla_ue_init(
+        return tf5_ue_init(
             &ue_state,
             test_mpk,
             tf5_test::TV_SLOTS_PER_FRAME,
@@ -79,8 +79,8 @@ protected:
 
     // Helper to initialize gNB for integration-style tests
     int initGnbDefault(uint32_t chain_len = 100) {
-        tf5_tesla_slot_time_t t0 = tf5_slot_time_make(0, 0);
-        return tf5_tesla_gnb_init(
+        tf5_slot_time_t t0 = tf5_slot_time_make(0, 0);
+        return tf5_gnb_init(
             &gnb_state,
             tf5_test::TV_EXT_T_INT_MS,
             tf5_test::TV_EXT_D,
@@ -100,7 +100,7 @@ protected:
 };
 
 // ============================================================================
-// Initialization Tests (tf5_tesla_ue_init)
+// Initialization Tests (tf5_ue_init)
 // ============================================================================
 
 TEST_F(TF5UeTest, UeInit_Success) {
@@ -140,14 +140,14 @@ TEST_F(TF5UeTest, UeInit_AuthStateUnauthenticated) {
 }
 
 TEST_F(TF5UeTest, UeInit_NullState_ReturnsError) {
-    int ret = tf5_tesla_ue_init(nullptr, test_mpk, tf5_test::TV_SLOTS_PER_FRAME,
+    int ret = tf5_ue_init(nullptr, test_mpk, tf5_test::TV_SLOTS_PER_FRAME,
                                  TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
 
     EXPECT_LT(ret, 0) << "Null state should return error";
 }
 
 TEST_F(TF5UeTest, UeInit_NullMpk_ReturnsError) {
-    int ret = tf5_tesla_ue_init(&ue_state, nullptr, tf5_test::TV_SLOTS_PER_FRAME,
+    int ret = tf5_ue_init(&ue_state, nullptr, tf5_test::TV_SLOTS_PER_FRAME,
                                  TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
 
     EXPECT_LT(ret, 0) << "Null MPK should return error";
@@ -155,7 +155,7 @@ TEST_F(TF5UeTest, UeInit_NullMpk_ReturnsError) {
 
 TEST_F(TF5UeTest, UeInit_DefaultTimestampWindow) {
     // Pass 0 for timestamp window - should use default
-    int ret = tf5_tesla_ue_init(&ue_state, test_mpk, tf5_test::TV_SLOTS_PER_FRAME,
+    int ret = tf5_ue_init(&ue_state, test_mpk, tf5_test::TV_SLOTS_PER_FRAME,
                                  TF5_TESLA_DEFAULT_D_BOUND_US, 0);
 
     EXPECT_EQ(0, ret);
@@ -164,7 +164,7 @@ TEST_F(TF5UeTest, UeInit_DefaultTimestampWindow) {
 }
 
 // ============================================================================
-// Safe Packet Test (tf5_tesla_ue_safe_packet_test)
+// Safe Packet Test (tf5_ue_safe_packet_test)
 // ============================================================================
 
 TEST_F(TF5UeTest, SafePacketTest_SafePacket_ReturnsTrue) {
@@ -183,7 +183,7 @@ TEST_F(TF5UeTest, SafePacketTest_SafePacket_ReturnsTrue) {
 
     // Receive at interval 5 (same interval) - should be safe
     // 5 intervals = 200 slots (at 40 slots/interval) = SFN 10, slot 0
-    bool safe = tf5_tesla_ue_safe_packet_test(&ue_state, &ext, 10, 0);
+    bool safe = tf5_ue_safe_packet_test(&ue_state, &ext, 10, 0);
 
     EXPECT_TRUE(safe) << "Packet received in same interval should be safe";
 }
@@ -203,7 +203,7 @@ TEST_F(TF5UeTest, SafePacketTest_UnsafePacket_ReturnsFalse) {
 
     // Receive much later - at interval 10 (400 slots = SFN 20)
     // Safe if: x < i + d, i.e., 10 < 5 + 1 = 6? NO -> unsafe
-    bool safe = tf5_tesla_ue_safe_packet_test(&ue_state, &ext, 20, 0);
+    bool safe = tf5_ue_safe_packet_test(&ue_state, &ext, 20, 0);
 
     EXPECT_FALSE(safe) << "Packet received too late should be unsafe";
 }
@@ -224,7 +224,7 @@ TEST_F(TF5UeTest, SafePacketTest_BoundaryExact_ReturnsFalse) {
     // Receive at exactly interval 6 (i + d boundary)
     // 6 intervals = 240 slots = SFN 12
     // Safe if: x < i + d, i.e., 6 < 6? NO -> unsafe
-    bool safe = tf5_tesla_ue_safe_packet_test(&ue_state, &ext, 12, 0);
+    bool safe = tf5_ue_safe_packet_test(&ue_state, &ext, 12, 0);
 
     EXPECT_FALSE(safe) << "Packet received exactly at boundary should be unsafe";
 }
@@ -233,7 +233,7 @@ TEST_F(TF5UeTest, SafePacketTest_NullState_ReturnsFalse) {
     tf5_extension_t ext;
     memset(&ext, 0, sizeof(ext));
 
-    bool safe = tf5_tesla_ue_safe_packet_test(nullptr, &ext, 0, 0);
+    bool safe = tf5_ue_safe_packet_test(nullptr, &ext, 0, 0);
 
     EXPECT_FALSE(safe) << "Null state should return false";
 }
@@ -241,13 +241,13 @@ TEST_F(TF5UeTest, SafePacketTest_NullState_ReturnsFalse) {
 TEST_F(TF5UeTest, SafePacketTest_NullExt_ReturnsFalse) {
     ASSERT_EQ(0, initUeDefault());
 
-    bool safe = tf5_tesla_ue_safe_packet_test(&ue_state, nullptr, 0, 0);
+    bool safe = tf5_ue_safe_packet_test(&ue_state, nullptr, 0, 0);
 
     EXPECT_FALSE(safe) << "Null extension should return false";
 }
 
 // ============================================================================
-// Buffering Tests (tf5_tesla_ue_buffer_sib1)
+// Buffering Tests (tf5_ue_buffer_msg)
 // ============================================================================
 
 TEST_F(TF5UeTest, BufferSib1_Success) {
@@ -255,9 +255,9 @@ TEST_F(TF5UeTest, BufferSib1_Success) {
 
     const char auth_input[] = "test auth input";
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    int ret = tf5_tesla_ue_buffer_sib1(&ue_state,
+    int ret = tf5_ue_buffer_msg(&ue_state,
                                        (const uint8_t*)auth_input,
                                        strlen(auth_input),
                                        5, // interval_index
@@ -273,11 +273,11 @@ TEST_F(TF5UeTest, BufferSib1_QueueCountIncremented) {
 
     const char auth_input[] = "test auth input";
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
     EXPECT_EQ(0, ue_state.buffer_queue_count);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
 
     EXPECT_EQ(1, ue_state.buffer_queue_count);
 }
@@ -287,9 +287,9 @@ TEST_F(TF5UeTest, BufferSib1_DataStored) {
 
     const char auth_input[] = "test auth input data";
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0xde, 0xad, 0xbe, 0xef};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
 
     // Find the entry in the queue
     bool found = false;
@@ -311,9 +311,9 @@ TEST_F(TF5UeTest, BufferSib1_RrcTriggerFlagSet) {
 
     const char auth_input[] = "test auth input";
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, true);  // triggered_rrc_setup = true
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, true);  // triggered_rrc_setup = true
 
     // Find the entry
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
@@ -331,10 +331,10 @@ TEST_F(TF5UeTest, BufferSib1_MultipleEntries) {
     const char auth_input2[] = "auth input 2";
     uint8_t tag1[TF5_TESLA_TAG_LEN] = {0x01};
     uint8_t tag2[TF5_TESLA_TAG_LEN] = {0x02};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input1, strlen(auth_input1), 5, tag1, false);
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input2, strlen(auth_input2), 6, tag2, false);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input1, strlen(auth_input1), 5, tag1, false);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input2, strlen(auth_input2), 6, tag2, false);
 
     EXPECT_EQ(2, ue_state.buffer_queue_count);
 }
@@ -343,20 +343,20 @@ TEST_F(TF5UeTest, BufferSib1_FullQueue_DropsOldest) {
     ASSERT_EQ(0, initUeDefault());
 
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
     // Fill the queue
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
         char auth_input[32];
         snprintf(auth_input, sizeof(auth_input), "auth input %d", i);
-        tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), i, tag, false);
+        tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), i, tag, false);
     }
 
     EXPECT_EQ(TF5_TESLA_BUFFER_QUEUE_SIZE, ue_state.buffer_queue_count);
 
     // Add one more - should replace oldest
     const char new_auth[] = "new auth input";
-    tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)new_auth, strlen(new_auth), 99, tag, false);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)new_auth, strlen(new_auth), 99, tag, false);
 
     // Queue should still be at max size
     EXPECT_EQ(TF5_TESLA_BUFFER_QUEUE_SIZE, ue_state.buffer_queue_count);
@@ -366,20 +366,20 @@ TEST_F(TF5UeTest, BufferSib1_NullInputs_ReturnsError) {
     ASSERT_EQ(0, initUeDefault());
 
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    int ret = tf5_tesla_ue_buffer_sib1(nullptr, (const uint8_t*)"test", 4, 5, tag, false);
+    int ret = tf5_ue_buffer_msg(nullptr, (const uint8_t*)"test", 4, 5, tag, false);
     EXPECT_LT(ret, 0) << "Null state should return error";
 
-    ret = tf5_tesla_ue_buffer_sib1(&ue_state, nullptr, 4, 5, tag, false);
+    ret = tf5_ue_buffer_msg(&ue_state, nullptr, 4, 5, tag, false);
     EXPECT_LT(ret, 0) << "Null auth_input should return error";
 
-    ret = tf5_tesla_ue_buffer_sib1(&ue_state, (const uint8_t*)"test", 4, 5, nullptr, false);
+    ret = tf5_ue_buffer_msg(&ue_state, (const uint8_t*)"test", 4, 5, nullptr, false);
     EXPECT_LT(ret, 0) << "Null tag should return error";
 }
 
 // ============================================================================
-// Key Chain Verification Tests (tf5_tesla_ue_verify_key_chain)
+// Key Chain Verification Tests (tf5_ue_verify_key_disclosure)
 // ============================================================================
 
 TEST_F(TF5UeTest, VerifyKeyChain_ValidChain_ReturnsTrue) {
@@ -390,7 +390,7 @@ TEST_F(TF5UeTest, VerifyKeyChain_ValidChain_ReturnsTrue) {
     setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     // Verify K_1 chains to K_0
-    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(1)], 1);
+    bool valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(1)], 1);
 
     EXPECT_TRUE(valid) << "K_1 should chain to K_0";
 }
@@ -405,7 +405,7 @@ TEST_F(TF5UeTest, VerifyKeyChain_InvalidChain_ReturnsFalse) {
     // Try to verify a fake key
     uint8_t fake_key[TF5_TESLA_KEY_LEN] = {0xff, 0xff, 0xff, 0xff};
 
-    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, fake_key, 1);
+    bool valid = tf5_ue_verify_key_disclosure(&ue_state, fake_key, 1);
 
     EXPECT_FALSE(valid) << "Fake key should not chain to anchor";
 }
@@ -418,7 +418,7 @@ TEST_F(TF5UeTest, VerifyKeyChain_SkippedKeys_MultipleHashOps) {
     setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     // Verify K_5 chains to K_0 (requires 5 hash operations)
-    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(5)], 5);
+    bool valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(5)], 5);
 
     EXPECT_TRUE(valid) << "K_5 should chain to K_0 via 5 hash ops";
 }
@@ -433,7 +433,7 @@ TEST_F(TF5UeTest, VerifyKeyChain_BootstrapAnchor) {
     ue_state.chain_bootstrapped = true;
 
     // Verify K_0 chains to K_{-1} (K_0 is at index 1)
-    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
+    bool valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
     EXPECT_TRUE(valid) << "K_0 should chain to K_{-1} (bootstrap anchor)";
 }
@@ -445,7 +445,7 @@ TEST_F(TF5UeTest, VerifyKeyChain_NotBootstrapped_ReturnsFalse) {
     // UE is not bootstrapped (no trust anchor)
     EXPECT_FALSE(ue_state.chain_bootstrapped);
 
-    bool valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(1)], 1);
+    bool valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(1)], 1);
 
     EXPECT_FALSE(valid) << "Should fail when not bootstrapped";
 }
@@ -455,15 +455,15 @@ TEST_F(TF5UeTest, VerifyKeyChain_NullInputs_ReturnsFalse) {
 
     uint8_t key[TF5_TESLA_KEY_LEN] = {0};
 
-    bool valid = tf5_tesla_ue_verify_key_chain(nullptr, key, 1);
+    bool valid = tf5_ue_verify_key_disclosure(nullptr, key, 1);
     EXPECT_FALSE(valid) << "Null state should return false";
 
-    valid = tf5_tesla_ue_verify_key_chain(&ue_state, nullptr, 1);
+    valid = tf5_ue_verify_key_disclosure(&ue_state, nullptr, 1);
     EXPECT_FALSE(valid) << "Null key should return false";
 }
 
 // ============================================================================
-// Key Recovery Tests (tf5_tesla_ue_verify_buffered_with_key_disclosure)
+// Key Recovery Tests (tf5_tesla_ue_verify_buffered_msgs)
 // ============================================================================
 
 TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
@@ -476,9 +476,9 @@ TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
     const char sib1_7[] = "SIB1 at interval 7";
 
     // Interval 5 = 200 slots = SFN 10
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5);
+    tf5_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5);
     // Interval 7 = 280 slots = SFN 14
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 14, 0, (const uint8_t*)sib1_7, strlen(sib1_7), &ext7);
+    tf5_gnb_prepare_extension(&gnb_state, 14, 0, (const uint8_t*)sib1_7, strlen(sib1_7), &ext7);
 
     // Set up UE
     ue_state.tesla_params = ext5.tesla_params;
@@ -487,34 +487,34 @@ TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
     // Buffer SIB1 from interval 5
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_input_len;
-    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
+    tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                    (const uint8_t*)sib1_5, strlen(sib1_5),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, 5, ext5.tesla_tag, false);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, 5, ext5.tesla_tag, false);
 
     // Simulate missed disclosure for interval 5, receive at interval 7
     // Use key from interval 7 to recover key for interval 5
     bool rrc_trigger_verified = false;
 
     // First verify key chain (K_7 -> anchor)
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)], 7);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)], 7);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
     // Then verify buffered entries using the disclosed key
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)],
                                                                 7, &rrc_trigger_verified);
 
     EXPECT_EQ(0, ret) << "Key recovery should succeed";
 }
 
 // ============================================================================
-// IBS Signature Verification Tests (tf5_tesla_ibs_verify)
+// IBS Signature Verification Tests (tf5_sig_verify)
 // ============================================================================
 
 /**
- * Test fixture for IBS signature verification (tf5_tesla_ibs_verify) that uses
+ * Test fixture for IBS signature verification (tf5_sig_verify) that uses
  * Core PKG library to generate properly issued IBS keys.
  */
 class TF5UeSignatureTest : public TF5UeTest {
@@ -525,9 +525,9 @@ protected:
     std::string sk_gnb_path;
 
     // IBS keys generated by PKG library
-    uint8_t ibs_msk[TF5_GNB_SKEY_LEN];
+    uint8_t ibs_msk[TF5_GNB_SECRET_KEY_LEN];
     uint8_t ibs_mpk[TF5_MPK_LEN];
-    uint8_t ibs_sk[TF5_GNB_SKEY_LEN];  // sk_ID issued by PKG
+    uint8_t ibs_sk[TF5_GNB_SECRET_KEY_LEN];  // sk_ID issued by PKG
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     uint32_t validity_end;
 
@@ -593,12 +593,12 @@ protected:
         ASSERT_EQ(TF5_IBS_SK_FILE_SIZE, n) << "Failed to read gNB SK";
 
         // Extract secret key (first 32 bytes)
-        memcpy(ibs_sk, sk_file, TF5_GNB_SKEY_LEN);
+        memcpy(ibs_sk, sk_file, TF5_GNB_SECRET_KEY_LEN);
     }
 
     // Helper to initialize UE with the PKG-generated MPK
     int initUeWithTestMpk() {
-        return tf5_tesla_ue_init(&ue_state, ibs_mpk, tf5_test::TV_SLOTS_PER_FRAME,
+        return tf5_ue_init(&ue_state, ibs_mpk, tf5_test::TV_SLOTS_PER_FRAME,
                                   TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
     }
 
@@ -606,7 +606,7 @@ protected:
     void createValidSignature(const uint8_t* auth_input, size_t auth_input_len,
                               uint8_t signature_out[TF5_TESLA_SIG_LEN]) {
         // Sign with sk_ID (the IBS secret key issued by PKG)
-        int rc = tf5_tesla_bls_sign(ibs_sk, auth_input, auth_input_len, signature_out);
+        int rc = tf5_bls_sign(ibs_sk, auth_input, auth_input_len, signature_out);
         ASSERT_EQ(0, rc) << "Failed to create signature";
     }
 };
@@ -619,7 +619,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_ValidIBS_ReturnsZero) {
     // Create a valid IBS signature using the PKG-issued key
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
 
-    int ret = tf5_tesla_ibs_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -636,7 +636,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_TamperedData_Fails) {
     // Verify with tampered data
     const char tampered_input[] = "tampered authentication input";
 
-    int ret = tf5_tesla_ibs_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
                                    (const uint8_t*)tampered_input, strlen(tampered_input),
                                    signature);
 
@@ -654,7 +654,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_TamperedSignature_Fails) {
     signature[0] ^= 0xFF;
     signature[10] ^= 0xFF;
 
-    int ret = tf5_tesla_ibs_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -671,7 +671,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_WrongCellId_Fails) {
     // Use wrong cell ID
     uint8_t wrong_cell_id[TF5_IBS_CELL_ID_LEN] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
 
-    int ret = tf5_tesla_ibs_verify(ibs_mpk, wrong_cell_id, validity_end,
+    int ret = tf5_sig_verify(ibs_mpk, wrong_cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -688,7 +688,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_WrongValidity_Fails) {
     // Use wrong validity
     uint32_t wrong_validity = 999999;
 
-    int ret = tf5_tesla_ibs_verify(ibs_mpk, cell_id, wrong_validity,
+    int ret = tf5_sig_verify(ibs_mpk, cell_id, wrong_validity,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -707,7 +707,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_WrongMpk_Fails) {
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
 
     // Verify with wrong MPK - should fail
-    int ret = tf5_tesla_ibs_verify(wrong_mpk, cell_id, validity_end,
+    int ret = tf5_sig_verify(wrong_mpk, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -718,7 +718,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullMpk_ReturnsError) {
     const char auth_input[] = "test";
     uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
 
-    int ret = tf5_tesla_ibs_verify(nullptr, cell_id, validity_end,
+    int ret = tf5_sig_verify(nullptr, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -729,7 +729,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullCellId_ReturnsError) {
     const char auth_input[] = "test";
     uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
 
-    int ret = tf5_tesla_ibs_verify(ibs_mpk, nullptr, validity_end,
+    int ret = tf5_sig_verify(ibs_mpk, nullptr, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -739,7 +739,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullCellId_ReturnsError) {
 TEST_F(TF5UeSignatureTest, VerifySignature_NullAuthInput_ReturnsError) {
     uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
 
-    int ret = tf5_tesla_ibs_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
                                    nullptr, 10, signature);
 
     EXPECT_LT(ret, 0) << "Null auth_input should return error";
@@ -748,7 +748,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullAuthInput_ReturnsError) {
 TEST_F(TF5UeSignatureTest, VerifySignature_NullSignature_ReturnsError) {
     const char auth_input[] = "test";
 
-    int ret = tf5_tesla_ibs_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    nullptr);
 
@@ -784,7 +784,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerTrackedInBuffer) {
     // Generate valid extension
     tf5_extension_t ext;
     const char sib1[] = "SIB1 that triggers RRC setup";
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     // Set up UE
     ue_state.tesla_params = ext.tesla_params;
@@ -793,12 +793,12 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerTrackedInBuffer) {
     // Buffer with triggered_rrc_setup = true
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_input_len;
-    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
+    tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    int ret = tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, true);  // RRC trigger!
+    tf5_slot_time_t rx_time = tf5_slot_time_make(5, 0);
+    int ret = tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, true);  // RRC trigger!
 
     EXPECT_EQ(0, ret);
 
@@ -820,7 +820,7 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
     // Generate valid extension
     tf5_extension_t ext;
     const char sib1[] = "SIB1 that triggers RRC setup";
-    tf5_tesla_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     // Set up UE
     ue_state.tesla_params = ext.tesla_params;
@@ -829,22 +829,22 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
     // Buffer with triggered_rrc_setup = true
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_input_len;
-    tf5_tesla_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
+    tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
-    tf5_tesla_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, true);  // RRC trigger!
+    tf5_slot_time_t rx_time = tf5_slot_time_make(5, 0);
+    tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, true);  // RRC trigger!
 
     // Verify and check rrc_trigger_verified
     bool rrc_trigger_verified = false;
 
     // First verify key chain
-    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
     // Then verify buffered entries
-    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                                 ext.i, &rrc_trigger_verified);
 
     EXPECT_EQ(0, ret) << "Verification should succeed";
@@ -868,20 +868,20 @@ TEST_F(TF5UeTest, AuthState_RrcSetupDeferredCanBeSet) {
 }
 
 // ============================================================================
-// Free Tests (tf5_tesla_ue_free)
+// Free Tests (tf5_ue_free)
 // ============================================================================
 
 TEST_F(TF5UeTest, UeFree_Success) {
     ASSERT_EQ(0, initUeDefault());
 
-    tf5_tesla_ue_free(&ue_state);
+    tf5_ue_free(&ue_state);
 
     EXPECT_FALSE(ue_state.initialized) << "State should be marked as not initialized";
 }
 
 TEST_F(TF5UeTest, UeFree_NullState_NoOp) {
     // Should not crash
-    tf5_tesla_ue_free(nullptr);
+    tf5_ue_free(nullptr);
     SUCCEED();
 }
 
