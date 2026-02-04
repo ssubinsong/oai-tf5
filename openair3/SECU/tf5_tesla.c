@@ -348,12 +348,6 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
                        uint16_t slots_per_frame)
 {
     if (!state || !private_key || !t0 || chain_len == 0 || t_int_ms == 0) {
-        // add debug log about which one is missing
-      if (!state) LOG_E(NR_RRC, "TESLA: gNB init failed - state is NULL\n");
-      if (!private_key) LOG_E(NR_RRC, "TESLA: gNB init failed - private_key is NULL\n");
-      if (!t0) LOG_E(NR_RRC, "TESLA: gNB init failed - t0 is NULL\n");
-      if (chain_len == 0) LOG_E(NR_RRC, "TESLA: gNB init failed - chain_len is 0\n");
-      if (t_int_ms == 0) LOG_E(NR_RRC, "TESLA: gNB init failed - t_int_ms is 0\n");
         return -1;
     }
 
