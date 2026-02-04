@@ -400,8 +400,7 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
  * @param ue_state              Pointer to UE TESLA state structure
  * @param key_disclosure          Key that has been verified via key chain
  * @param key_disclosure_interval Interval index of verified key
- * @param rrc_trigger_verified
- * @param rrc_trigger_verified
+ * @param rrc_trigger_verified    Output: true if any buffered RRC-trigger SIB1 was verified
  * @return 0 if operation success, negative on error:
  *         -1: Invalid parameters
  *         -2: No buffered entries to verify
@@ -514,7 +513,7 @@ static inline uint64_t tf5_absolute_slots(const tf5_slot_time_t *time,
 /**
  * Convert absolute slot count back to timing struct
  *
- * Inverse of tf5_absolute_slots / tf5_slot_time_to_slots.
+ * Inverse of tf5_absolute_slots.
  *
  * @param abs_slots      Absolute slot count
  * @param slots_per_frame Number of slots per frame
