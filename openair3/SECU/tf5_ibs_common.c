@@ -170,32 +170,6 @@ int tf5_ibs_load_master_secret(const char *filepath,
 }
 
 /*
- * Load master public key from file
- */
-int tf5_ibs_load_master_public(const char *filepath,
-                                uint8_t mpk_out[TF5_IBS_MASTER_PUBLIC_LEN])
-{
-    if (!filepath || !mpk_out) {
-        return -1;
-    }
-
-    FILE *f = fopen(filepath, "rb");
-    if (!f) {
-        return -2;
-    }
-
-    size_t n = fread(mpk_out, 1, TF5_IBS_MASTER_PUBLIC_LEN, f);
-    fclose(f);
-
-    if (n != TF5_IBS_MASTER_PUBLIC_LEN) {
-        memset(mpk_out, 0, TF5_IBS_MASTER_PUBLIC_LEN);
-        return -3;
-    }
-
-    return 0;
-}
-
-/*
  * Compute gNB secret key from master secret, Cell ID, and validity period
  *
  * sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r

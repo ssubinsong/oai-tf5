@@ -170,16 +170,6 @@ int tf5_ibs_load_master_secret(const char *filepath,
                                 uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN]);
 
 /**
- * Load master public key from file
- *
- * @param filepath   Path to master public key file
- * @param mpk_out    Output buffer (96 bytes)
- * @return 0 on success, negative on error
- */
-int tf5_ibs_load_master_public(const char *filepath,
-                                uint8_t mpk_out[TF5_IBS_MASTER_PUBLIC_LEN]);
-
-/**
  * Compute gNB secret key from master secret, Cell ID, and validity period
  *
  * sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r
