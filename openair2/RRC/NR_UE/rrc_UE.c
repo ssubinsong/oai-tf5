@@ -780,7 +780,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 /**
  * Main TESLA verification entry point for SIB1.
  */
-static tf5_verify_result_t tf5_tesla_verify_sib1(NR_UE_RRC_INST_t *rrc,
+static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
                                                   NR_UE_RRC_SI_INFO *SI_info,
                                                   NR_SIB1_t *sib1,
                                                   int rx_frame,
@@ -830,7 +830,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef ENABLE_TF5
-  tf5_verify_result_t tesla_rc = tf5_tesla_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
+  tf5_verify_result_t tesla_rc = tf5_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
   if (tesla_rc < 0) {
     tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);
     return;
