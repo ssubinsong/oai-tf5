@@ -530,9 +530,10 @@ typedef enum {
 
 static void tf5_send_deferred_rrcsetupcomplete(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info)
 {
-    tf5_ue_state_t *state = SI_info->tesla_state;
-    DevAssert(state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED);
+    tf5_ue_state_t *state = SI_info->tf5_state;
+    DevAssert(state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED);
     LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
+  state->curr_phase = TF5_PHASE_INITIAL;
     rrc_ue_generate_RRCSetupComplete(rrc, state->rrcsetup_transaction_id);
 }
 
@@ -608,7 +609,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
                                                        const uint8_t *sib1_buf,
                                                        size_t sib1_len)
 {
-    tf5_ue_state_t *state = SI_info->tesla_state;
+    tf5_ue_state_t *state = SI_info->tf5_state;
 
     /* Validate wall-clock (fail fast before expensive crypto) */
     uint64_t ue_time_ms = tf5_rp_get_wallclock_ms();
@@ -685,7 +686,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
                                                       int rx_frame,
                                                       int rx_slot)
 {
-  tf5_ue_state_t *ue_state = SI_info->tesla_state;
+  tf5_ue_state_t *ue_state = SI_info->tf5_state;
 
   LOG_D(NR_RRC, "TESLA: Returning UE - using TESLA for SIB1 authentication\n");
 
@@ -739,9 +740,12 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
 
       if (verify_rc == 0) {
         LOG_I(NR_RRC, "TESLA: Verified buffered SIB1 packets using K_%u\n", key_disclosure_interval);
+        if (ue_state->curr_phase == TF5_PHASE_BUFFERED && rrc_trigger_verified) {
+          ue_state->curr_phase = TF5_PHASE_BUFFERED_AUTHENTICATED;
+        }
         if (ue_state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED && rrc_trigger_verified) {
+          ue_state->curr_phase = TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED;
           tf5_send_deferred_rrcsetupcomplete(rrc, SI_info);
-          ue_state->curr_phase = TF5_PHASE_INITIAL;
         }
       }
     }
@@ -766,7 +770,7 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
     }
 
     /* No TESLA state configured */
-    if (!SI_info->tesla_state) {
+    if (!SI_info->tf5_state) {
         return TF5_VERIFY_SKIP_NO_STATE;
     }
 
@@ -788,7 +792,7 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
         return rc;
     }
 
-    if (!SI_info->tesla_state->chain_bootstrapped) {
+    if (!SI_info->tf5_state->chain_bootstrapped) {
         return tf5_tesla_verify_firsttime(rrc, SI_info, sib1, &ext, sib1_buf, sib1_len);
     }
     return tf5_tesla_verify_returning(rrc, SI_info, &ext, sib1_buf, sib1_len, rx_frame, rx_slot);
@@ -808,9 +812,23 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
     LOG_W(NR_RRC, "TESLA: SIB1 verification failed (rc=%d) - aborting RRC connection\n", verify_rc);
     return;
   }
-  if (verify_rc == TF5_VERIFY_BUFFERED || verify_rc == TF5_VERIFY_SKIP_UNSAFE) {
-    LOG_W(NR_RRC, "TESLA: SIB1 auth pending/unsafe - deferring SIB1 acceptance\n");
-    return;
+  switch (verify_rc) {
+    case TF5_VERIFY_OK:
+      LOG_I(NR_RRC, "TESLA: SIB1 verification succeeded; Proceeding to RACH\n");
+      break;
+    case TF5_VERIFY_SKIP_DEDICATED:
+      LOG_I(NR_RRC, "TESLA: Skipping verification for dedicated SIB1 delivery\n");
+      break;
+    case TF5_VERIFY_SKIP_NO_STATE:
+      AssertFatal(false, "TESLA: No TESLA state configured - unexpected in this setup\n");
+      break;
+    case TF5_VERIFY_BUFFERED:
+      LOG_I(NR_RRC, "TESLA: SIB1 buffered - waiting for key disclosure; Proceeding to RACH\n");
+      return;
+    case TF5_VERIFY_SKIP_UNSAFE:
+      LOG_W(NR_RRC, "TESLA: Packet unsafe - discarding packet\n");
+    default:
+      AssertFatal(false, "Unexpected TESLA verify_rc %d\n", verify_rc);
   }
 #endif
 
@@ -1649,8 +1667,8 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
     ptr->l3_measurements.csi_RS_filter_coeff_rsrp = 1.0f;
     init_SI_timers(&ptr->SInfo);
 #ifdef ENABLE_TF5
-    ptr->SInfo.tesla_state = calloc(1, sizeof(tf5_ue_state_t));
-    if (ptr->SInfo.tesla_state) {
+    ptr->SInfo.tf5_state = calloc(1, sizeof(tf5_ue_state_t));
+    if (ptr->SInfo.tf5_state) {
       nrUE_params_t *params = get_nrUE_params();
 
       // Check that MPK path is provided (no default - must be explicit)
@@ -1658,22 +1676,22 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
       if (params->tesla_core_mpk_file == NULL || params->tesla_core_mpk_file[0] == '\0') {
         LOG_E(NR_RRC, "TESLA IBS: --tesla-core-mpk is required. Specify path to Core's MPK file.\n");
         LOG_E(NR_RRC, "TESLA IBS: Obtain MPK from Core PKG: tf5_ibs_pkg_keygen <msk_path> <mpk_path>\n");
-        free(ptr->SInfo.tesla_state);
-        ptr->SInfo.tesla_state = NULL;
+        free(ptr->SInfo.tf5_state);
+        ptr->SInfo.tf5_state = NULL;
       } else {
         // Initialize BLS library
         int rc = tf5_tesla_bls_init();
         if (rc != 0) {
           LOG_E(NR_RRC, "TESLA IBS: Failed to initialize BLS library (rc=%d)\n", rc);
-          free(ptr->SInfo.tesla_state);
-          ptr->SInfo.tesla_state = NULL;
+          free(ptr->SInfo.tf5_state);
+          ptr->SInfo.tf5_state = NULL;
         } else {
           uint8_t mpk[TF5_MPK_LEN];
           rc = tf5_tesla_load_pubkey(params->tesla_core_mpk_file, mpk);
           if (rc == 0) {
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info
             uint16_t slots_per_frame = 20;
-            tf5_tesla_ue_init(ptr->SInfo.tesla_state, mpk, slots_per_frame,
+            tf5_tesla_ue_init(ptr->SInfo.tf5_state, mpk, slots_per_frame,
                               params->tesla_d_bound_us,
                               params->signature_timestamp_window_ms);
             LOG_I(NR_RRC, "TESLA IBS: Loaded Core MPK from %s (D=%u us, window=%u ms)\n",
@@ -1690,8 +1708,8 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
                   params->tesla_core_mpk_file, rc);
             LOG_E(NR_RRC, "TESLA IBS: Obtain MPK from Core PKG\n");
             // Free state and set to NULL to disable TESLA
-            free(ptr->SInfo.tesla_state);
-            ptr->SInfo.tesla_state = NULL;
+            free(ptr->SInfo.tf5_state);
+            ptr->SInfo.tf5_state = NULL;
           }
         }
       }
@@ -2263,7 +2281,7 @@ static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
   nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
 
   /* Clear TESLA pending state */
-  SI_info->tesla_state->curr_phase = TF5_AUTH_STATE_AUTH_FAILED;
+  SI_info->tf5_state->curr_phase = TF5_AUTH_STATE_AUTH_FAILED;
 
   LOG_W(NR_RRC, "[UE %ld] TESLA: Connection aborted - UE returns to IDLE\n", rrc->ue_id);
 }
@@ -2373,23 +2391,18 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
     
     NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
 
-    if (SI_info->tesla_state) {
-
-      switch (SI_info->tesla_state->curr_phase) {
-        case TF5_PHASE_INITIAL:
+    if (SI_info->tf5_state) {
+      switch (SI_info->tf5_state->curr_phase) {
         case TF5_PHASE_BUFFERED:
           /* Authentication pending - defer RRCSetupComplete until verified */
           LOG_I(NR_RRC, "TESLA: Auth in progress - deferring RRCSetupComplete until verified\n");
-          SI_info->tesla_state->curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
-          SI_info->tesla_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
+          SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
+          SI_info->tf5_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
           return;
-        case TF5_AUTH_STATE_AUTH_SUCCESS:
-          /* Authentication succeeded - proceed with NAS in RRCSetupComplete */
-          LOG_I(NR_RRC, "TESLA: SIB1 authenticated - including NAS in RRCSetupComplete\n");
-          rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
-          return;
+        case TF5_PHASE_BUFFERED_AUTHENTICATED:
+          SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
+          break;  // proceed to send RRCSetupComplete
         default:
-          // Should not reach here (AUTH_FAILED would have aborted, RRCSETUP_DEFERRED shouldn't receive another RRCSetup)
           DevAssert(false);
       }
     }
