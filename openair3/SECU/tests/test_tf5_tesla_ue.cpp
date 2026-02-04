@@ -7,7 +7,7 @@
  * - tf5_tesla_ue_safe_packet_test(): Safe packet timing verification
  * - tf5_tesla_ue_buffer_sib1(): SIB1 buffering for delayed verification
  * - tf5_tesla_ue_verify_key_chain(): Key chain integrity verification
- * - tf5_tesla_ue_verify_with_key_recovery(): Key recovery for lost disclosures
+ * - tf5_tesla_ue_verify_buffered_with_key_disclosure(): Verify buffered SIB1s with disclosed key
  * - tf5_tesla_ibs_verify(): IBS signature verification (via TF5UeSignatureTest)
  */
 
@@ -463,7 +463,7 @@ TEST_F(TF5UeTest, VerifyKeyChain_NullInputs_ReturnsFalse) {
 }
 
 // ============================================================================
-// Key Recovery Tests (tf5_tesla_ue_verify_with_key_recovery)
+// Key Recovery Tests (tf5_tesla_ue_verify_buffered_with_key_disclosure)
 // ============================================================================
 
 TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
@@ -496,16 +496,17 @@ TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
 
     // Simulate missed disclosure for interval 5, receive at interval 7
     // Use key from interval 7 to recover key for interval 5
-    int total_verified = 0, total_failed = 0;
     bool rrc_trigger_verified = false;
 
-    // This should recover K_5 from K_7 and verify the buffered entry
-    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)],
-                                                     7, &total_verified, &total_failed,
-                                                     &rrc_trigger_verified);
+    // First verify key chain (K_7 -> anchor)
+    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)], 7);
+    EXPECT_TRUE(key_valid) << "Key chain should verify";
+
+    // Then verify buffered entries using the disclosed key
+    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)],
+                                                                7, &rrc_trigger_verified);
 
     EXPECT_EQ(0, ret) << "Key recovery should succeed";
-    EXPECT_EQ(1, total_verified) << "One entry should be verified via key recovery";
 }
 
 // ============================================================================
@@ -836,12 +837,15 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
     tf5_tesla_ue_buffer_sib1(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, true);  // RRC trigger!
 
     // Verify and check rrc_trigger_verified
-    int verified_count = 0, failed_count = 0;
     bool rrc_trigger_verified = false;
 
-    int ret = tf5_tesla_ue_verify_with_key_recovery(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                ext.i, &verified_count, &failed_count,
-                                                &rrc_trigger_verified);
+    // First verify key chain
+    bool key_valid = tf5_tesla_ue_verify_key_chain(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
+    EXPECT_TRUE(key_valid) << "Key chain should verify";
+
+    // Then verify buffered entries
+    int ret = tf5_tesla_ue_verify_buffered_with_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
+                                                                ext.i, &rrc_trigger_verified);
 
     EXPECT_EQ(0, ret) << "Verification should succeed";
     EXPECT_TRUE(rrc_trigger_verified) << "rrc_trigger_verified should be true when RRC-triggering SIB1 verifies";

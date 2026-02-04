@@ -151,7 +151,7 @@ The main `nr_rrc_process_sib1()` function delegates TESLA verification to a clea
 | `tf5_tesla_verify_firsttime()` | rrc_UE.c | IBS signature path (first-time UE) |
 | `tf5_tesla_verify_returning()` | rrc_UE.c:713 | TESLA MAC path (returning UE, RFC 4082 3.5) |
 | `tf5_tesla_ue_verify_key_chain()` | tf5_tesla.c:680 | Verify disclosed key (RFC 4082 3.5 Step 3) |
-| `tf5_tesla_ue_verify_buffered_with_verified_key()` | tf5_tesla.c:899 | Verify buffered messages (RFC 4082 3.5 Step 4) |
+| `tf5_tesla_ue_verify_buffered_with_key_disclosure()` | tf5_tesla.c:899 | Verify buffered messages (RFC 4082 3.5 Step 4) |
 | `tf5_tesla_on_auth_success()` | rrc_UE.c | Send deferred RRCSetupComplete |
 | `tf5_tesla_on_auth_failure()` | rrc_UE.c | Mark failed + abort RRC |
 | `tf5_extract_cell_id_from_sib1()` | rrc_UE.c:499 | Extract Cell ID from SIB1 |
@@ -229,7 +229,7 @@ Per RFC 4082 Section 3.5, the receiver MUST perform key verification BEFORE buff
 
 6. Message verification tests (RFC 4082 3.5 Step 4)
    └── Verify any earlier safe, buffered packets using verified key
-   └── tf5_tesla_ue_verify_buffered_with_verified_key()
+   └── tf5_tesla_ue_verify_buffered_with_key_disclosure()
        ├── SUCCESS:
        │   └── auth_state = TF5_AUTH_STATE_AUTHENTICATED
        │   └── If RRCSETUP_DEFERRED: send RRCSetupComplete now
@@ -340,7 +340,7 @@ Instead of chaining every disclosed key back to K_0 (which requires O(i) hash op
    - **Anchor always updates to K_{new} after successful key chain verification**
      (per RFC 4082 Section 3.5 - this happens regardless of whether any buffered packets were verified)
 
-**RFC 4082 Compliance**: The anchor update occurs in `tf5_tesla_ue_verify_key_chain()` immediately after the key is verified, not in `tf5_tesla_ue_verify_with_key_recovery()`. This ensures the anchor advances even when packets are lost, preventing unnecessary hash operations on subsequent verifications.
+**RFC 4082 Compliance**: The anchor update occurs in `tf5_tesla_ue_verify_key_chain()` immediately after the key is verified. This ensures the anchor advances even when packets are lost, preventing unnecessary hash operations on subsequent verifications.
 
 ### Example (d=1)
 
@@ -375,7 +375,7 @@ bool tf5_tesla_ue_verify_key_chain(state, disclosed_key, key_index) {
 
 ## Key Recovery for Lost Disclosures
 
-**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_ue_verify_with_key_recovery()`
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_ue_verify_buffered_with_key_disclosure()`
 
 Per RFC 4082 Section 3.5:
 > "Using a disclosed key, we can calculate all previous disclosed keys, so even if packets are lost, we will still be able to verify buffered, safe packets from earlier time intervals."
@@ -421,7 +421,7 @@ Key Recovery:
 Per RFC 4082 Section 3.5, key verification (Step 3) MUST happen BEFORE packet buffering. The implementation uses two functions:
 
 1. **`tf5_tesla_ue_verify_key_chain()`** - Called before buffering to verify the disclosed key
-2. **`tf5_tesla_ue_verify_buffered_with_verified_key()`** - Called after key verification to verify buffered messages
+2. **`tf5_tesla_ue_verify_buffered_with_key_disclosure()`** - Called after key verification to verify buffered messages
 
 ```c
 // In tf5_tesla_verify_returning():
@@ -430,7 +430,7 @@ if (!tf5_tesla_ue_verify_key_chain(state, disclosed_key, disclosed_interval))
     return TF5_VERIFY_FAIL_KEYCHAIN;  // Discard packet without buffering
 
 // Step 4: Message verification - verify previously buffered packets
-tf5_tesla_ue_verify_buffered_with_verified_key(state, disclosed_key, disclosed_interval, ...);
+tf5_tesla_ue_verify_buffered_with_key_disclosure(state, disclosed_key, disclosed_interval, ...);
 
 // Step 5: Buffer current packet - ONLY after key verification passed
 tf5_tesla_ue_buffer_sib1(...);
@@ -438,7 +438,7 @@ tf5_tesla_ue_buffer_sib1(...);
 
 The message verification function:
 ```c
-int tf5_tesla_ue_verify_buffered_with_verified_key(state, verified_key, verified_interval, ...) {
+int tf5_tesla_ue_verify_buffered_with_key_disclosure(state, verified_key, verified_interval, ...) {
     // Step 1: Find range of buffered intervals
     uint32_t earliest_buffered = find_earliest_buffered(state);
     uint32_t verify_end = MIN(latest_buffered, verified_interval);
@@ -455,7 +455,7 @@ int tf5_tesla_ue_verify_buffered_with_verified_key(state, verified_key, verified
 }
 ```
 
-**Note**: The legacy function `tf5_tesla_ue_verify_with_key_recovery()` combines both key verification and message verification. Use `tf5_tesla_ue_verify_buffered_with_verified_key()` when key verification has already been performed separately.
+**Note**: Use `tf5_tesla_ue_verify_buffered_with_key_disclosure()` when key verification has already been performed separately via `tf5_tesla_ue_verify_key_chain()`.
 
 ### Complexity
 
@@ -480,7 +480,7 @@ typedef struct {
 This enables:
 - Tracking whether the RRC-initiating SIB1 was successfully authenticated
 - Proper handling of deferred RRCSetupComplete when verification completes
-- `rrc_trigger_verified` output from `tf5_tesla_ue_verify_with_key_recovery()`
+- `rrc_trigger_verified` output from `tf5_tesla_ue_verify_buffered_with_key_disclosure()`
 
 ---
 

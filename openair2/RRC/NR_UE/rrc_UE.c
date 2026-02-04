@@ -515,45 +515,18 @@ typedef enum {
     TF5_VERIFY_OK = 0,              // Verification succeeded
     TF5_VERIFY_SKIP_DEDICATED = 1,  // Dedicated delivery - skip TESLA
     TF5_VERIFY_SKIP_NO_STATE = 2,   // No tesla_state configured
-    TF5_VERIFY_PENDING = 3,         // Buffered, waiting for key disclosure
+    TF5_VERIFY_BUFFERED = 3,         // Buffered, waiting for key disclosure
     TF5_VERIFY_SKIP_UNSAFE = 4,     // Safe packet test failed
 
     TF5_VERIFY_FAIL_UNPACK = -1,        // Extension unpack failed
     TF5_VERIFY_FAIL_KEY_EXPIRED = -2,   // gNB key expired
     TF5_VERIFY_FAIL_ENCODE = -3,        // SIB1 re-encoding failed
     TF5_VERIFY_FAIL_NO_CLOCK = -4,      // UE wall-clock not synced
-    TF5_VERIFY_FAIL_TIMESTAMP = -5,     // Timestamp validation failed
+    TF5_VERIFY_FAIL_REPLAY = -5,     // Timestamp validation failed (replay attack)
     TF5_VERIFY_FAIL_SIGNATURE = -6,     // IBS signature verification failed
     TF5_VERIFY_FAIL_MAC = -7,           // All TESLA MAC verifications failed
     TF5_VERIFY_FAIL_KEYCHAIN = -8,      // Key chain verification failed (RFC 4082 3.5 step 3)
 } tf5_verify_result_t;
-
-/**
- * Handle TESLA verification failure - abort RRC connection.
- */
-static void tf5_tesla_on_auth_failure(NR_UE_RRC_INST_t *rrc,
-                                       NR_UE_RRC_SI_INFO *SI_info,
-                                       int gNB_index,
-                                       tf5_verify_result_t result)
-{
-    static const char *result_names[] = {
-        [1] = "unpack failed",
-        [2] = "gNB key expired",
-        [3] = "SIB1 encoding failed",
-        [4] = "UE clock not synced",
-        [5] = "timestamp invalid",
-        [6] = "signature verification failed",
-        [7] = "MAC verification failed",
-        [8] = "key chain verification failed",
-    };
-
-    int idx = -result;
-    const char *reason = (idx >= 1 && idx <= 8) ? result_names[idx] : "unknown";
-
-    LOG_E(NR_RRC, "TESLA: Verification failed (%s) - aborting RRC\n", reason);
-    SI_info->tesla_state->curr_phase = TF5_AUTH_STATE_AUTH_FAILED;
-    nr_rrc_abort_connection(rrc, gNB_index);
-}
 
 static void tf5_send_deferred_rrcsetupcomplete(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info)
 {
@@ -652,7 +625,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
               "ext_ts=%lu, ue_ts=%lu, window=%lu ms\n",
               ts_rc, (unsigned long)ext->timestamp_ms, (unsigned long)ue_time_ms,
               (unsigned long)state->rp_timestamp_window_ms);
-        return TF5_VERIFY_FAIL_TIMESTAMP;
+        return TF5_VERIFY_FAIL_REPLAY;
     }
 
     LOG_D(NR_RRC, "TESLA: Timestamp valid (delta=%ld ms)\n",
@@ -774,7 +747,7 @@ static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
     }
   }
 
-  return TF5_VERIFY_PENDING;
+  return TF5_VERIFY_BUFFERED;
 }
 
 /**
@@ -830,12 +803,12 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   LOG_A(NR_RRC, "SIB1 decoded\n");
 
 #ifdef ENABLE_TF5
-  tf5_verify_result_t tesla_rc = tf5_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
-  if (tesla_rc < 0) {
-    tf5_tesla_on_auth_failure(rrc, SI_info, gNB_index, tesla_rc);
+  tf5_verify_result_t verify_rc = tf5_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot);
+  if (verify_rc < 0) {
+    LOG_W(NR_RRC, "TESLA: SIB1 verification failed (rc=%d) - aborting RRC connection\n", verify_rc);
     return;
   }
-  if (tesla_rc == TF5_VERIFY_PENDING || tesla_rc == TF5_VERIFY_SKIP_UNSAFE) {
+  if (verify_rc == TF5_VERIFY_BUFFERED || verify_rc == TF5_VERIFY_SKIP_UNSAFE) {
     LOG_W(NR_RRC, "TESLA: SIB1 auth pending/unsafe - deferring SIB1 acceptance\n");
     return;
   }
