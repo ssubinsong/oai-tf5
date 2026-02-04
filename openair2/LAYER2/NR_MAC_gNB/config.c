@@ -1183,7 +1183,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
 
   // Load IBS secret key from file (issued by Core PKG)
   extern char *tf5_privkey_file;
-  extern unsigned int tf5_chain_len;
+  extern unsigned int tf5_tesla_chain_len;
 
   uint8_t private_key[TF5_GNB_SECRET_KEY_LEN];
   uint32_t key_validity_end;
@@ -1231,7 +1231,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
 
   // Use configurable chain length (set via --tf5-chain-len command-line parameter)
   // Default: 65536 keys (~21.8 min with T_int=20ms)
-  uint32_t chain_len = (uint32_t)tf5_chain_len;
+  uint32_t chain_len = (uint32_t)tf5_tesla_chain_len;
 
   LOG_I(NR_MAC, "TESLA IBS: T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
   LOG_I(NR_MAC, "TESLA IBS: T_0=(SFN=%u, slot=%u) (first SIB1 TX occasion)\n", t0_sfn, t0_slot);

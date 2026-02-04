@@ -13,6 +13,7 @@
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
+#include "openair3/SECU/tf5_ibs_pkg.h"
 #include "common/config/config_userapi.h"
 #include "log.h"
 

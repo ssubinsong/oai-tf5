@@ -59,7 +59,9 @@
 #define TF5_IBS_MSK_FILE_SIZE   TF5_IBS_MASTER_SECRET_LEN   /* 32 bytes */
 #define TF5_IBS_MPK_FILE_SIZE   TF5_IBS_MASTER_PUBLIC_LEN   /* 96 bytes */
 /* gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian) */
+#ifndef TF5_IBS_SK_FILE_SIZE
 #define TF5_IBS_SK_FILE_SIZE    (TF5_IBS_GNB_SECRET_LEN + TF5_IBS_VALIDITY_LEN)  /* 35 bytes */
+#endif
 
 /*
  * =============================================================================

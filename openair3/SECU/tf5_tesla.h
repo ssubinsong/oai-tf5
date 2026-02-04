@@ -38,7 +38,9 @@
 #define TF5_GNB_KEY_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
 
 // gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
+#ifndef TF5_IBS_SK_FILE_SIZE
 #define TF5_IBS_SK_FILE_SIZE   (TF5_GNB_SECRET_KEY_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)  // 35 bytes
+#endif
 
 // Signature replay protection
 #define TF5_RP_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
@@ -139,7 +141,9 @@ typedef enum {
   TF5_PHASE_BUFFERED_AUTHENTICATED,
   TF5_PHASE_RRCSETUP_DEFERRED, // An SIB1 has been buffered & marked for RRC and RRCSetupComplete is deferred
   TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,
-  TF5_PHASE_RRCSETUP_COMPLETE
+  TF5_PHASE_RRCSETUP_COMPLETE,
+  TF5_AUTH_STATE_AUTH_SUCCESS, // Authentication succeeded
+  TF5_AUTH_STATE_AUTH_FAILED   // Authentication failed
 } tf5_ue_phase_t;
 
 /*
