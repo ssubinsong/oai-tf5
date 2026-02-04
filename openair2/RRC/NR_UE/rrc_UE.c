@@ -533,7 +533,7 @@ static void tf5_send_deferred_rrcsetupcomplete(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_
     tf5_ue_state_t *state = SI_info->tf5_state;
     DevAssert(state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED);
     LOG_I(NR_RRC, "TESLA: Auth complete - sending deferred RRCSetupComplete\n");
-  state->curr_phase = TF5_PHASE_INITIAL;
+  state->curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
     rrc_ue_generate_RRCSetupComplete(rrc, state->rrcsetup_transaction_id);
 }
 
@@ -602,7 +602,7 @@ static tf5_verify_result_t tf5_tesla_unpack_and_validate(const NR_SIB1_t *sib1,
 /**
  * Verify SIB1 using IBS signature (first-time UE path).
  */
-static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
+static tf5_verify_result_t tf5_verify_firsttime(NR_UE_RRC_INST_t *rrc,
                                                        NR_UE_RRC_SI_INFO *SI_info,
                                                        const NR_SIB1_t *sib1,
                                                        const tf5_extension_t *ext,
@@ -678,7 +678,7 @@ static tf5_verify_result_t tf5_tesla_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     return TF5_VERIFY_OK;
 }
 
-static tf5_verify_result_t tf5_tesla_verify_returning(NR_UE_RRC_INST_t *rrc,
+static tf5_verify_result_t tf5_verify_returning(NR_UE_RRC_INST_t *rrc,
                                                       NR_UE_RRC_SI_INFO *SI_info,
                                                       const tf5_extension_t *tf5_ext,
                                                       const uint8_t *sib1_buf,
@@ -774,6 +774,8 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
         return TF5_VERIFY_SKIP_NO_STATE;
     }
 
+  if (SI_info->tf5_state->curr_phase == TF5_PHASE_RRCSETUP_COMPLETE) SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
+
     AssertFatal(sib1->lateNonCriticalExtension,
                 "TESLA: SIB1 missing lateNonCriticalExtension for TESLA verification\n");
 
@@ -793,9 +795,9 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
     }
 
     if (!SI_info->tf5_state->chain_bootstrapped) {
-        return tf5_tesla_verify_firsttime(rrc, SI_info, sib1, &ext, sib1_buf, sib1_len);
+        return tf5_verify_firsttime(rrc, SI_info, sib1, &ext, sib1_buf, sib1_len);
     }
-    return tf5_tesla_verify_returning(rrc, SI_info, &ext, sib1_buf, sib1_len, rx_frame, rx_slot);
+    return tf5_verify_returning(rrc, SI_info, &ext, sib1_buf, sib1_len, rx_frame, rx_slot);
 }
 #endif
 
@@ -2400,7 +2402,7 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
           SI_info->tf5_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
           return;
         case TF5_PHASE_BUFFERED_AUTHENTICATED:
-          SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
+          SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
           break;  // proceed to send RRCSetupComplete
         default:
           DevAssert(false);

@@ -138,7 +138,8 @@ typedef enum {
   TF5_PHASE_BUFFERED, // An SIB1 has been buffered & marked for RRC
   TF5_PHASE_BUFFERED_AUTHENTICATED,
   TF5_PHASE_RRCSETUP_DEFERRED, // An SIB1 has been buffered & marked for RRC and RRCSetupComplete is deferred
-  TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED
+  TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,
+  TF5_PHASE_RRCSETUP_COMPLETE
 } tf5_phase_t;
 
 /*
