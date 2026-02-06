@@ -58,11 +58,12 @@ TESLA initialization occurs in `nr_mac_configure_sib1()` ([config.c:1166-1265](.
    - File issued by Core PKG via `tf5_ibs_issue` tool
    - Validates key hasn't expired
 
-5. **T_0 Calculation** (lines 1229-1230)
+5. **T_0 Reference Computation** (lines 1236-1237)
    ```c
-   tf5_get_first_sib1_occasion(nrmac, &t0_sfn, &t0_slot);
+   tf5_compute_t0_reference(nrmac, &t0_sfn, &t0_slot);
    ```
-   - Determines first SIB1 TX occasion from CORESET config
+   - Computes T_0 reference point from SIB1 occasion pattern (not actual first frame)
+   - T_0 aligns TESLA intervals with SIB1 transmissions (both 20ms period)
    - Currently supports CORESET mux pattern 1 only (3GPP TS 38.331)
 
 6. **Key Chain Generation** (lines 1242-1248)
@@ -172,7 +173,7 @@ sequenceDiagram
     Note over Init: Startup
     Init->>Core: tf5_bls_init()
     Init->>Core: tf5_load_gnb_privkey()
-    Init->>Core: tf5_get_first_sib1_occasion()
+    Init->>Core: tf5_compute_t0_reference()
     Init->>Core: tf5_gnb_init()
     Note over Core: Generate key chain K_{N-1}...K_{-1}
 

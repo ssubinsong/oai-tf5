@@ -13,6 +13,7 @@
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
+#include "openair3/SECU/tf5_ibs_pkg.h"
 #include "common/config/config_userapi.h"
 #include "log.h"
 
@@ -619,8 +620,8 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
     EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 should be verified";
 
     // RRC layer would now set phase = AUTHENTICATED and send RRCSetupComplete
-    ue_state.curr_phase = TF5_AUTH_STATE_AUTH_SUCCESS;
-    EXPECT_EQ(TF5_AUTH_STATE_AUTH_SUCCESS, ue_state.curr_phase);
+    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED;
+    EXPECT_EQ(TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED, ue_state.curr_phase);
 }
 
 TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
@@ -699,7 +700,7 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     // At this point:
     // - SIB1 is buffered, auth pending
     // - NAS message (with SUCI) MUST NOT be sent yet
-    EXPECT_NE(TF5_AUTH_STATE_AUTH_SUCCESS, ue_state.curr_phase)
+    EXPECT_NE(TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED, ue_state.curr_phase)
         << "Auth not complete - NAS must wait";
 
     // RRCSetup arrives
@@ -707,7 +708,7 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     ue_state.rrcsetup_transaction_id = 3;
 
     // Still must not send NAS
-    EXPECT_NE(TF5_AUTH_STATE_AUTH_SUCCESS, ue_state.curr_phase)
+    EXPECT_NE(TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED, ue_state.curr_phase)
         << "Still auth pending - NAS must wait";
 
     // Auth succeeds
@@ -720,10 +721,10 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                       ext.i, &rrc_trigger_verified);
 
-    ue_state.curr_phase = TF5_AUTH_STATE_AUTH_SUCCESS;
+    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED;
 
     // NOW NAS can be sent (RRC layer checks phase == AUTHENTICATED)
-    EXPECT_EQ(TF5_AUTH_STATE_AUTH_SUCCESS, ue_state.curr_phase)
+    EXPECT_EQ(TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED, ue_state.curr_phase)
         << "Auth complete - NAS can proceed";
     EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 verified";
 }

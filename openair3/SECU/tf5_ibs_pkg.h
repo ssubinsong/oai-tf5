@@ -28,14 +28,12 @@
 #define TF5_IBS_MASTER_SECRET_LEN   32   /* s: scalar in Z_r (big-endian) */
 #define TF5_IBS_MASTER_PUBLIC_LEN   96   /* MPK = s*Q: G2 point (compressed) */
 #define TF5_IBS_GNB_SECRET_LEN      32   /* sk_ID: scalar (big-endian) */
-#define TF5_IBS_SIGNATURE_LEN       48   /* Sigma: G1 point (compressed) */
 
 /*
  * NR Cell ID: 36 bits = 5 bytes
  * Per 3GPP TS 38.331, cellIdentity is a BIT STRING (SIZE (36))
  */
 #define TF5_IBS_CELL_ID_LEN         5
-#define TF5_IBS_CELL_ID_BITS        36
 
 /*
  * Key validity period: 24 bits = 3 bytes
@@ -53,13 +51,10 @@
 #define TF5_IBS_DST_HS      "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"
 #define TF5_IBS_DST_HS_LEN  35
 
-/*
- * File format constants
- */
-#define TF5_IBS_MSK_FILE_SIZE   TF5_IBS_MASTER_SECRET_LEN   /* 32 bytes */
-#define TF5_IBS_MPK_FILE_SIZE   TF5_IBS_MASTER_PUBLIC_LEN   /* 96 bytes */
 /* gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian) */
+#ifndef TF5_IBS_SK_FILE_SIZE
 #define TF5_IBS_SK_FILE_SIZE    (TF5_IBS_GNB_SECRET_LEN + TF5_IBS_VALIDITY_LEN)  /* 35 bytes */
+#endif
 
 /*
  * =============================================================================
@@ -166,16 +161,6 @@ int tf5_ibs_format_cell_id_hex(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
  */
 int tf5_ibs_load_master_secret(const char *filepath,
                                 uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN]);
-
-/**
- * Load master public key from file
- *
- * @param filepath   Path to master public key file
- * @param mpk_out    Output buffer (96 bytes)
- * @return 0 on success, negative on error
- */
-int tf5_ibs_load_master_public(const char *filepath,
-                                uint8_t mpk_out[TF5_IBS_MASTER_PUBLIC_LEN]);
 
 /**
  * Compute gNB secret key from master secret, Cell ID, and validity period

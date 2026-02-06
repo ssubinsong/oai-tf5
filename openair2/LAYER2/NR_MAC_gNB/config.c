@@ -1112,13 +1112,22 @@ void prepare_du_configuration_update(gNB_MAC_INST *mac,
 
 #ifdef ENABLE_TF5
 /**
- * Calculate the first SIB1 transmission occasion (T_0 for TESLA)
+ * Compute TESLA T_0 reference point from SIB1 occasion pattern
  *
- * @param nrmac gNB MAC instance
- * @param out_sfn Output: SFN of first SIB1 TX
- * @param out_slot Output: slot of first SIB1 TX
+ * T_0 is NOT the actual first SIB1 frame, but a reference point that aligns
+ * with the SIB1 transmission pattern. With sfn_c determining frame parity
+ * (0=even, 1=odd) and n_0 as the slot, every SIB1 transmission falls exactly
+ * on a TESLA interval boundary (since SIB1 period = TESLA interval = 20ms).
+ *
+ * Example: If sfn_c=0 and n_0=0, T_0=(0,0). A gNB starting at frame 67 will
+ * transmit first SIB1 at frame 68, which is interval 34 - not interval 0.
+ * This is correct behavior; intervals 0-33 are simply unused.
+ *
+ * @param nrmac     gNB MAC instance
+ * @param out_sfn   Output: SFN component of T_0 (0 or 1, frame parity)
+ * @param out_slot  Output: slot component of T_0 (n_0 from Type0 PDCCH CSS)
  */
-static void tf5_get_first_sib1_occasion(gNB_MAC_INST *nrmac, uint16_t *out_sfn, uint16_t *out_slot)
+static void tf5_compute_t0_reference(gNB_MAC_INST *nrmac, uint16_t *out_sfn, uint16_t *out_slot)
 {
   NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
   const NR_MIB_t *mib = cc->mib->message.choice.mib;
@@ -1157,8 +1166,9 @@ static void tf5_get_first_sib1_occasion(gNB_MAC_INST *nrmac, uint16_t *out_sfn, 
               "TF5 TESLA only supports CORESET mux pattern 1 (got pattern %d)\n",
               type0_PDCCH_CSS_config.type0_pdcch_ss_mux_pattern);
 
-  // For mux pattern 1: sfn_c determines even/odd frame, n_0 is the slot
-  *out_sfn = type0_PDCCH_CSS_config.sfn_c;  // 0 or 1 (first even or odd frame)
+  // T_0 reference point: sfn_c sets frame parity alignment, n_0 sets slot
+  // This ensures every SIB1 TX (on frames matching parity) aligns with interval start
+  *out_sfn = type0_PDCCH_CSS_config.sfn_c;  // 0 or 1 (even or odd frame parity)
   *out_slot = type0_PDCCH_CSS_config.n_0;
 }
 #endif // ENABLE_TF5
@@ -1183,7 +1193,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
 
   // Load IBS secret key from file (issued by Core PKG)
   extern char *tf5_privkey_file;
-  extern unsigned int tf5_chain_len;
+  extern unsigned int tf5_tesla_chain_len;
 
   uint8_t private_key[TF5_GNB_SECRET_KEY_LEN];
   uint32_t key_validity_end;
@@ -1225,16 +1235,16 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   // T_int = 20ms (CORESET pattern 1, per 3GPP TS 38.331)
   uint16_t t_int_ms = 20;
 
-  // Calculate T_0 (first SIB1 transmission occasion)
+  // Compute T_0 reference point (aligns with SIB1 occasion pattern)
   uint16_t t0_sfn = 0, t0_slot = 0;
-  tf5_get_first_sib1_occasion(nrmac, &t0_sfn, &t0_slot);
+  tf5_compute_t0_reference(nrmac, &t0_sfn, &t0_slot);
 
   // Use configurable chain length (set via --tf5-chain-len command-line parameter)
   // Default: 65536 keys (~21.8 min with T_int=20ms)
-  uint32_t chain_len = (uint32_t)tf5_chain_len;
+  uint32_t chain_len = (uint32_t)tf5_tesla_chain_len;
 
   LOG_I(NR_MAC, "TESLA IBS: T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
-  LOG_I(NR_MAC, "TESLA IBS: T_0=(SFN=%u, slot=%u) (first SIB1 TX occasion)\n", t0_sfn, t0_slot);
+  LOG_I(NR_MAC, "TESLA IBS: T_0=(SFN=%u, slot=%u) (reference point, aligns with SIB1 pattern)\n", t0_sfn, t0_slot);
   LOG_I(NR_MAC, "TESLA IBS: chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
 
   // Initialize TESLA with computed parameters

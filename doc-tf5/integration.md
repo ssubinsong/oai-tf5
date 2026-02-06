@@ -24,7 +24,6 @@ Located in `openair3/SECU/`:
 | `tf5_tesla_sig.h` | BLS signature API declarations |
 | `tf5_ibs_common.c` | IBS utilities shared between gNB and Core PKG |
 | `tf5_ibs_pkg.h` | IBS PKG API declarations |
-| `tf5_bls_keygen.c` | BLS key generation helpers |
 
 ### Core PKG Tools
 
@@ -162,7 +161,7 @@ main() [nr-softmodem]
               └── nr_mac_configure_sib1()           [config.c:1166]
                     ├── tf5_bls_init()              [tf5_tesla_sig.c]
                     ├── tf5_load_gnb_privkey()      [tf5_tesla.c]
-                    ├── tf5_get_first_sib1_occasion()
+                    ├── tf5_compute_t0_reference()
                     └── tf5_gnb_init()              [tf5_tesla.c]
 ```
 

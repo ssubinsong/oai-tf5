@@ -27,7 +27,6 @@
 // Domain separation prefixes for hash operations
 #define TF5_DS_PREFIX_CHAIN_KEY  0x00
 #define TF5_DS_PREFIX_MAC_KEY    0x01
-#define TF5_DS_PREFIX_COMMITMENT  0x02
 
 /*
  * IBS (Identity-Based Signature) Constants
@@ -38,7 +37,9 @@
 #define TF5_GNB_KEY_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
 
 // gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
+#ifndef TF5_IBS_SK_FILE_SIZE
 #define TF5_IBS_SK_FILE_SIZE   (TF5_GNB_SECRET_KEY_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)  // 35 bytes
+#endif
 
 // Signature replay protection
 #define TF5_RP_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
@@ -139,7 +140,8 @@ typedef enum {
   TF5_PHASE_BUFFERED_AUTHENTICATED,
   TF5_PHASE_RRCSETUP_DEFERRED, // An SIB1 has been buffered & marked for RRC and RRCSetupComplete is deferred
   TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,
-  TF5_PHASE_RRCSETUP_COMPLETE
+  TF5_PHASE_RRCSETUP_COMPLETE,
+  TF5_AUTH_STATE_AUTH_FAILED   // Authentication failed
 } tf5_ue_phase_t;
 
 /*
@@ -398,8 +400,7 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
  * @param ue_state              Pointer to UE TESLA state structure
  * @param key_disclosure          Key that has been verified via key chain
  * @param key_disclosure_interval Interval index of verified key
- * @param rrc_trigger_verified
- * @param rrc_trigger_verified
+ * @param rrc_trigger_verified    Output: true if any buffered RRC-trigger SIB1 was verified
  * @return 0 if operation success, negative on error:
  *         -1: Invalid parameters
  *         -2: No buffered entries to verify
@@ -510,18 +511,9 @@ static inline uint64_t tf5_absolute_slots(const tf5_slot_time_t *time,
 }
 
 /**
- * Alias for tf5_absolute_slots (consistency with inverse function name)
- */
-static inline uint64_t tf5_slot_time_to_slots(const tf5_slot_time_t *time,
-                                               uint16_t slots_per_frame)
-{
-    return tf5_absolute_slots(time, slots_per_frame);
-}
-
-/**
  * Convert absolute slot count back to timing struct
  *
- * Inverse of tf5_absolute_slots / tf5_slot_time_to_slots.
+ * Inverse of tf5_absolute_slots.
  *
  * @param abs_slots      Absolute slot count
  * @param slots_per_frame Number of slots per frame
@@ -573,28 +565,6 @@ static inline uint32_t tf5_decode_u32_be(const uint8_t *buf) {
 
 static inline uint32_t tf5_decode_u24_be(const uint8_t *buf) {
     return ((uint32_t)buf[0] << 16) | ((uint32_t)buf[1] << 8) | buf[2];
-}
-
-static inline void tf5_encode_u64_be(uint8_t *buf, uint64_t val) {
-    buf[0] = (val >> 56) & 0xFF;
-    buf[1] = (val >> 48) & 0xFF;
-    buf[2] = (val >> 40) & 0xFF;
-    buf[3] = (val >> 32) & 0xFF;
-    buf[4] = (val >> 24) & 0xFF;
-    buf[5] = (val >> 16) & 0xFF;
-    buf[6] = (val >> 8) & 0xFF;
-    buf[7] = val & 0xFF;
-}
-
-static inline uint64_t tf5_decode_u64_be(const uint8_t *buf) {
-    return ((uint64_t)buf[0] << 56) |
-           ((uint64_t)buf[1] << 48) |
-           ((uint64_t)buf[2] << 40) |
-           ((uint64_t)buf[3] << 32) |
-           ((uint64_t)buf[4] << 24) |
-           ((uint64_t)buf[5] << 16) |
-           ((uint64_t)buf[6] << 8) |
-           (uint64_t)buf[7];
 }
 
 /* Encode 24-bit gnb_key_validity_end as 3 bytes big-endian */

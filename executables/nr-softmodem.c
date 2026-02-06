@@ -106,7 +106,7 @@ char *uecap_file;
 #ifdef ENABLE_TF5
 char *tf5_privkey_file = NULL;
 char *tf5_pubkey_file = NULL;
-unsigned int tf5_tesla_chain_len;
+unsigned int tf5_tesla_chain_len = TF5_DEFAULT_CHAIN_LEN;
 #endif
 
 runmode_t mode = normal_txrx;

@@ -456,6 +456,12 @@ function main() {
       TARGET_LIST="$TARGET_LIST params_libconfig coding rfsimulator dfts params_yaml vrtsim rf_emulator"
     fi
 
+    # Add TF5 IBS PKG utilities when ENABLE_TF5 is enabled
+    if [[ $CMAKE_CMD == *"-DENABLE_TF5=ON"* || $CMAKE_CMD == *"-DENABLE_TF5:BOOL=ON"* ]]; then
+      TARGET_LIST="$TARGET_LIST tf5_ibs_pkg_keygen tf5_ibs_issue"
+      echo_info "ENABLE_TF5 detected, adding PKG utilities to build"
+    fi
+
     mkdir -p $DIR/$BUILD_DIR/build
     cd $DIR/$BUILD_DIR/build
 

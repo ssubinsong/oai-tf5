@@ -61,6 +61,7 @@
 #include "openair3/SECU/key_nas_deriver.h"
 #ifdef ENABLE_TF5
 #include "openair3/SECU/tf5_tesla.h"
+#include "openair3/SECU/tf5_ibs_pkg.h"
 #endif
 
 #include "common/utils/LOG/log.h"

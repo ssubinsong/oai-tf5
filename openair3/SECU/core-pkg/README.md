@@ -17,46 +17,22 @@ This module depends on the [blst](https://github.com/supranational/blst) library
 
 ## Building
 
-### Quick Start (with submodule)
+### Building with OAI (Recommended)
+
+The PKG utilities are built automatically when building OAI with TESLA enabled:
 
 ```bash
-git clone --recursive <repo-url>
-cd tf5-core-pkg
-mkdir build && cd build
-cmake ..
-make
+cd cmake_targets
+./build_oai --ninja --gNB --nrUE --cmake-opt -DENABLE_TF5=ON
 ```
 
-If cloned without `--recursive`:
+Or using CMake presets:
 ```bash
-git submodule update --init
-mkdir build && cd build
-cmake ..
-make
+cmake --preset default
+cmake --build --preset 5gdefault
 ```
 
-### Using Setup Script
-
-The setup script handles submodule initialization and builds the utilities:
-
-```bash
-./scripts/tf5_setup_pkg.sh
-```
-
-### Using Shared BLST Installation
-
-To use blst from a shared location (e.g., oai-tf5 in sibling directory):
-
-```bash
-mkdir build && cd build
-# Absolute path
-cmake -DBLST_DIR=/path/to/oai-tf5/cmake_targets/third_party/blst ..
-# Or relative path (from source directory)
-cmake -DBLST_DIR=../oai-tf5/cmake_targets/third_party/blst ..
-make
-```
-
-This produces two utilities:
+This produces two utilities in `cmake_targets/ran_build/build/`:
 - `tf5_ibs_pkg_keygen` - Master keypair generation
 - `tf5_ibs_issue` - gNB secret key issuance
 

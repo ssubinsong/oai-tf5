@@ -51,11 +51,17 @@ gNB-specific Keys (issued per Cell ID + validity)
 
 ### Step 1: Build Core PKG Utilities
 
-The Core PKG utilities are built automatically when building OAI with tests enabled:
+The Core PKG utilities are built automatically when building OAI with TESLA enabled:
 
 ```bash
 cd cmake_targets
-./build_oai --ninja --gNB --nrUE --cmake-opt "-DENABLE_TESTS=ON -DENABLE_TF5=ON"
+./build_oai --ninja --gNB --nrUE --cmake-opt -DENABLE_TF5=ON
+```
+
+Or using CMake presets:
+```bash
+cmake --preset default
+cmake --build --preset 5gdefault
 ```
 
 This produces two utilities in `cmake_targets/ran_build/build/`:
@@ -79,8 +85,8 @@ For each gNB, issue a secret key based on its NR Cell ID (36 bits) and a validit
 
 ```bash
 cd cmake_targets/ran_build/build
-# Cell ID 0x123456789, valid for 2 years (1051200 minutes from 2024-01-01)
-./tf5_ibs_issue pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_gnb.bin
+# Cell ID 0x000000e00, valid for 5 years (2628000 minutes from 2024-01-01)
+./tf5_ibs_issue pkg_keys/msk.bin 000000e00 2628000 gnb_keys/sk_gnb.bin
 ```
 
 **Usage:**
@@ -92,7 +98,7 @@ tf5_ibs_issue <msk_path> <cell_id_hex> <validity_end> <sk_path>
 | Argument | Description |
 |----------|-------------|
 | `msk_path` | Path to Core's master secret key |
-| `cell_id_hex` | NR Cell ID in hex (36 bits, e.g., `123456789`) |
+| `cell_id_hex` | NR Cell ID in hex (36 bits, e.g., `000000e00`) |
 | `validity_end` | Key expiration: minutes since 2024-01-01 00:00 UTC (max 16777215) |
 | `sk_path` | Output path for gNB's secret key |
 
