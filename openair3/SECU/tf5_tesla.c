@@ -2,7 +2,7 @@
 
 #include "tf5_tesla.h"
 #include "tf5_tesla_sig.h"
-#include "sha_256_hmac.h"
+#include "tf5_crypto.h"
 #include "common/utils/assertions.h"
 #include "common/utils/LOG/log.h"
 
@@ -25,8 +25,7 @@ void tf5_derive_mac_key(const uint8_t key_in[TF5_TESLA_KEY_LEN],
     input[0] = TF5_DS_PREFIX_MAC_KEY;  // Domain separation prefix
     memcpy(input + 1, key_in, TF5_TESLA_KEY_LEN);
 
-    byte_array_t data = {.buf = input, .len = sizeof(input)};
-    sha_256(data, mac_key_out);
+    tf5_sha256(input, sizeof(input), mac_key_out);
 }
 
 void tf5_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
@@ -36,9 +35,8 @@ void tf5_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
     input[0] = TF5_DS_PREFIX_CHAIN_KEY;  // Domain separation prefix
     memcpy(input + 1, key_next, TF5_TESLA_KEY_LEN);
 
-    byte_array_t data = {.buf = input, .len = sizeof(input)};
     uint8_t full_hash[32];
-    sha_256(data, full_hash);
+    tf5_sha256(input, sizeof(input), full_hash);
 
     // Truncate to 16 bytes
     memcpy(key_out, full_hash, TF5_TESLA_KEY_LEN);
@@ -58,9 +56,8 @@ int tf5_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
     tf5_derive_mac_key(key, mac_key);
 
     // Compute HMAC-SHA256(K'_i, auth_input)
-    byte_array_t data = {.buf = (uint8_t *)auth_input, .len = auth_input_len};
     uint8_t full_tag[32];
-    sha_256_hmac(mac_key, data, 32, full_tag);
+    tf5_hmac_sha256(mac_key, 32, auth_input, auth_input_len, full_tag);
 
     // Truncate to 16 bytes
     memcpy(tag_out, full_tag, TF5_TESLA_TAG_LEN);
