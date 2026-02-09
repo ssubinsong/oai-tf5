@@ -662,6 +662,7 @@ if(ENABLE_TF5)
     ${OPENAIR3_DIR}/SECU/tf5_tesla.c
     ${OPENAIR3_DIR}/SECU/tf5_tesla_sig.c
     ${OPENAIR3_DIR}/SECU/tf5_ibs_common.c
+    ${OPENAIR3_DIR}/SECU/tf5_crypto.c
   )
 
   # Build blst library for BLS signatures

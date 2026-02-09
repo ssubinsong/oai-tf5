@@ -23,7 +23,6 @@
 #include "sha_256_hmac.h"
 
 #include <openssl/hmac.h>
-#include <openssl/evp.h>
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 
@@ -75,34 +74,6 @@ void sha_256_hmac(const uint8_t key[32], byte_array_t data, size_t len, uint8_t 
   OSSL_LIB_CTX_free(library_context);
 }
 
-void sha_256(byte_array_t data, uint8_t out[32])
-{
-  DevAssert(data.buf != NULL || data.len == 0);
-
-  OSSL_LIB_CTX* library_context = OSSL_LIB_CTX_new();
-  DevAssert(library_context != NULL);
-
-  EVP_MD* md = EVP_MD_fetch(library_context, "SHA2-256", NULL);
-  DevAssert(md != NULL);
-
-  EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-  DevAssert(ctx != NULL);
-
-  int rc = EVP_DigestInit_ex(ctx, md, NULL);
-  DevAssert(rc == 1);
-
-  rc = EVP_DigestUpdate(ctx, data.buf, data.len);
-  DevAssert(rc == 1);
-
-  unsigned int len = 32;
-  rc = EVP_DigestFinal_ex(ctx, out, &len);
-  DevAssert(rc == 1);
-
-  EVP_MD_CTX_free(ctx);
-  EVP_MD_free(md);
-  OSSL_LIB_CTX_free(library_context);
-}
-
 #elif OPENSSL_VERSION_NUMBER >= 0x10100000L
 
 /* code for version >= 1.1.0 and < 3.0.0 */
@@ -123,22 +94,6 @@ void sha_256_hmac(const uint8_t key[32], byte_array_t data, size_t len, uint8_t 
   HMAC_Final(ctx, out, (uint32_t*)&len);
 
   HMAC_CTX_free(ctx);
-}
-
-void sha_256(byte_array_t data, uint8_t out[32])
-{
-  DevAssert(data.buf != NULL || data.len == 0);
-
-  EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-  DevAssert(ctx != NULL);
-
-  EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
-  EVP_DigestUpdate(ctx, data.buf, data.len);
-
-  unsigned int len = 32;
-  EVP_DigestFinal_ex(ctx, out, &len);
-
-  EVP_MD_CTX_free(ctx);
 }
 
 #else
@@ -162,22 +117,6 @@ void sha_256_hmac(const uint8_t key[32], byte_array_t data, size_t len, uint8_t 
   HMAC_Final(&ctx, out, (uint32_t*)&len);
 
   HMAC_CTX_cleanup(&ctx);
-}
-
-void sha_256(byte_array_t data, uint8_t out[32])
-{
-  DevAssert(data.buf != NULL || data.len == 0);
-
-  EVP_MD_CTX ctx;
-  EVP_MD_CTX_init(&ctx);
-
-  EVP_DigestInit_ex(&ctx, EVP_sha256(), NULL);
-  EVP_DigestUpdate(&ctx, data.buf, data.len);
-
-  unsigned int len = 32;
-  EVP_DigestFinal_ex(&ctx, out, &len);
-
-  EVP_MD_CTX_cleanup(&ctx);
 }
 
 #endif

@@ -3,7 +3,7 @@
  * @brief Unit tests for TF5 TESLA cryptographic primitives
  *
  * Tests for:
- * - sha_256(): SHA-256 hash function
+ * - tf5_sha256(): SHA-256 hash function
  * - tf5_tesla_chain_key(): Key chain derivation (K_i = SHA256(0x00 || K_{i+1})[0:15])
  * - tf5_tesla_derive_mac_key(): MAC key derivation (K'_i = SHA256(0x01 || K_i))
  * - tf5_tesla_compute_tag(): TESLA tag computation (HMAC-SHA256 truncated)
@@ -16,10 +16,7 @@
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
-#include "common/utils/ds/byte_array.h"
-
-// Forward declare sha_256 only (sha_256_hmac.h has VLA syntax incompatible with C++)
-void sha_256(byte_array_t data, uint8_t out[32]);
+#include "openair3/SECU/tf5_crypto.h"
 }
 
 #include "tf5_test_vectors.h"
@@ -287,7 +284,7 @@ TEST_F(TF5CryptoTest, ComputeTag_ZeroLength_ReturnsError) {
 }
 
 // ============================================================================
-// SHA-256 Tests (sha_256)
+// SHA-256 Tests (tf5_sha256)
 // ============================================================================
 
 TEST_F(TF5CryptoTest, Sha256_KnownVector_Abc) {
@@ -300,10 +297,9 @@ TEST_F(TF5CryptoTest, Sha256_KnownVector_Abc) {
     };
 
     const char input[] = "abc";
-    byte_array_t data = {.len = 3, .buf = (uint8_t*)input};
     uint8_t output[32];
 
-    sha_256(data, output);
+    tf5_sha256((const uint8_t*)input, 3, output);
 
     EXPECT_EQ(0, memcmp(expected, output, 32))
         << "SHA-256(\"abc\") should match NIST test vector";
@@ -319,10 +315,9 @@ TEST_F(TF5CryptoTest, Sha256_EmptyInput) {
     };
 
     uint8_t empty_buf[1] = {0};  // Empty but valid buffer
-    byte_array_t data = {.len = 0, .buf = empty_buf};
     uint8_t output[32];
 
-    sha_256(data, output);
+    tf5_sha256(empty_buf, 0, output);
 
     EXPECT_EQ(0, memcmp(expected, output, 32))
         << "SHA-256(\"\") should match known value";
@@ -335,10 +330,9 @@ TEST_F(TF5CryptoTest, Sha256_LargeInput) {
         large_input[i] = (uint8_t)(i & 0xFF);
     }
 
-    byte_array_t data = {.len = 1024, .buf = large_input};
     uint8_t output[32];
 
-    sha_256(data, output);
+    tf5_sha256(large_input, 1024, output);
 
     // Just verify it produces 32 bytes and is not all zeros
     bool all_zeros = true;
@@ -353,12 +347,11 @@ TEST_F(TF5CryptoTest, Sha256_LargeInput) {
 
 TEST_F(TF5CryptoTest, Sha256_Deterministic) {
     const char input[] = "deterministic test input";
-    byte_array_t data = {.len = strlen(input), .buf = (uint8_t*)input};
     uint8_t output1[32];
     uint8_t output2[32];
 
-    sha_256(data, output1);
-    sha_256(data, output2);
+    tf5_sha256((const uint8_t*)input, strlen(input), output1);
+    tf5_sha256((const uint8_t*)input, strlen(input), output2);
 
     EXPECT_EQ(0, memcmp(output1, output2, 32))
         << "SHA-256 should be deterministic";
@@ -367,13 +360,11 @@ TEST_F(TF5CryptoTest, Sha256_Deterministic) {
 TEST_F(TF5CryptoTest, Sha256_DifferentInputs) {
     const char input1[] = "input one";
     const char input2[] = "input two";
-    byte_array_t data1 = {.len = strlen(input1), .buf = (uint8_t*)input1};
-    byte_array_t data2 = {.len = strlen(input2), .buf = (uint8_t*)input2};
     uint8_t output1[32];
     uint8_t output2[32];
 
-    sha_256(data1, output1);
-    sha_256(data2, output2);
+    tf5_sha256((const uint8_t*)input1, strlen(input1), output1);
+    tf5_sha256((const uint8_t*)input2, strlen(input2), output2);
 
     EXPECT_NE(0, memcmp(output1, output2, 32))
         << "Different inputs should produce different hashes";
