@@ -7,19 +7,18 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "tf5_tesla_sig.h"  // BLS signature functions
+#include "tf5_tesla_sig.h"
 
 /*
  * TESLA Configuration Constants
  */
 #define TF5_TESLA_KEY_LEN           16      // 128-bit TESLA chain keys (hardcoded)
 #define TF5_TESLA_TAG_LEN           16      // Truncated HMAC-SHA256 to 128 bits
-#define TF5_TESLA_SIG_LEN           TF5_SIG_LEN   // BLS signature length (48 bytes)
 #define TF5_TESLA_CHAIN_LEN         65536   // ~21 minutes at T_int=20ms
 #define TF5_TESLA_DEFAULT_D_BOUND_US           1005    // Pre-calculated D bound (microseconds)
 #define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered
 
-#define TF5_MAX_AUTH_INPUT    512     // Max auth input buffer size
+#define TF5_MAX_AUTH_INPUT    372     // Max auth input buffer size
 
 // Protocol version
 #define TF5_VERSION           0x01
@@ -108,7 +107,7 @@ typedef struct {
     uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                   validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                   timestamp_ms;                  // 3B (wire) - Unix epoch timestamp LSB (ms) for replay protection
-    uint8_t                    signature[TF5_TESLA_SIG_LEN]; // 48B - BLS signature
+    uint8_t                    signature[TF5_SIG_LEN]; // 48B - BLS signature
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_extension_t;
 
@@ -121,7 +120,7 @@ typedef struct {
     // Key chain storage: key_chain[0] = K_{-1}, key_chain[1] = K_0, ..., key_chain[N] = K_{N-1}
     // Use tf5_key_interval_to_index() to convert interval to array index
     uint8_t  (*key_chain)[TF5_TESLA_KEY_LEN];      // Dynamically allocated (chain_len + 1 entries)
-    uint32_t key_chain_len;                         // Number of intervals N (array has N+1 entries)
+    uint32_t key_chain_len;                         // Number of intervals N
 
     // IBS keys
     uint8_t  private_key[TF5_GNB_SECRET_KEY_LEN];   // 32B - sk_ID (issued by Core PKG)
