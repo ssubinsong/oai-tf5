@@ -271,8 +271,8 @@ int tf5_pack_extension(const tf5_extension_t *ext,
     offset += 3;
 
     // Signature (48 bytes - BLS)
-    memcpy(buf + offset, ext->signature, TF5_TESLA_SIG_LEN);
-    offset += TF5_TESLA_SIG_LEN;
+    memcpy(buf + offset, ext->signature, TF5_SIG_LEN);
+    offset += TF5_SIG_LEN;
 
     // TESLA tag (16 bytes)
     memcpy(buf + offset, ext->tesla_tag, TF5_TESLA_TAG_LEN);
@@ -320,8 +320,8 @@ int tf5_unpack_extension(const uint8_t *buf,
     offset += 3;
 
     // Signature (48 bytes - BLS)
-    memcpy(ext->signature, buf + offset, TF5_TESLA_SIG_LEN);
-    offset += TF5_TESLA_SIG_LEN;
+    memcpy(ext->signature, buf + offset, TF5_SIG_LEN);
+    offset += TF5_SIG_LEN;
 
     // TESLA tag (16 bytes)
     memcpy(ext->tesla_tag, buf + offset, TF5_TESLA_TAG_LEN);

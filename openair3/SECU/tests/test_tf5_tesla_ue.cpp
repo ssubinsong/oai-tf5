@@ -604,7 +604,7 @@ protected:
 
     // Helper to create a valid IBS signature using the PKG-issued key
     void createValidSignature(const uint8_t* auth_input, size_t auth_input_len,
-                              uint8_t signature_out[TF5_TESLA_SIG_LEN]) {
+                              uint8_t signature_out[TF5_SIG_LEN]) {
         // Sign with sk_ID (the IBS secret key issued by PKG)
         int rc = tf5_bls_sign(ibs_sk, auth_input, auth_input_len, signature_out);
         ASSERT_EQ(0, rc) << "Failed to create signature";
@@ -614,7 +614,7 @@ protected:
 // IBS signature verification test using PKG-generated keys
 TEST_F(TF5UeSignatureTest, VerifySignature_ValidIBS_ReturnsZero) {
     const char auth_input[] = "test authentication input for IBS signature";
-    uint8_t signature[TF5_TESLA_SIG_LEN];
+    uint8_t signature[TF5_SIG_LEN];
 
     // Create a valid IBS signature using the PKG-issued key
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
@@ -628,7 +628,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_ValidIBS_ReturnsZero) {
 
 TEST_F(TF5UeSignatureTest, VerifySignature_TamperedData_Fails) {
     const char auth_input[] = "original authentication input";
-    uint8_t signature[TF5_TESLA_SIG_LEN];
+    uint8_t signature[TF5_SIG_LEN];
 
     // Create signature over original data
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
@@ -645,7 +645,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_TamperedData_Fails) {
 
 TEST_F(TF5UeSignatureTest, VerifySignature_TamperedSignature_Fails) {
     const char auth_input[] = "test authentication input";
-    uint8_t signature[TF5_TESLA_SIG_LEN];
+    uint8_t signature[TF5_SIG_LEN];
 
     // Create a valid signature
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
@@ -663,7 +663,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_TamperedSignature_Fails) {
 
 TEST_F(TF5UeSignatureTest, VerifySignature_WrongCellId_Fails) {
     const char auth_input[] = "test authentication input";
-    uint8_t signature[TF5_TESLA_SIG_LEN];
+    uint8_t signature[TF5_SIG_LEN];
 
     // Create a valid signature
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
@@ -680,7 +680,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_WrongCellId_Fails) {
 
 TEST_F(TF5UeSignatureTest, VerifySignature_WrongValidity_Fails) {
     const char auth_input[] = "test authentication input";
-    uint8_t signature[TF5_TESLA_SIG_LEN];
+    uint8_t signature[TF5_SIG_LEN];
 
     // Create a valid signature
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
@@ -701,7 +701,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_WrongMpk_Fails) {
     memset(wrong_mpk, 0x99, TF5_MPK_LEN);
 
     const char auth_input[] = "test authentication input";
-    uint8_t signature[TF5_TESLA_SIG_LEN];
+    uint8_t signature[TF5_SIG_LEN];
 
     // Create signature with correct key
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
@@ -716,7 +716,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_WrongMpk_Fails) {
 
 TEST_F(TF5UeSignatureTest, VerifySignature_NullMpk_ReturnsError) {
     const char auth_input[] = "test";
-    uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
+    uint8_t signature[TF5_SIG_LEN] = {0};
 
     int ret = tf5_sig_verify(nullptr, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
@@ -727,7 +727,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullMpk_ReturnsError) {
 
 TEST_F(TF5UeSignatureTest, VerifySignature_NullCellId_ReturnsError) {
     const char auth_input[] = "test";
-    uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
+    uint8_t signature[TF5_SIG_LEN] = {0};
 
     int ret = tf5_sig_verify(ibs_mpk, nullptr, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
@@ -737,7 +737,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullCellId_ReturnsError) {
 }
 
 TEST_F(TF5UeSignatureTest, VerifySignature_NullAuthInput_ReturnsError) {
-    uint8_t signature[TF5_TESLA_SIG_LEN] = {0};
+    uint8_t signature[TF5_SIG_LEN] = {0};
 
     int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
                                    nullptr, 10, signature);

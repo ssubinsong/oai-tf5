@@ -148,7 +148,7 @@ Implementation decisions must cite RFC 4082 sections or 3GPP TS clauses.
 ```c
 TF5_TESLA_KEY_LEN              16      // 128-bit chain keys
 TF5_TESLA_TAG_LEN              16      // 128-bit truncated HMAC
-TF5_TESLA_SIG_LEN              48      // BLS signature length
+TF5_SIG_LEN              48      // BLS signature length
 TF5_TESLA_CHAIN_LEN            65536   // ~21 min at T_int=20ms
 TF5_TESLA_BUFFER_QUEUE_SIZE    4       // Max buffered SIB1s
 ```

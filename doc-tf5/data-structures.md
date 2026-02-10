@@ -104,7 +104,7 @@ typedef struct {
     uint8_t                     key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                    validity_end;                  // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                    timestamp_ms;                  // 3B - Unix epoch LSB (ms) for replay protection
-    uint8_t                     signature[TF5_TESLA_SIG_LEN];  // 48B - BLS signature
+    uint8_t                     signature[TF5_SIG_LEN];  // 48B - BLS signature
     uint8_t                     tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_extension_t;
 ```

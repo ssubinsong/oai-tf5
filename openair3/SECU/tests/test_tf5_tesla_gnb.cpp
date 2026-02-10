@@ -295,7 +295,7 @@ TEST_F(TF5GnbTest, PrepareExtension_SignatureComputed) {
 
     // Signature should not be all zeros
     bool all_zeros = true;
-    for (int i = 0; i < TF5_TESLA_SIG_LEN; i++) {
+    for (int i = 0; i < TF5_SIG_LEN; i++) {
         if (ext.signature[i] != 0) {
             all_zeros = false;
             break;

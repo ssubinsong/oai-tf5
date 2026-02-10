@@ -155,7 +155,7 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     EXPECT_EQ(ext.i, rx_ext.i);
     EXPECT_EQ(ext.tesla_params.t_int_ms, rx_ext.tesla_params.t_int_ms);
     EXPECT_EQ(0, memcmp(ext.key_disclosure, rx_ext.key_disclosure, TF5_TESLA_KEY_LEN));
-    EXPECT_EQ(0, memcmp(ext.signature, rx_ext.signature, TF5_TESLA_SIG_LEN));
+    EXPECT_EQ(0, memcmp(ext.signature, rx_ext.signature, TF5_SIG_LEN));
     EXPECT_EQ(0, memcmp(ext.tesla_tag, rx_ext.tesla_tag, TF5_TESLA_TAG_LEN));
 
     // UE: Setup TESLA params and trust anchor
@@ -476,7 +476,7 @@ TEST_F(TF5E2ETest, E2E_PackUnpack_PreservesAllFields) {
     EXPECT_EQ(original.i, unpacked.i);
     EXPECT_EQ(original.timestamp_ms, unpacked.timestamp_ms);
     EXPECT_EQ(0, memcmp(original.key_disclosure, unpacked.key_disclosure, TF5_TESLA_KEY_LEN));
-    EXPECT_EQ(0, memcmp(original.signature, unpacked.signature, TF5_TESLA_SIG_LEN));
+    EXPECT_EQ(0, memcmp(original.signature, unpacked.signature, TF5_SIG_LEN));
     EXPECT_EQ(0, memcmp(original.tesla_tag, unpacked.tesla_tag, TF5_TESLA_TAG_LEN));
 }
 
