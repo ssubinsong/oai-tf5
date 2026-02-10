@@ -100,6 +100,19 @@ static const size_t TF5_IBS_DST_HS_LEN = sizeof(TF5_IBS_DST_HS) - 1;
 /* IKM size: DST (35) + Cell_ID (5) + gnb_key_validity_end (3) = 43 bytes */
 #define TF5_IBS_IKM_LEN  (TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)
 
+/*
+ * Thread-local MPK cache for verification fast path.
+ * Only MPK parsing/in-G2 checks are cached; per-message derived_pk and pairing
+ * verification remain unchanged.
+ */
+typedef struct {
+    int valid;
+    uint8_t mpk[TF5_GNB_PUBKEY_LEN];
+    blst_p2_affine mpk_affine;
+} tf5_mpk_cache_t;
+
+static __thread tf5_mpk_cache_t s_mpk_cache = {0};
+
 int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                           uint32_t gnb_key_validity_end,
@@ -133,19 +146,27 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
     blst_keygen(&pk_id, ikm, sizeof(ikm), NULL, 0);
     memset(ikm, 0, sizeof(ikm));
 
-    /* Step 2: Deserialize MPK (Master Public Key) */
-    err = blst_p2_uncompress(&mpk_affine, mpk);
-    if (err != BLST_SUCCESS) {
-        LOG_E(NR_RRC, "TESLA IBS: Failed to deserialize MPK: %d\n", err);
-        memset(&pk_id, 0, sizeof(pk_id));
-        return -3;
-    }
+    /* Step 2: Deserialize/validate MPK once per thread and cache result */
+    if (s_mpk_cache.valid &&
+        memcmp(s_mpk_cache.mpk, mpk, TF5_GNB_PUBKEY_LEN) == 0) {
+        mpk_affine = s_mpk_cache.mpk_affine;
+    } else {
+        err = blst_p2_uncompress(&mpk_affine, mpk);
+        if (err != BLST_SUCCESS) {
+            LOG_E(NR_RRC, "TESLA IBS: Failed to deserialize MPK: %d\n", err);
+            memset(&pk_id, 0, sizeof(pk_id));
+            return -3;
+        }
 
-    /* Validate MPK is in G2 */
-    if (!blst_p2_affine_in_g2(&mpk_affine)) {
-        LOG_E(NR_RRC, "TESLA IBS: MPK not in G2\n");
-        memset(&pk_id, 0, sizeof(pk_id));
-        return -3;
+        if (!blst_p2_affine_in_g2(&mpk_affine)) {
+            LOG_E(NR_RRC, "TESLA IBS: MPK not in G2\n");
+            memset(&pk_id, 0, sizeof(pk_id));
+            return -3;
+        }
+
+        memcpy(s_mpk_cache.mpk, mpk, TF5_GNB_PUBKEY_LEN);
+        s_mpk_cache.mpk_affine = mpk_affine;
+        s_mpk_cache.valid = 1;
     }
 
     /* Step 3: Compute derived_pk = pk_ID * MPK */
