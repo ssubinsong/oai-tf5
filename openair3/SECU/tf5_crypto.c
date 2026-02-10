@@ -28,32 +28,40 @@ static void tf5_hmac_init_once(void)
     assert(s_hmac_mac != NULL);
 }
 
+static __thread EVP_MAC_CTX *s_hmac_ctx = NULL;
+static __thread OSSL_PARAM s_hmac_params[2];
+static __thread int s_hmac_params_init = 0;
+static __thread char s_hmac_digest_name[] = "SHA2-256";
+
 void tf5_hmac_sha256(const uint8_t *key, size_t key_len,
                      const uint8_t *data, size_t data_len,
                      uint8_t out[32])
 {
     pthread_once(&s_hmac_once, tf5_hmac_init_once);
 
-    EVP_MAC_CTX *ctx = EVP_MAC_CTX_new(s_hmac_mac);
-    assert(ctx != NULL);
+    if (!s_hmac_ctx) {
+        s_hmac_ctx = EVP_MAC_CTX_new(s_hmac_mac);
+        assert(s_hmac_ctx != NULL);
+    }
 
-    OSSL_PARAM params[2];
-    char digest_name[] = "SHA2-256";
-    params[0] = OSSL_PARAM_construct_utf8_string(
-                    OSSL_MAC_PARAM_DIGEST, digest_name, sizeof(digest_name));
-    params[1] = OSSL_PARAM_construct_end();
+    if (!s_hmac_params_init) {
+        s_hmac_params[0] = OSSL_PARAM_construct_utf8_string(
+                        OSSL_MAC_PARAM_DIGEST, s_hmac_digest_name,
+                        sizeof(s_hmac_digest_name));
+        s_hmac_params[1] = OSSL_PARAM_construct_end();
+        s_hmac_params_init = 1;
+    }
 
-    int rc = EVP_MAC_init(ctx, key, key_len, params);
+    int rc = EVP_MAC_init(s_hmac_ctx, key, key_len, s_hmac_params);
     assert(rc == 1);
 
-    rc = EVP_MAC_update(ctx, data, data_len);
+    rc = EVP_MAC_update(s_hmac_ctx, data, data_len);
     assert(rc == 1);
 
     size_t out_len = 32;
-    rc = EVP_MAC_final(ctx, out, &out_len, 32);
+    rc = EVP_MAC_final(s_hmac_ctx, out, &out_len, 32);
     assert(rc == 1);
 
-    EVP_MAC_CTX_free(ctx);
     (void)rc;
 }
 

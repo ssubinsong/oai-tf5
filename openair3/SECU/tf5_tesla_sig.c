@@ -158,12 +158,6 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
             return -3;
         }
 
-        if (!blst_p2_affine_in_g2(&mpk_affine)) {
-            LOG_E(NR_RRC, "TESLA IBS: MPK not in G2\n");
-            memset(&pk_id, 0, sizeof(pk_id));
-            return -3;
-        }
-
         memcpy(s_mpk_cache.mpk, mpk, TF5_GNB_PUBKEY_LEN);
         s_mpk_cache.mpk_affine = mpk_affine;
         s_mpk_cache.valid = 1;
