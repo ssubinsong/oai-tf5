@@ -655,10 +655,6 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
 
     EXPECT_LT(ret, 0) << "Verification should fail with tampered tag";
     EXPECT_FALSE(rrc_trigger_verified) << "RRC trigger should NOT be verified";
-
-    // RRC layer would now set phase = AUTH_FAILED and abort RRC setup
-    ue_state.curr_phase = TF5_AUTH_STATE_AUTH_FAILED;
-    EXPECT_EQ(TF5_AUTH_STATE_AUTH_FAILED, ue_state.curr_phase);
 }
 
 TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {

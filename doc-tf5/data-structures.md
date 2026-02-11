@@ -57,7 +57,6 @@ typedef enum {
     TF5_PHASE_RRCSETUP_DEFERRED,              // RRCSetup received while auth pending
     TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,// Deferred RRCSetup + auth complete
     TF5_PHASE_RRCSETUP_COMPLETE,              // RRC setup complete
-    TF5_AUTH_STATE_AUTH_FAILED                 // Authentication failed
 } tf5_ue_phase_t;
 ```
 
