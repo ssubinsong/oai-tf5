@@ -663,6 +663,7 @@ static tf5_verify_result_t tf5_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     /* Success: Bootstrap the chain */
     memcpy(&state->tesla_params, &ext->tesla_params, sizeof(tf5_tesla_params_t));
     state->chain_bootstrapped = true;
+    state->curr_phase = TF5_PHASE_IBS_AUTHENTICATED;
 
     /* Accept disclosed key as trust anchor (signature authenticates it) */
     memcpy(state->trust_anchor_key, ext->key_disclosure, TF5_TESLA_KEY_LEN);
@@ -773,7 +774,8 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
     }
 
   if (SI_info->tf5_state->curr_phase == TF5_PHASE_RRCSETUP_COMPLETE
-      || SI_info->tf5_state->curr_phase == TF5_PHASE_BUFFERED_AUTHENTICATED)
+      || SI_info->tf5_state->curr_phase == TF5_PHASE_BUFFERED_AUTHENTICATED
+      || SI_info->tf5_state->curr_phase == TF5_PHASE_IBS_AUTHENTICATED)
     SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
 
     AssertFatal(sib1->lateNonCriticalExtension,
@@ -2348,6 +2350,10 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
 
     if (SI_info->tf5_state) {
       switch (SI_info->tf5_state->curr_phase) {
+        case TF5_PHASE_IBS_AUTHENTICATED:
+          /* First-time path: SIB1 already authenticated via IBS signature */
+          SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
+          break;  // proceed to send RRCSetupComplete
         case TF5_PHASE_BUFFERED:
           /* Authentication pending - defer RRCSetupComplete until verified */
           LOG_I(TF5, "Auth in progress - deferring RRCSetupComplete until verified\n");
