@@ -1,5 +1,6 @@
-/*
- * TESLA Broadcast Authentication - BLS Signature Operations
+/**
+ * @file tf5_tesla_sig.h
+ * @brief BLS signature operations for TESLA broadcast authentication
  *
  * Uses blst library (Supranational) with BLS12-381 curve.
  * Minimal-signature-size variant: Signatures in G1 (48 bytes), Public keys in G2 (96 bytes).

@@ -18,9 +18,9 @@
 
 namespace tf5_test {
 
-// ============================================================================
-// Key Chain Test Vectors
-// ============================================================================
+/* ==========================================================================
+ * Key Chain Test Vectors
+ * ========================================================================== */
 
 // Seed key K_5 for chain derivation test
 static const uint8_t TV_KEY_CHAIN_K5[16] = {
@@ -35,9 +35,9 @@ static const uint8_t TV_KEY_CHAIN_K4_EXPECTED[16] = {
     0x5b, 0xac, 0xa6, 0x1c, 0x77, 0xaf, 0xab, 0x47
 };
 
-// ============================================================================
-// MAC Key Derivation Test Vectors
-// ============================================================================
+/* ==========================================================================
+ * MAC Key Derivation Test Vectors
+ * ========================================================================== */
 
 // Input TESLA key for MAC key derivation
 static const uint8_t TV_MAC_KEY_INPUT[16] = {
@@ -54,9 +54,9 @@ static const uint8_t TV_MAC_KEY_OUTPUT_EXPECTED[32] = {
     0x46, 0xc9, 0x0d, 0xb3, 0x7e, 0xc0, 0x01, 0x8f
 };
 
-// ============================================================================
-// Tag Computation Test Vectors
-// ============================================================================
+/* ==========================================================================
+ * Tag Computation Test Vectors
+ * ========================================================================== */
 
 // Key for tag computation
 static const uint8_t TV_TAG_KEY[16] = {
@@ -68,9 +68,9 @@ static const uint8_t TV_TAG_KEY[16] = {
 static const char TV_TAG_MESSAGE[] = "Test SIB1 message for TESLA authentication";
 static const size_t TV_TAG_MESSAGE_LEN = sizeof(TV_TAG_MESSAGE) - 1;  // Exclude null terminator
 
-// ============================================================================
-// BLS Signature Test Vectors
-// ============================================================================
+/* ==========================================================================
+ * BLS Signature Test Vectors
+ * ========================================================================== */
 
 // BLS secret key (32 bytes) - test key only, not for production use
 static const uint8_t TV_BLS_SECRET_KEY[32] = {
@@ -84,9 +84,9 @@ static const uint8_t TV_BLS_SECRET_KEY[32] = {
 static const char TV_BLS_MESSAGE[] = "Test message for BLS signature verification";
 static const size_t TV_BLS_MESSAGE_LEN = sizeof(TV_BLS_MESSAGE) - 1;
 
-// ============================================================================
-// IBS Test Vectors
-// ============================================================================
+/* ==========================================================================
+ * IBS Test Vectors
+ * ========================================================================== */
 
 // Cell ID (5 bytes, 36 bits)
 static const uint8_t TV_IBS_CELL_ID[5] = {
@@ -97,9 +97,9 @@ static const uint8_t TV_IBS_CELL_ID[5] = {
 // Example: 525600 minutes = 1 year from epoch
 static const uint32_t TV_IBS_VALIDITY_END = 525600;
 
-// ============================================================================
-// Extension Serialization Test Vectors
-// ============================================================================
+/* ==========================================================================
+ * Extension Serialization Test Vectors
+ * ========================================================================== */
 
 // Test TESLA parameters
 static const uint16_t TV_EXT_T_INT_MS = 20;
@@ -133,9 +133,9 @@ static const uint8_t TV_EXT_TAG[16] = {
     0xd8, 0xd9, 0xda, 0xdb, 0xdc, 0xdd, 0xde, 0xdf
 };
 
-// ============================================================================
-// Timing Test Vectors
-// ============================================================================
+/* ==========================================================================
+ * Timing Test Vectors
+ * ========================================================================== */
 
 // Slots per frame for 30 kHz SCS (FR1, numerology 1)
 static const uint16_t TV_SLOTS_PER_FRAME = 20;
@@ -144,9 +144,9 @@ static const uint16_t TV_SLOTS_PER_FRAME = 20;
 static const uint16_t TV_T0_SFN = 0;
 static const uint16_t TV_T0_SLOT = 0;
 
-// ============================================================================
-// Utility Functions
-// ============================================================================
+/* ==========================================================================
+ * Utility Functions
+ * ========================================================================== */
 
 // Helper to print hex bytes for debugging
 inline void print_hex(const char* label, const uint8_t* data, size_t len) {
@@ -164,4 +164,4 @@ inline bool bytes_equal(const uint8_t* a, const uint8_t* b, size_t len) {
 
 }  // namespace tf5_test
 
-#endif  // TF5_TEST_VECTORS_H
+#endif /* TF5_TEST_VECTORS_H */

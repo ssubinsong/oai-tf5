@@ -1,3 +1,13 @@
+/**
+ * @file tf5_tesla.h
+ * @brief TESLA broadcast authentication protocol for 5G NR SIB1
+ *
+ * Core data structures, constants, and API functions for the TESLA protocol
+ * integration with OpenAirInterface. Implements key chain management, MAC
+ * computation/verification, and binary extension serialization for both
+ * gNB (signing) and UE (verification) sides.
+ */
+
 #ifndef TF5_TESLA_H
 #define TF5_TESLA_H
 

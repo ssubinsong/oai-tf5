@@ -1,5 +1,6 @@
-/*
- * TF5 Identity-Based Signature (IBS) - Private Key Generator (PKG)
+/**
+ * @file tf5_ibs_pkg.h
+ * @brief Core PKG for TF5 Identity-Based Signature (IBS) scheme
  *
  * This module implements the Core PKG for the TESLA IBS scheme.
  * The PKG generates master keys and issues gNB-specific secret keys
