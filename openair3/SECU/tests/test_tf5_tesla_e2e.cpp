@@ -31,8 +31,8 @@ class TF5E2ETest : public ::testing::Test {
 protected:
     // gNB state
     tf5_gnb_state_t gnb_state;
-    uint8_t gnb_private_key[TF5_GNB_SECRET_KEY_LEN];
-    uint8_t gnb_public_key[TF5_GNB_PUBKEY_LEN];
+    uint8_t gnb_private_key[TF5_IBS_GNB_SK_LEN];
+    uint8_t gnb_public_key[TF5_IBS_GNB_PK_LEN];
 
     // UE state
     tf5_ue_state_t ue_state;
@@ -57,7 +57,7 @@ protected:
         memset(&ue_state, 0, sizeof(ue_state));
 
         // Generate gNB key pair
-        memcpy(gnb_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SECRET_KEY_LEN);
+        memcpy(gnb_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_IBS_GNB_SK_LEN);
         tf5_bls_derive_pubkey(gnb_private_key, gnb_public_key);
 
         // Set cell ID
@@ -152,7 +152,7 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     EXPECT_EQ(ext.i, rx_ext.i);
     EXPECT_EQ(ext.tesla_params.t_int_ms, rx_ext.tesla_params.t_int_ms);
     EXPECT_EQ(0, memcmp(ext.key_disclosure, rx_ext.key_disclosure, TF5_TESLA_KEY_LEN));
-    EXPECT_EQ(0, memcmp(ext.signature, rx_ext.signature, TF5_SIG_LEN));
+    EXPECT_EQ(0, memcmp(ext.signature, rx_ext.signature, TF5_IBS_SIG_LEN));
     EXPECT_EQ(0, memcmp(ext.tesla_tag, rx_ext.tesla_tag, TF5_TESLA_TAG_LEN));
 
     // UE: Setup TESLA params and trust anchor
@@ -473,7 +473,7 @@ TEST_F(TF5E2ETest, E2E_PackUnpack_PreservesAllFields) {
     EXPECT_EQ(original.i, unpacked.i);
     EXPECT_EQ(original.timestamp_ms, unpacked.timestamp_ms);
     EXPECT_EQ(0, memcmp(original.key_disclosure, unpacked.key_disclosure, TF5_TESLA_KEY_LEN));
-    EXPECT_EQ(0, memcmp(original.signature, unpacked.signature, TF5_SIG_LEN));
+    EXPECT_EQ(0, memcmp(original.signature, unpacked.signature, TF5_IBS_SIG_LEN));
     EXPECT_EQ(0, memcmp(original.tesla_tag, unpacked.tesla_tag, TF5_TESLA_TAG_LEN));
 }
 

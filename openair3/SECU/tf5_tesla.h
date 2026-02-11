@@ -19,30 +19,23 @@
 
 #include "tf5_tesla_sig.h"
 
-/*
- * TESLA Configuration Constants
- */
-#define TF5_TESLA_KEY_LEN           16      // 128-bit TESLA chain keys (hardcoded)
-#define TF5_TESLA_TAG_LEN           16      // Truncated HMAC-SHA256 to 128 bits
-#define TF5_TESLA_DEFAULT_D_BOUND_US           1005    // Pre-calculated D bound (microseconds)
-#define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered
+/* ── Protocol Version ──────────────────────────────────── */
+#define TF5_VERSION                 0x01
 
-#define TF5_MAX_AUTH_INPUT    372     // Max auth input buffer size
+/* ── TESLA Chain & MAC Constants ───────────────────────── */
+#define TF5_TESLA_KEY_LEN           16      // 128-bit chain keys
+#define TF5_TESLA_TAG_LEN           16      // Truncated HMAC-SHA256
+#define TF5_DS_PREFIX_CHAIN_KEY     0x00    // F(K_{i+1}) domain separation
+#define TF5_DS_PREFIX_MAC_KEY       0x01    // F'(K_i) domain separation
 
-// Protocol version
-#define TF5_VERSION           0x01
+/* ── Buffer & Wire Format Sizes ────────────────────────── */
+#define TF5_MAX_AUTH_INPUT          372     // Max auth input buffer size
+#define TF5_EXTENSION_PACKED_SIZE   102     // Wire format size (tf5_extension_t)
 
-// Domain separation prefixes for hash operations
-#define TF5_DS_PREFIX_CHAIN_KEY  0x00
-#define TF5_DS_PREFIX_MAC_KEY    0x01
-
-/*
- * IBS (Identity-Based Signature) Constants
- */
-#define TF5_MPK_LEN        TF5_GNB_PUBKEY_LEN  // BLS-IBS public key length (96 bytes)
-
-// Signature replay protection
-#define TF5_RP_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
+/* ── Default Configuration ─────────────────────────────── */
+#define TF5_TESLA_DEFAULT_D_BOUND_US       1005    // D bound (microseconds)
+#define TF5_TESLA_BUFFER_QUEUE_SIZE        4       // Max SIB1s buffered per UE
+#define TF5_RP_DEFAULT_TIME_WINDOW_MS      60000   // Replay protection window (60s)
 
 /**
  * Generic PHY Timing (SFN/slot)
@@ -108,7 +101,7 @@ typedef struct {
     uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                   validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                   timestamp_ms;                  // 3B (wire) - Unix epoch timestamp LSB (ms) for replay protection
-    uint8_t                    signature[TF5_SIG_LEN]; // 48B - BLS signature
+    uint8_t                    signature[TF5_IBS_SIG_LEN]; // 48B - BLS signature
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_extension_t;
 
@@ -124,7 +117,7 @@ typedef struct {
     uint32_t key_chain_len;                         // Number of intervals N
 
     // IBS keys
-    uint8_t  private_key[TF5_GNB_SECRET_KEY_LEN];   // 32B - sk_ID (issued by Core PKG)
+    uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 32B - sk_ID (issued by Core PKG)
     uint32_t key_validity_end;                      // Key expiration (minutes since 2024-01-01)
 
     // Slots per frame (depends on numerology)
@@ -152,7 +145,7 @@ typedef struct {
     uint32_t d_offset_slots;          // D bound for safe packet test (in slots, pre-computed)
 
     // Pre-provisioned Core Master Public Key
-    uint8_t  mpk[TF5_MPK_LEN];  // 96B - Core's MPK = s*Q (G2 point)
+    uint8_t  mpk[TF5_IBS_MPK_LEN];  // 96B - Core's MPK = s*Q (G2 point)
 
     // Verification state (trust anchor for key chain verification)
     int32_t  trust_anchor_idx;        // Interval index of the trust anchor key (-1 for K_{-1})
@@ -195,7 +188,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
                        uint16_t t_int_ms,
                        uint8_t d,
                        uint32_t chain_len,
-                       const uint8_t private_key[TF5_GNB_SECRET_KEY_LEN],
+                       const uint8_t private_key[TF5_IBS_GNB_SK_LEN],
                        const tf5_slot_time_t *t0,
                        uint16_t slots_per_frame);
 
@@ -277,9 +270,6 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                     size_t sib1_len,
                                     tf5_extension_t *ext);
 
-// Packed (wire format) size of tf5_extension_t
-#define TF5_EXTENSION_PACKED_SIZE  102
-
 /**
  * Pack TESLA extension into binary format
  *
@@ -309,7 +299,7 @@ int tf5_pack_extension(const tf5_extension_t *ext,
  * @return 0 on success, negative on error
  */
 int tf5_ue_init(tf5_ue_state_t *state,
-                      const uint8_t mpk[TF5_MPK_LEN],
+                      const uint8_t mpk[TF5_IBS_MPK_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us,
                       uint64_t rp_timestamp_window_ms);
@@ -433,21 +423,21 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
  *         -3: Invalid key format
  */
 int tf5_load_gnb_privkey(const char *filepath,
-                           uint8_t privkey_out[TF5_GNB_SECRET_KEY_LEN],
+                           uint8_t privkey_out[TF5_IBS_GNB_SK_LEN],
                            uint32_t *validity_out);
 
 /**
- * Load BLS public key from raw binary file
+ * Load Core's Master Public Key (MPK) from raw binary file
  *
- * @param filepath      Path to binary file containing BLS public key (96 bytes)
- * @param pubkey_out    Output: 96-byte raw public key
+ * @param filepath  Path to binary file containing MPK (96-byte BLS12-381 G2 point)
+ * @param mpk_out   Output: 96-byte raw MPK
  * @return 0 on success, negative on error:
  *         -1: Cannot open file
  *         -2: File read error or wrong size
  *         -3: Invalid key format
  */
-int tf5_load_gnb_pubkey(const char *filepath,
-                          uint8_t pubkey_out[TF5_MPK_LEN]);
+int tf5_load_core_mpk(const char *filepath,
+                      uint8_t mpk_out[TF5_IBS_MPK_LEN]);
 
 /*
  * =============================================================================

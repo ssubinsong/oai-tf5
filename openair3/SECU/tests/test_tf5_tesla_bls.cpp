@@ -3,10 +3,10 @@
  * @brief Unit tests for TF5 TESLA BLS signature operations
  *
  * Tests for:
- * - tf5_tesla_bls_init(): BLS library initialization
- * - tf5_tesla_bls_derive_public(): Public key derivation
- * - tf5_tesla_bls_sign(): BLS signing
- * - tf5_tesla_ibs_verify(): Identity-Based Signature verification
+ * - tf5_bls_init(): BLS library initialization
+ * - tf5_bls_derive_pubkey(): Public key derivation
+ * - tf5_bls_sign(): BLS signing
+ * - tf5_sig_verify(): Identity-Based Signature verification
  */
 
 #include <gtest/gtest.h>
@@ -36,9 +36,9 @@ void exit_function(const char *file, const char *function, const int line, const
 
 class TF5BlsTest : public ::testing::Test {
 protected:
-    uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN];
-    uint8_t public_key[TF5_GNB_PUBKEY_LEN];
-    uint8_t signature[TF5_SIG_LEN];
+    uint8_t secret_key[TF5_IBS_GNB_SK_LEN];
+    uint8_t public_key[TF5_IBS_GNB_PK_LEN];
+    uint8_t signature[TF5_IBS_SIG_LEN];
 
     static bool bls_initialized;
 
@@ -51,7 +51,7 @@ protected:
         }
 
         // Use test secret key
-        memcpy(secret_key, tf5_test::TV_BLS_SECRET_KEY, TF5_GNB_SECRET_KEY_LEN);
+        memcpy(secret_key, tf5_test::TV_BLS_SECRET_KEY, TF5_IBS_GNB_SK_LEN);
 
         // Clear output buffers
         memset(public_key, 0, sizeof(public_key));
@@ -81,7 +81,7 @@ TEST_F(TF5BlsTest, BlsDerivePublic_Success) {
 
     // Verify public key is not all zeros
     bool all_zeros = true;
-    for (int i = 0; i < TF5_GNB_PUBKEY_LEN; i++) {
+    for (int i = 0; i < TF5_IBS_GNB_PK_LEN; i++) {
         if (public_key[i] != 0) {
             all_zeros = false;
             break;
@@ -91,24 +91,24 @@ TEST_F(TF5BlsTest, BlsDerivePublic_Success) {
 }
 
 TEST_F(TF5BlsTest, BlsDerivePublic_Deterministic) {
-    uint8_t pk1[TF5_GNB_PUBKEY_LEN], pk2[TF5_GNB_PUBKEY_LEN];
+    uint8_t pk1[TF5_IBS_GNB_PK_LEN], pk2[TF5_IBS_GNB_PK_LEN];
 
     tf5_bls_derive_pubkey(secret_key, pk1);
     tf5_bls_derive_pubkey(secret_key, pk2);
 
-    EXPECT_EQ(0, memcmp(pk1, pk2, TF5_GNB_PUBKEY_LEN))
+    EXPECT_EQ(0, memcmp(pk1, pk2, TF5_IBS_GNB_PK_LEN))
         << "Same secret key should derive same public key";
 }
 
 TEST_F(TF5BlsTest, BlsDerivePublic_DifferentKeys) {
-    uint8_t sk1[TF5_GNB_SECRET_KEY_LEN] = {0x01};
-    uint8_t sk2[TF5_GNB_SECRET_KEY_LEN] = {0x02};
-    uint8_t pk1[TF5_GNB_PUBKEY_LEN], pk2[TF5_GNB_PUBKEY_LEN];
+    uint8_t sk1[TF5_IBS_GNB_SK_LEN] = {0x01};
+    uint8_t sk2[TF5_IBS_GNB_SK_LEN] = {0x02};
+    uint8_t pk1[TF5_IBS_GNB_PK_LEN], pk2[TF5_IBS_GNB_PK_LEN];
 
     tf5_bls_derive_pubkey(sk1, pk1);
     tf5_bls_derive_pubkey(sk2, pk2);
 
-    EXPECT_NE(0, memcmp(pk1, pk2, TF5_GNB_PUBKEY_LEN))
+    EXPECT_NE(0, memcmp(pk1, pk2, TF5_IBS_GNB_PK_LEN))
         << "Different secret keys should derive different public keys";
 }
 
@@ -136,7 +136,7 @@ TEST_F(TF5BlsTest, BlsSign_Success) {
 
     // Verify signature is not all zeros
     bool all_zeros = true;
-    for (int i = 0; i < TF5_SIG_LEN; i++) {
+    for (int i = 0; i < TF5_IBS_SIG_LEN; i++) {
         if (signature[i] != 0) {
             all_zeros = false;
             break;
@@ -146,26 +146,26 @@ TEST_F(TF5BlsTest, BlsSign_Success) {
 }
 
 TEST_F(TF5BlsTest, BlsSign_Deterministic) {
-    uint8_t sig1[TF5_SIG_LEN], sig2[TF5_SIG_LEN];
+    uint8_t sig1[TF5_IBS_SIG_LEN], sig2[TF5_IBS_SIG_LEN];
 
     tf5_bls_sign(secret_key, (const uint8_t*)tf5_test::TV_BLS_MESSAGE,
                        tf5_test::TV_BLS_MESSAGE_LEN, sig1);
     tf5_bls_sign(secret_key, (const uint8_t*)tf5_test::TV_BLS_MESSAGE,
                        tf5_test::TV_BLS_MESSAGE_LEN, sig2);
 
-    EXPECT_EQ(0, memcmp(sig1, sig2, TF5_SIG_LEN))
+    EXPECT_EQ(0, memcmp(sig1, sig2, TF5_IBS_SIG_LEN))
         << "Same key and message should produce same signature";
 }
 
 TEST_F(TF5BlsTest, BlsSign_DifferentMessages_DifferentSignatures) {
     const char msg1[] = "Message one";
     const char msg2[] = "Message two";
-    uint8_t sig1[TF5_SIG_LEN], sig2[TF5_SIG_LEN];
+    uint8_t sig1[TF5_IBS_SIG_LEN], sig2[TF5_IBS_SIG_LEN];
 
     tf5_bls_sign(secret_key, (const uint8_t*)msg1, strlen(msg1), sig1);
     tf5_bls_sign(secret_key, (const uint8_t*)msg2, strlen(msg2), sig2);
 
-    EXPECT_NE(0, memcmp(sig1, sig2, TF5_SIG_LEN))
+    EXPECT_NE(0, memcmp(sig1, sig2, TF5_IBS_SIG_LEN))
         << "Different messages should produce different signatures";
 }
 
@@ -188,7 +188,7 @@ TEST_F(TF5BlsTest, BlsSign_NullInputs_ReturnsError) {
 // These tests verify error handling and basic structure
 
 TEST_F(TF5BlsTest, IbsVerify_NullMpk_ReturnsError) {
-    uint8_t dummy_sig[TF5_SIG_LEN] = {0};
+    uint8_t dummy_sig[TF5_IBS_SIG_LEN] = {0};
     const char data[] = "test data";
 
     int ret = tf5_sig_verify(nullptr, tf5_test::TV_IBS_CELL_ID,
@@ -199,8 +199,8 @@ TEST_F(TF5BlsTest, IbsVerify_NullMpk_ReturnsError) {
 }
 
 TEST_F(TF5BlsTest, IbsVerify_NullCellId_ReturnsError) {
-    uint8_t dummy_mpk[TF5_GNB_PUBKEY_LEN] = {0};
-    uint8_t dummy_sig[TF5_SIG_LEN] = {0};
+    uint8_t dummy_mpk[TF5_IBS_GNB_PK_LEN] = {0};
+    uint8_t dummy_sig[TF5_IBS_SIG_LEN] = {0};
     const char data[] = "test data";
 
     int ret = tf5_sig_verify(dummy_mpk, nullptr,
@@ -211,8 +211,8 @@ TEST_F(TF5BlsTest, IbsVerify_NullCellId_ReturnsError) {
 }
 
 TEST_F(TF5BlsTest, IbsVerify_NullData_ReturnsError) {
-    uint8_t dummy_mpk[TF5_GNB_PUBKEY_LEN] = {0};
-    uint8_t dummy_sig[TF5_SIG_LEN] = {0};
+    uint8_t dummy_mpk[TF5_IBS_GNB_PK_LEN] = {0};
+    uint8_t dummy_sig[TF5_IBS_SIG_LEN] = {0};
 
     int ret = tf5_sig_verify(dummy_mpk, tf5_test::TV_IBS_CELL_ID,
                                     tf5_test::TV_IBS_VALIDITY_END,
@@ -222,7 +222,7 @@ TEST_F(TF5BlsTest, IbsVerify_NullData_ReturnsError) {
 }
 
 TEST_F(TF5BlsTest, IbsVerify_NullSignature_ReturnsError) {
-    uint8_t dummy_mpk[TF5_GNB_PUBKEY_LEN] = {0};
+    uint8_t dummy_mpk[TF5_IBS_GNB_PK_LEN] = {0};
     const char data[] = "test data";
 
     int ret = tf5_sig_verify(dummy_mpk, tf5_test::TV_IBS_CELL_ID,
@@ -247,9 +247,9 @@ protected:
     std::string mpk_path;
     std::string sk_gnb_path;
 
-    uint8_t msk[TF5_GNB_SECRET_KEY_LEN];
-    uint8_t mpk[TF5_MPK_LEN];
-    uint8_t sk_gnb[TF5_GNB_SECRET_KEY_LEN];
+    uint8_t msk[TF5_IBS_GNB_SK_LEN];
+    uint8_t mpk[TF5_IBS_MPK_LEN];
+    uint8_t sk_gnb[TF5_IBS_GNB_SK_LEN];
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     uint32_t validity_end;
 
@@ -307,7 +307,7 @@ protected:
         ASSERT_EQ(0, rc) << "Failed to load MSK";
 
         // Load MPK using library function
-        rc = tf5_ibs_load_master_public(mpk_path.c_str(), mpk);
+        rc = tf5_load_core_mpk(mpk_path.c_str(), mpk);
         ASSERT_EQ(0, rc) << "Failed to load MPK";
 
         // Load gNB secret key (35 bytes: 32 sk + 3 validity)
@@ -319,7 +319,7 @@ protected:
         ASSERT_EQ(TF5_IBS_SK_FILE_SIZE, n) << "Failed to read gNB SK";
 
         // Extract secret key (first 32 bytes)
-        memcpy(sk_gnb, sk_file, TF5_GNB_SECRET_KEY_LEN);
+        memcpy(sk_gnb, sk_file, TF5_IBS_GNB_SK_LEN);
 
         // Extract validity (last 3 bytes, big-endian) for verification
         uint32_t file_validity = ((uint32_t)sk_file[32] << 16) |
@@ -333,7 +333,7 @@ bool TF5IbsE2ETest::bls_initialized = false;
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_ValidSignature_Success) {
     const char message[] = "Test message for IBS signature verification";
-    uint8_t signature[TF5_SIG_LEN];
+    uint8_t signature[TF5_IBS_SIG_LEN];
 
     // Sign with the IBS secret key (sk_ID issued by PKG)
     int sign_ret = tf5_bls_sign(sk_gnb, (const uint8_t*)message,
@@ -350,7 +350,7 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_ValidSignature_Success) {
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedMessage_Fails) {
     const char message[] = "Original message";
-    uint8_t signature[TF5_SIG_LEN];
+    uint8_t signature[TF5_IBS_SIG_LEN];
 
     // Sign with the IBS secret key
     tf5_bls_sign(sk_gnb, (const uint8_t*)message, strlen(message), signature);
@@ -366,7 +366,7 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedMessage_Fails) {
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongCellId_Fails) {
     const char message[] = "Test message";
-    uint8_t signature[TF5_SIG_LEN];
+    uint8_t signature[TF5_IBS_SIG_LEN];
 
     // Sign with the IBS secret key
     tf5_bls_sign(sk_gnb, (const uint8_t*)message, strlen(message), signature);
@@ -382,7 +382,7 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongCellId_Fails) {
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongValidity_Fails) {
     const char message[] = "Test message";
-    uint8_t signature[TF5_SIG_LEN];
+    uint8_t signature[TF5_IBS_SIG_LEN];
 
     // Sign with the IBS secret key
     tf5_bls_sign(sk_gnb, (const uint8_t*)message, strlen(message), signature);
@@ -398,7 +398,7 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_WrongValidity_Fails) {
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedSignature_Fails) {
     const char message[] = "Test message";
-    uint8_t signature[TF5_SIG_LEN];
+    uint8_t signature[TF5_IBS_SIG_LEN];
 
     // Sign with the IBS secret key
     tf5_bls_sign(sk_gnb, (const uint8_t*)message, strlen(message), signature);
@@ -417,12 +417,12 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedSignature_Fails) {
 TEST_F(TF5IbsE2ETest, IbsSignVerify_DifferentMessages_DifferentSignatures) {
     const char msg1[] = "Message one";
     const char msg2[] = "Message two";
-    uint8_t sig1[TF5_SIG_LEN], sig2[TF5_SIG_LEN];
+    uint8_t sig1[TF5_IBS_SIG_LEN], sig2[TF5_IBS_SIG_LEN];
 
     tf5_bls_sign(sk_gnb, (const uint8_t*)msg1, strlen(msg1), sig1);
     tf5_bls_sign(sk_gnb, (const uint8_t*)msg2, strlen(msg2), sig2);
 
-    EXPECT_NE(0, memcmp(sig1, sig2, TF5_SIG_LEN))
+    EXPECT_NE(0, memcmp(sig1, sig2, TF5_IBS_SIG_LEN))
         << "Different messages should produce different signatures";
 
     // Both should verify with correct parameters

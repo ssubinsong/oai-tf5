@@ -36,7 +36,7 @@ protected:
         memcpy(ext.key_disclosure, tf5_test::TV_EXT_DISCLOSED_KEY, TF5_TESLA_KEY_LEN);
         ext.validity_end = tf5_test::TV_EXT_VALIDITY_END;
         ext.timestamp_ms = tf5_test::TV_EXT_TIMESTAMP_MS;
-        memcpy(ext.signature, tf5_test::TV_EXT_SIGNATURE, TF5_SIG_LEN);
+        memcpy(ext.signature, tf5_test::TV_EXT_SIGNATURE, TF5_IBS_SIG_LEN);
         memcpy(ext.tesla_tag, tf5_test::TV_EXT_TAG, TF5_TESLA_TAG_LEN);
     }
 };
@@ -140,7 +140,7 @@ TEST_F(TF5SerialTest, PackExtension_SignatureAtOffset38) {
     tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     // signature is 48 bytes at offset 38
-    EXPECT_EQ(0, memcmp(&packed_buf[38], tf5_test::TV_EXT_SIGNATURE, TF5_SIG_LEN))
+    EXPECT_EQ(0, memcmp(&packed_buf[38], tf5_test::TV_EXT_SIGNATURE, TF5_IBS_SIG_LEN))
         << "signature should be at offset 38-85";
 }
 
@@ -204,7 +204,7 @@ TEST_F(TF5SerialTest, UnpackExtension_AllFieldsCorrect) {
     EXPECT_EQ(ext.i, unpacked.i);
     EXPECT_EQ(0, memcmp(ext.key_disclosure, unpacked.key_disclosure, TF5_TESLA_KEY_LEN));
     EXPECT_EQ(ext.timestamp_ms, unpacked.timestamp_ms);
-    EXPECT_EQ(0, memcmp(ext.signature, unpacked.signature, TF5_SIG_LEN));
+    EXPECT_EQ(0, memcmp(ext.signature, unpacked.signature, TF5_IBS_SIG_LEN));
     EXPECT_EQ(0, memcmp(ext.tesla_tag, unpacked.tesla_tag, TF5_TESLA_TAG_LEN));
 }
 

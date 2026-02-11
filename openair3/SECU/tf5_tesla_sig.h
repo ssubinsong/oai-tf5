@@ -33,8 +33,8 @@ int tf5_bls_init(void);
  * @param public_key   Output: BLS public key (96 bytes)
  * @return 0 on success, negative on error
  */
-int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
-                                uint8_t public_key[TF5_GNB_PUBKEY_LEN]);
+int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
+                                uint8_t public_key[TF5_IBS_GNB_PK_LEN]);
 
 /**
  * Sign data with BLS
@@ -45,10 +45,10 @@ int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
  * @param signature    Output: BLS signature (48 bytes)
  * @return 0 on success, negative on error
  */
-int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
+int tf5_bls_sign(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
                        const uint8_t *data,
                        size_t data_len,
-                       uint8_t signature[TF5_SIG_LEN]);
+                       uint8_t signature[TF5_IBS_SIG_LEN]);
 
 /*
  * =============================================================================
@@ -78,12 +78,12 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
  *   -4: Invalid signature format
  *   -5: Signature verification failed
  */
-int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
+int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                           uint32_t gnb_key_validity_end,
                           const uint8_t *data,
                           size_t data_len,
-                          const uint8_t signature[TF5_SIG_LEN]);
+                          const uint8_t signature[TF5_IBS_SIG_LEN]);
 
 #endif /* ENABLE_TF5 */
 

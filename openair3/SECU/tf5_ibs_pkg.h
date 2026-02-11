@@ -87,7 +87,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
 int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
                             size_t cell_id_len,
                             uint32_t gnb_key_validity_end,
-                            uint8_t scalar_out[TF5_GNB_SECRET_KEY_LEN]);
+                            uint8_t scalar_out[TF5_IBS_GNB_SK_LEN]);
 
 /**
  * Parse Cell ID from hex string
@@ -145,7 +145,7 @@ int tf5_ibs_load_master_secret(const char *filepath,
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                 uint32_t gnb_key_validity_end,
-                                uint8_t sk_out[TF5_GNB_SECRET_KEY_LEN]);
+                                uint8_t sk_out[TF5_IBS_GNB_SK_LEN]);
 
 /*
  * =============================================================================
@@ -161,10 +161,10 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
  */
 static inline uint32_t tf5_unix_to_gnb_key_validity(uint64_t unix_sec)
 {
-    if (unix_sec <= TF5_VALIDITY_EPOCH) {
+    if (unix_sec <= TF5_IBS_VALIDITY_EPOCH) {
         return 0;
     }
-    return (uint32_t)((unix_sec - TF5_VALIDITY_EPOCH) / 60);
+    return (uint32_t)((unix_sec - TF5_IBS_VALIDITY_EPOCH) / 60);
 }
 
 /**
@@ -175,7 +175,7 @@ static inline uint32_t tf5_unix_to_gnb_key_validity(uint64_t unix_sec)
  */
 static inline uint64_t tf5_gnb_key_validity_to_unix(uint32_t gnb_key_validity_end)
 {
-    return TF5_VALIDITY_EPOCH + (uint64_t)gnb_key_validity_end * 60;
+    return TF5_IBS_VALIDITY_EPOCH + (uint64_t)gnb_key_validity_end * 60;
 }
 
 #endif /* TF5_IBS_PKG_H */

@@ -1690,7 +1690,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
           ptr->SInfo.tf5_state = NULL;
         } else {
           uint8_t mpk[TF5_MPK_LEN];
-          rc = tf5_load_gnb_pubkey(params->tf5_core_mpk_file, mpk);
+          rc = tf5_load_core_mpk(params->tf5_core_mpk_file, mpk);
           if (rc == 0) {
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info
             uint16_t slots_per_frame = 20;

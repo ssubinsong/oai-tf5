@@ -19,8 +19,8 @@ int tf5_bls_init(void)
     return 0;
 }
 
-int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
-                                uint8_t public_key[TF5_GNB_PUBKEY_LEN])
+int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
+                                uint8_t public_key[TF5_IBS_GNB_PK_LEN])
 {
     if (!secret_key || !public_key) {
         return -1;
@@ -50,10 +50,10 @@ int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
     return 0;
 }
 
-int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
+int tf5_bls_sign(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
                        const uint8_t *data,
                        size_t data_len,
-                       uint8_t signature[TF5_SIG_LEN])
+                       uint8_t signature[TF5_IBS_SIG_LEN])
 {
     if (!secret_key || !data || !signature || data_len == 0) {
         return -1;
@@ -94,9 +94,6 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
  * =============================================================================
  */
 
-/* IKM size: DST (35) + Cell_ID (5) + gnb_key_validity_end (3) = 43 bytes */
-#define TF5_IBS_IKM_LEN  (TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)
-
 /*
  * Thread-local MPK cache for verification fast path.
  * Only MPK parsing/in-G2 checks are cached; per-message derived_pk and pairing
@@ -104,18 +101,18 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
  */
 typedef struct {
     int valid;
-    uint8_t mpk[TF5_GNB_PUBKEY_LEN];
+    uint8_t mpk[TF5_IBS_GNB_PK_LEN];
     blst_p2_affine mpk_affine;
 } tf5_mpk_cache_t;
 
 static __thread tf5_mpk_cache_t s_mpk_cache = {0};
 
-int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
+int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                           uint32_t gnb_key_validity_end,
                           const uint8_t *data,
                           size_t data_len,
-                          const uint8_t signature[TF5_SIG_LEN])
+                          const uint8_t signature[TF5_IBS_SIG_LEN])
 {
     if (!mpk || !cell_id || !data || !signature || data_len == 0) {
         return -1;
@@ -145,7 +142,7 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
 
     /* Step 2: Deserialize/validate MPK once per thread and cache result */
     if (s_mpk_cache.valid &&
-        memcmp(s_mpk_cache.mpk, mpk, TF5_GNB_PUBKEY_LEN) == 0) {
+        memcmp(s_mpk_cache.mpk, mpk, TF5_IBS_GNB_PK_LEN) == 0) {
         mpk_affine = s_mpk_cache.mpk_affine;
     } else {
         err = blst_p2_uncompress(&mpk_affine, mpk);
@@ -155,7 +152,7 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
             return -3;
         }
 
-        memcpy(s_mpk_cache.mpk, mpk, TF5_GNB_PUBKEY_LEN);
+        memcpy(s_mpk_cache.mpk, mpk, TF5_IBS_GNB_PK_LEN);
         s_mpk_cache.mpk_affine = mpk_affine;
         s_mpk_cache.valid = 1;
     }

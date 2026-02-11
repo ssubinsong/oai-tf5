@@ -281,8 +281,8 @@ int tf5_pack_extension(const tf5_extension_t *ext,
     offset += 3;
 
     // Signature (48 bytes - BLS)
-    memcpy(buf + offset, ext->signature, TF5_SIG_LEN);
-    offset += TF5_SIG_LEN;
+    memcpy(buf + offset, ext->signature, TF5_IBS_SIG_LEN);
+    offset += TF5_IBS_SIG_LEN;
 
     // TESLA tag (16 bytes)
     memcpy(buf + offset, ext->tesla_tag, TF5_TESLA_TAG_LEN);
@@ -329,8 +329,8 @@ int tf5_unpack_extension(const uint8_t *buf,
     offset += 3;
 
     // Signature (48 bytes - BLS)
-    memcpy(ext->signature, buf + offset, TF5_SIG_LEN);
-    offset += TF5_SIG_LEN;
+    memcpy(ext->signature, buf + offset, TF5_IBS_SIG_LEN);
+    offset += TF5_IBS_SIG_LEN;
 
     // TESLA tag (16 bytes)
     memcpy(ext->tesla_tag, buf + offset, TF5_TESLA_TAG_LEN);
@@ -349,7 +349,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
                        uint16_t t_int_ms,
                        uint8_t d,
                        uint32_t chain_len,
-                       const uint8_t private_key[TF5_GNB_SECRET_KEY_LEN],
+                       const uint8_t private_key[TF5_IBS_GNB_SK_LEN],
                        const tf5_slot_time_t *t0,
                        uint16_t slots_per_frame)
 {
@@ -363,7 +363,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
     memset(state, 0, sizeof(*state));
 
     // Store IBS secret key (sk_ID issued by Core PKG)
-    memcpy(state->private_key, private_key, TF5_GNB_SECRET_KEY_LEN);
+    memcpy(state->private_key, private_key, TF5_IBS_GNB_SK_LEN);
 
     // Allocate key chain: chain_len + 1 entries to include K_{-1} at index 0
     // key_chain[0] = K_{-1}, key_chain[1] = K_0, ..., key_chain[chain_len] = K_{N-1}
@@ -541,7 +541,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
  */
 
 int tf5_ue_init(tf5_ue_state_t *state,
-                      const uint8_t mpk[TF5_MPK_LEN],
+                      const uint8_t mpk[TF5_IBS_MPK_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us,
                       uint64_t rp_timestamp_window_ms)
@@ -553,7 +553,7 @@ int tf5_ue_init(tf5_ue_state_t *state,
     memset(state, 0, sizeof(*state));
 
     // Store Core's Master Public Key
-    memcpy(state->mpk, mpk, TF5_MPK_LEN);
+    memcpy(state->mpk, mpk, TF5_IBS_MPK_LEN);
     state->slots_per_frame = slots_per_frame;
     state->buffer_queue_count = 0;  // All queue entries initialized to 0/false by memset
 
@@ -854,7 +854,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
  */
 
 int tf5_load_gnb_privkey(const char *filepath,
-                           uint8_t privkey_out[TF5_GNB_SECRET_KEY_LEN],
+                           uint8_t privkey_out[TF5_IBS_GNB_SK_LEN],
                            uint32_t *validity_out)
 {
     if (!filepath || !privkey_out || !validity_out) {
@@ -879,7 +879,7 @@ int tf5_load_gnb_privkey(const char *filepath,
     }
 
     // Extract secret key (bytes 0-31)
-    memcpy(privkey_out, buffer, TF5_GNB_SECRET_KEY_LEN);
+    memcpy(privkey_out, buffer, TF5_IBS_GNB_SK_LEN);
 
     // Extract validity from bytes 32-34 (big-endian)
     *validity_out = ((uint32_t)buffer[32] << 16) |
@@ -890,43 +890,40 @@ int tf5_load_gnb_privkey(const char *filepath,
     OPENSSL_cleanse(buffer, TF5_IBS_SK_FILE_SIZE);
 
     // Validate by trying to derive public key (this checks the key is valid)
-    uint8_t pubkey_test[TF5_MPK_LEN];
+    uint8_t pubkey_test[TF5_IBS_MPK_LEN];
     if (tf5_bls_derive_pubkey(privkey_out, pubkey_test) != 0) {
         LOG_E(TF5, "Invalid BLS secret key format\n");
-        OPENSSL_cleanse(privkey_out, TF5_GNB_SECRET_KEY_LEN);
+        OPENSSL_cleanse(privkey_out, TF5_IBS_GNB_SK_LEN);
         return -3;
     }
 
     return 0;
 }
 
-int tf5_load_gnb_pubkey(const char *filepath,
-                          uint8_t pubkey_out[TF5_MPK_LEN])
+int tf5_load_core_mpk(const char *filepath,
+                      uint8_t mpk_out[TF5_IBS_MPK_LEN])
 {
-    if (!filepath || !pubkey_out) {
+    if (!filepath || !mpk_out) {
         return -1;
     }
 
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
-        LOG_E(TF5, "Cannot open public key file: %s\n", filepath);
+        LOG_E(TF5, "Cannot open MPK file: %s\n", filepath);
         return -1;
     }
 
-    size_t n = fread(pubkey_out, 1, TF5_MPK_LEN, fp);
+    size_t n = fread(mpk_out, 1, TF5_IBS_MPK_LEN, fp);
     fclose(fp);
 
-    if (n != TF5_MPK_LEN) {
-        LOG_E(TF5, "Public key file has wrong size: %zu (expected %d)\n",
-              n, TF5_MPK_LEN);
+    if (n != TF5_IBS_MPK_LEN) {
+        LOG_E(TF5, "MPK file has wrong size: %zu (expected %d)\n",
+              n, TF5_IBS_MPK_LEN);
         return -2;
     }
 
-    // Validate by trying to verify a test signature (this checks the key format)
-    // We just check deserialization succeeds by doing a simple sign/verify
-    // A malformed public key would fail during the actual signature verification
-    LOG_I(TF5, "Loaded BLS public key from %s (%d bytes)\n",
-          filepath, TF5_MPK_LEN);
+    LOG_I(TF5, "Loaded Core MPK from %s (%d bytes)\n",
+          filepath, TF5_IBS_MPK_LEN);
 
     return 0;
 }

@@ -21,8 +21,6 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#define TF5_IBS_KEYGEN_IKM_LEN 32  /* Input Keying Material length */
-
 /*
  * Read cryptographically secure random bytes from /dev/urandom
  */
@@ -76,22 +74,22 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
         return -1;
     }
 
-    uint8_t ikm[TF5_IBS_KEYGEN_IKM_LEN];
+    uint8_t ikm[TF5_BLS_SCALAR_LEN];
     blst_scalar s;
     blst_p2 mpk;
     uint8_t msk_bytes[TF5_IBS_MASTER_SECRET_LEN];
     uint8_t mpk_bytes[TF5_IBS_MASTER_PUBLIC_LEN];
 
     /* Generate random IKM */
-    if (read_random_bytes(ikm, TF5_IBS_KEYGEN_IKM_LEN) != 0) {
+    if (read_random_bytes(ikm, TF5_BLS_SCALAR_LEN) != 0) {
         return -2;
     }
 
     /* Derive master secret key using blst_keygen */
-    blst_keygen(&s, ikm, TF5_IBS_KEYGEN_IKM_LEN, NULL, 0);
+    blst_keygen(&s, ikm, TF5_BLS_SCALAR_LEN, NULL, 0);
 
     /* Clear IKM from memory */
-    OPENSSL_cleanse(ikm, TF5_IBS_KEYGEN_IKM_LEN);
+    OPENSSL_cleanse(ikm, TF5_BLS_SCALAR_LEN);
 
     /* Validate secret key */
     if (!blst_sk_check(&s)) {

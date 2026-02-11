@@ -26,7 +26,7 @@
 int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
                             size_t cell_id_len,
                             uint32_t gnb_key_validity_end,
-                            uint8_t scalar_out[TF5_GNB_SECRET_KEY_LEN])
+                            uint8_t scalar_out[TF5_IBS_GNB_SK_LEN])
 {
     if (!cell_id || !scalar_out || cell_id_len == 0) {
         return -1;
@@ -39,7 +39,7 @@ int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
      *   - Domain separation is inherent in the IKM itself
      *   - Key is bound to both Cell ID and validity period
      */
-    uint8_t ikm[TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN];
+    uint8_t ikm[TF5_IBS_IKM_LEN];
     memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
     memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, cell_id_len);
 
@@ -178,7 +178,7 @@ int tf5_ibs_load_master_secret(const char *filepath,
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                 uint32_t gnb_key_validity_end,
-                                uint8_t sk_out[TF5_GNB_SECRET_KEY_LEN])
+                                uint8_t sk_out[TF5_IBS_GNB_SK_LEN])
 {
     if (!msk || !cell_id || !sk_out) {
         return -1;
@@ -196,7 +196,7 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
     }
 
     /* Compute pk_ID = H_s(cell_id || gnb_key_validity_end) */
-    uint8_t ikm[TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN];
+    uint8_t ikm[TF5_IBS_IKM_LEN];
     memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
     memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, TF5_IBS_CELL_ID_LEN);
 

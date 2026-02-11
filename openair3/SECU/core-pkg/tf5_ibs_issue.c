@@ -57,7 +57,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     }
 
     uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
-    uint8_t sk_id[TF5_GNB_SECRET_KEY_LEN];
+    uint8_t sk_id[TF5_IBS_GNB_SK_LEN];
     int rc;
 
     /* Load master secret key */
@@ -78,7 +78,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
 
     /* Build combined key file: sk_id (32 bytes) + gnb_key_validity_end (3 bytes, big-endian) */
     uint8_t key_file_data[TF5_IBS_SK_FILE_SIZE];
-    memcpy(key_file_data, sk_id, TF5_GNB_SECRET_KEY_LEN);
+    memcpy(key_file_data, sk_id, TF5_IBS_GNB_SK_LEN);
 
     /* Encode validity as 3 bytes big-endian (24 bits) */
     key_file_data[32] = (gnb_key_validity_end >> 16) & 0xFF;
@@ -90,7 +90,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
 
     /* Clear key data from memory */
     OPENSSL_cleanse(key_file_data, TF5_IBS_SK_FILE_SIZE);
-    OPENSSL_cleanse(sk_id, TF5_GNB_SECRET_KEY_LEN);
+    OPENSSL_cleanse(sk_id, TF5_IBS_GNB_SK_LEN);
 
     if (rc != 0) {
         return -5;
