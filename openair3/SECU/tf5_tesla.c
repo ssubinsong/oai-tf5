@@ -103,7 +103,7 @@ uint64_t tf5_rp_get_wallclock_ms(void)
 {
     struct timespec ts;
     if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
-        LOG_E(NR_RRC, "TESLA: Failed to get wall-clock time\n");
+        LOG_E(TF5, "Failed to get wall-clock time\n");
         return 0;
     }
     return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
@@ -360,7 +360,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
     // key_chain[0] = K_{-1}, key_chain[1] = K_0, ..., key_chain[chain_len] = K_{N-1}
     state->key_chain = calloc(chain_len + 1, TF5_TESLA_KEY_LEN);
     if (!state->key_chain) {
-        LOG_E(NR_RRC, "TESLA: Failed to allocate key chain\n");
+        LOG_E(TF5, "Failed to allocate key chain\n");
         return -3;
     }
     state->key_chain_len = chain_len;
@@ -368,7 +368,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
     // Generate random K_{N-1} (last key in chain, stored at index chain_len)
     uint32_t last_key_idx = tf5_key_interval_to_index(chain_len - 1);
     if (RAND_bytes(state->key_chain[last_key_idx], TF5_TESLA_KEY_LEN) != 1) {
-        LOG_E(NR_RRC, "TESLA: Failed to generate random key\n");
+        LOG_E(TF5, "Failed to generate random key\n");
         free(state->key_chain);
         return -4;
     }
@@ -381,7 +381,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
         tf5_chain_key(state->key_chain[next_idx], state->key_chain[curr_idx]);
     }
 
-    LOG_I(NR_RRC, "TESLA: Key chain generated with %u intervals (K_{-1} at index 0)\n", chain_len);
+    LOG_I(TF5, "Key chain generated with %u intervals (K_{-1} at index 0)\n", chain_len);
 
     // Set TESLA parameters
     state->tesla_params.t_int_ms = t_int_ms;
@@ -392,7 +392,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
     state->slots_per_frame = slots_per_frame;
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA IBS: gNB initialized - T_int=%ums, d=%u, T_0=SFN%u.%u\n",
+    LOG_I(TF5, "gNB initialized - T_int=%ums, d=%u, T_0=SFN%u.%u\n",
           t_int_ms, d, t0->sfn, t0->slot);
 
     return 0;
@@ -442,7 +442,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
 
     // Check if interval is within chain bounds
     if (interval >= state->key_chain_len) {
-        LOG_E(NR_RRC, "TESLA: Interval %u exceeds chain length %u\n",
+        LOG_E(TF5, "Interval %u exceeds chain length %u\n",
               interval, state->key_chain_len);
         return -2;
     }
@@ -463,14 +463,14 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
     memcpy(ext->key_disclosure, state->key_chain[disclosed_idx], TF5_TESLA_KEY_LEN);
 
     if (disclosed_interval < 0) {
-        LOG_D(NR_RRC, "TESLA: Bootstrap interval %u, disclosing K_{%d}\n",
+        LOG_D(TF5, "Bootstrap interval %u, disclosing K_{%d}\n",
               interval, disclosed_interval);
     }
 
     // Set wall-clock timestamp for signature replay protection
     ext->timestamp_ms = (uint32_t)tf5_rp_get_wallclock_ms() & 0xFFFFFFu;
     if (ext->timestamp_ms == 0) {
-        LOG_E(NR_RRC, "TESLA: Failed to get wall-clock time\n");
+        LOG_E(TF5, "Failed to get wall-clock time\n");
         return -7;
     }
 
@@ -486,7 +486,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                             ext->key_disclosure,
                                             ext->timestamp_ms);
     if (rc != 0) {
-        LOG_E(NR_RRC, "TESLA: Failed to build signature auth input\n");
+        LOG_E(TF5, "Failed to build signature auth input\n");
         return -3;
     }
 
@@ -495,7 +495,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                             sig_auth_input, sig_auth_input_len,
                             ext->signature);
     if (rc != 0) {
-        LOG_E(NR_RRC, "TESLA: Failed to compute signature\n");
+        LOG_E(TF5, "Failed to compute signature\n");
         return -4;
     }
 
@@ -506,7 +506,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                         original_sib1, sib1_len,
                                         ext->validity_end);
     if (rc != 0) {
-        LOG_E(NR_RRC, "TESLA: Failed to build MAC auth input\n");
+        LOG_E(TF5, "Failed to build MAC auth input\n");
         return -5;
     }
 
@@ -515,11 +515,11 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                mac_auth_input, mac_auth_input_len,
                                ext->tesla_tag);
     if (rc != 0) {
-        LOG_E(NR_RRC, "TESLA: Failed to compute tag\n");
+        LOG_E(TF5, "Failed to compute tag\n");
         return -6;
     }
 
-    LOG_D(NR_RRC, "TESLA: Prepared extension for interval %u (SFN%u.%u)\n",
+    LOG_D(TF5, "Prepared extension for interval %u (SFN%u.%u)\n",
           interval, sfn, slot);
 
     return 0;
@@ -561,7 +561,7 @@ int tf5_ue_init(tf5_ue_state_t *state,
 
     state->initialized = true;
 
-    LOG_I(NR_RRC, "TESLA: UE initialized (D=%u slots, first-time UE)\n", state->d_offset_slots);
+    LOG_I(TF5, "UE initialized (D=%u slots, first-time UE)\n", state->d_offset_slots);
 
     return 0;
 }
@@ -604,7 +604,7 @@ bool tf5_ue_safe_packet_test(tf5_ue_state_t *ue_state,
     bool safe = (x < i + d);
 
     if (!safe) {
-        LOG_W(NR_RRC, "TESLA: Safe packet test FAILED - x=%u (T+D, D=%u slots) >= i=%u + d=%u\n",
+        LOG_W(TF5, "Safe packet test FAILED - x=%u (T+D, D=%u slots) >= i=%u + d=%u\n",
               x, ue_state->d_offset_slots, i, d);
     }
 
@@ -623,7 +623,7 @@ int tf5_ue_buffer_msg(tf5_ue_state_t *state,
     }
 
     if (auth_input_len > TF5_MAX_AUTH_INPUT) {
-        LOG_E(NR_RRC, "TESLA: Auth input too large (%zu > %d)\n",
+        LOG_E(TF5, "Auth input too large (%zu > %d)\n",
               auth_input_len, TF5_MAX_AUTH_INPUT);
         return -2;
     }
@@ -647,7 +647,7 @@ int tf5_ue_buffer_msg(tf5_ue_state_t *state,
     }
     if (target_slot < 0) {
         target_slot = oldest_slot;
-        LOG_W(NR_RRC, "TESLA: Buffer full - dropping oldest entry (interval %u)\n",
+        LOG_W(TF5, "Buffer full - dropping oldest entry (interval %u)\n",
                   state->buffer_queue[target_slot].rx_interval_index);
     }
 
@@ -668,7 +668,7 @@ int tf5_ue_buffer_msg(tf5_ue_state_t *state,
         }
     }
 
-    LOG_D(NR_RRC, "TESLA: Buffered SIB1 for interval %u (slot %d, queue count %u, rrc_trigger=%d)\n",
+    LOG_D(TF5, "Buffered SIB1 for interval %u (slot %d, queue count %u, rrc_trigger=%d)\n",
           interval_index, target_slot, state->buffer_queue_count, triggered_rrc_setup);
 
     return 0;
@@ -684,7 +684,7 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
 
     // chain_bootstrapped indicates the anchor is valid (set when IBS signature verified)
     if (!ue_state->chain_bootstrapped) {
-        LOG_E(NR_RRC, "TESLA: No valid anchor key - cannot verify key chain\n");
+        LOG_E(TF5, "No valid anchor key - cannot verify key chain\n");
         return false;
     }
 
@@ -706,8 +706,8 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
     }
 
     if (memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
-      LOG_D(NR_RRC,
-            "TESLA: Key chain verified K_%u -> K_%d (%u hash ops)\n",
+      LOG_D(TF5,
+            "Key chain verified K_%u -> K_%d (%u hash ops)\n",
             disclosed_key_interval,
             ue_state->trust_anchor_idx,
             steps);
@@ -718,7 +718,7 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
       ue_state->trust_anchor_idx = disclosed_interval;
       return true;
     }
-    LOG_E(NR_RRC, "TESLA: Key chain verification FAILED K_%u -> K_%d\n", disclosed_key_interval, ue_state->trust_anchor_idx);
+    LOG_E(TF5, "Key chain verification FAILED K_%u -> K_%d\n", disclosed_key_interval, ue_state->trust_anchor_idx);
     return false;
 }
 
@@ -751,7 +751,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
     }
 
     if (!has_buffered_entries) {
-        LOG_D(NR_RRC, "TESLA: No buffered entries for verification\n");
+        LOG_D(TF5, "No buffered entries for verification\n");
         return -2;
     }
 
@@ -766,7 +766,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
                            latest_buffered : key_disclosure_interval;
 
     if (verify_start > verify_end) {
-        LOG_D(NR_RRC, "TESLA: No intervals in verifiable range [%u, %u]\n",
+        LOG_D(TF5, "No intervals in verifiable range [%u, %u]\n",
               verify_start, verify_end);
         return -2;
     }
@@ -791,14 +791,14 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
                                            entry->auth_input_len,
                                            expected_tag);
             if (rc != 0) {
-                LOG_E(NR_RRC, "TESLA: Failed to compute tag for interval %u\n", i);
+                LOG_E(TF5, "Failed to compute tag for interval %u\n", i);
                 entry->valid = false;
                 continue;
             }
 
             // Compare tags
             if (memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
-                LOG_I(NR_RRC, "TESLA: MAC verified for interval %u (rrc_trigger=%d)\n",
+                LOG_I(TF5, "MAC verified for interval %u (rrc_trigger=%d)\n",
                       i, entry->triggered_rrc_setup);
 
                 if (entry->triggered_rrc_setup) {
@@ -807,7 +807,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
 
                 entry->valid = false;  // Release from buffer
             } else {
-                LOG_E(NR_RRC, "TESLA: MAC verification FAILED for interval %u\n",
+                LOG_E(TF5, "MAC verification FAILED for interval %u\n",
                       i);
               entry->valid = false;
               if (entry->triggered_rrc_setup) {
@@ -854,7 +854,7 @@ int tf5_load_gnb_privkey(const char *filepath,
 
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
-        LOG_E(NR_RRC, "TESLA: Cannot open secret key file: %s\n", filepath);
+        LOG_E(TF5, "Cannot open secret key file: %s\n", filepath);
         return -1;
     }
 
@@ -864,7 +864,7 @@ int tf5_load_gnb_privkey(const char *filepath,
     fclose(fp);
 
     if (n != TF5_IBS_SK_FILE_SIZE) {
-        LOG_E(NR_RRC, "TESLA: Secret key file has wrong size: %zu (expected %d)\n",
+        LOG_E(TF5, "Secret key file has wrong size: %zu (expected %d)\n",
               n, TF5_IBS_SK_FILE_SIZE);
         return -2;
     }
@@ -883,7 +883,7 @@ int tf5_load_gnb_privkey(const char *filepath,
     // Validate by trying to derive public key (this checks the key is valid)
     uint8_t pubkey_test[TF5_MPK_LEN];
     if (tf5_bls_derive_pubkey(privkey_out, pubkey_test) != 0) {
-        LOG_E(NR_RRC, "TESLA: Invalid BLS secret key format\n");
+        LOG_E(TF5, "Invalid BLS secret key format\n");
         memset(privkey_out, 0, TF5_GNB_SECRET_KEY_LEN);
         return -3;
     }
@@ -900,7 +900,7 @@ int tf5_load_gnb_pubkey(const char *filepath,
 
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
-        LOG_E(NR_RRC, "TESLA: Cannot open public key file: %s\n", filepath);
+        LOG_E(TF5, "Cannot open public key file: %s\n", filepath);
         return -1;
     }
 
@@ -908,7 +908,7 @@ int tf5_load_gnb_pubkey(const char *filepath,
     fclose(fp);
 
     if (n != TF5_MPK_LEN) {
-        LOG_E(NR_RRC, "TESLA: Public key file has wrong size: %zu (expected %d)\n",
+        LOG_E(TF5, "Public key file has wrong size: %zu (expected %d)\n",
               n, TF5_MPK_LEN);
         return -2;
     }
@@ -916,7 +916,7 @@ int tf5_load_gnb_pubkey(const char *filepath,
     // Validate by trying to verify a test signature (this checks the key format)
     // We just check deserialization succeeds by doing a simple sign/verify
     // A malformed public key would fail during the actual signature verification
-    LOG_I(NR_RRC, "TESLA: Loaded BLS public key from %s (%d bytes)\n",
+    LOG_I(TF5, "Loaded BLS public key from %s (%d bytes)\n",
           filepath, TF5_MPK_LEN);
 
     return 0;

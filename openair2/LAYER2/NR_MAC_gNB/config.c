@@ -1202,35 +1202,35 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   // Check that key path is provided (no defaults - must be explicit)
   if (tf5_privkey_file == NULL || tf5_privkey_file[0] == '\0') {
     AssertFatal(false,
-                "TESLA IBS: --tf5-privkey is required. Specify path to sk_ID file (issued by Core PKG).\n"
-                "TESLA IBS: Generate with: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>\n");
+                "TF5: --tf5-privkey is required. Specify path to sk_ID file (issued by Core PKG).\n"
+                "TF5: Generate with: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>\n");
   }
 
   // Initialize BLS library
   rc = tf5_bls_init();
-  AssertFatal(rc == 0, "TESLA IBS: Failed to initialize BLS library (rc=%d)\n", rc);
+  AssertFatal(rc == 0, "TF5: Failed to initialize BLS library (rc=%d)\n", rc);
 
   // Load IBS secret key and embedded validity period (35-byte file: sk + validity)
   rc = tf5_load_gnb_privkey(tf5_privkey_file, private_key, &key_validity_end);
   AssertFatal(rc == 0,
-              "TESLA IBS: Failed to load sk_ID from %s (rc=%d)\n"
-              "TESLA IBS: Use tf5_ibs_issue to generate key for this gNB\n",
+              "TF5: Failed to load sk_ID from %s (rc=%d)\n"
+              "TF5: Use tf5_ibs_issue to generate key for this gNB\n",
               tf5_privkey_file, rc);
 
   // Validate gnb_key_validity_end is within 24-bit range
   AssertFatal(key_validity_end <= 0xFFFFFF,
-              "TESLA IBS: gnb_key_validity_end=%u exceeds max (16777215)\n", key_validity_end);
+              "TF5: gnb_key_validity_end=%u exceeds max (16777215)\n", key_validity_end);
 
   // Check if key has expired
   uint64_t expiry_unix = tf5_gnb_key_validity_to_unix(key_validity_end);
   uint64_t current_unix = tf5_rp_get_wallclock_ms() / 1000;
   AssertFatal(current_unix < expiry_unix,
-              "TESLA IBS: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n"
-              "TESLA IBS: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n",
+              "TF5: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n"
+              "TF5: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n",
               key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
 
-  LOG_I(NR_MAC, "TESLA IBS: Loaded sk_ID from: %s\n", tf5_privkey_file);
-  LOG_I(NR_MAC, "TESLA IBS: Cell ID: 0x%09llx (36 bits)\n", (unsigned long long)cellID);
+  LOG_I(TF5, "Loaded sk_ID from: %s\n", tf5_privkey_file);
+  LOG_I(TF5, "Cell ID: 0x%09llx (36 bits)\n", (unsigned long long)cellID);
 
   // T_int = 20ms (CORESET pattern 1, per 3GPP TS 38.331)
   uint16_t t_int_ms = 20;
@@ -1243,9 +1243,9 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   // Default: 65536 keys (~21.8 min with T_int=20ms)
   uint32_t chain_len = (uint32_t)tf5_tesla_chain_len;
 
-  LOG_I(NR_MAC, "TESLA IBS: T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
-  LOG_I(NR_MAC, "TESLA IBS: T_0=(SFN=%u, slot=%u) (reference point, aligns with SIB1 pattern)\n", t0_sfn, t0_slot);
-  LOG_I(NR_MAC, "TESLA IBS: chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
+  LOG_I(TF5, "T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
+  LOG_I(TF5, "T_0=(SFN=%u, slot=%u) (reference point, aligns with SIB1 pattern)\n", t0_sfn, t0_slot);
+  LOG_I(TF5, "chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
 
   // Initialize TESLA with computed parameters
   tf5_slot_time_t t0 = tf5_slot_time_make(t0_sfn, t0_slot);
@@ -1256,7 +1256,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
                           private_key,
                           &t0,         // T_0 timing (SFN/slot)
                           slots_per_frame);
-  AssertFatal(rc == 0, "TESLA IBS: Failed to initialize (rc=%d)\n", rc);
+  AssertFatal(rc == 0, "TF5: Failed to initialize (rc=%d)\n", rc);
 
   // Store key validity period (minutes since 2024-01-01)
   cc->tf5_state->key_validity_end = key_validity_end;
@@ -1266,9 +1266,9 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   struct tm *tm_expiry = gmtime(&expiry_time);
   char expiry_str[64];
   strftime(expiry_str, sizeof(expiry_str), "%Y-%m-%d %H:%M UTC", tm_expiry);
-  LOG_I(NR_MAC, "TESLA IBS: Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, key_validity_end);
+  LOG_I(TF5, "Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, key_validity_end);
 
-  LOG_I(NR_MAC, "TESLA IBS: gNB initialization successful\n");
+  LOG_I(TF5, "gNB initialization successful\n");
 #endif
   cc->sib1_bcch_length = encode_SIB_NR(sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
   AssertFatal(cc->sib1_bcch_length > 0, "could not encode SIB1\n");

@@ -14,7 +14,7 @@ static const size_t TF5_BLS_DST_LEN = sizeof(TF5_BLS_DST) - 1;
 int tf5_bls_init(void)
 {
     /* blst library requires no initialization - it is stateless */
-    LOG_I(NR_RRC, "TESLA: BLST library ready (BLS12-381, pk-in-G2 mode)\n");
+    LOG_I(TF5, "BLST library ready (BLS12-381, pk-in-G2 mode)\n");
     return 0;
 }
 
@@ -33,7 +33,7 @@ int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
 
     /* Check secret key validity */
     if (!blst_sk_check(&sk)) {
-        LOG_E(NR_RRC, "TESLA: Invalid secret key scalar\n");
+        LOG_E(TF5, "Invalid secret key scalar\n");
         return -3;
     }
 
@@ -67,7 +67,7 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
 
     /* Check secret key validity */
     if (!blst_sk_check(&sk)) {
-        LOG_E(NR_RRC, "TESLA: Invalid secret key for signing\n");
+        LOG_E(TF5, "Invalid secret key for signing\n");
         memset(&sk, 0, sizeof(sk));
         return -3;
     }
@@ -153,7 +153,7 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
     } else {
         err = blst_p2_uncompress(&mpk_affine, mpk);
         if (err != BLST_SUCCESS) {
-            LOG_E(NR_RRC, "TESLA IBS: Failed to deserialize MPK: %d\n", err);
+            LOG_E(TF5, "Failed to deserialize MPK: %d\n", err);
             memset(&pk_id, 0, sizeof(pk_id));
             return -3;
         }
@@ -182,20 +182,20 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
 
     /* Check derived key is valid (not point at infinity) */
     if (blst_p2_affine_is_inf(&pk_final)) {
-        LOG_E(NR_RRC, "TESLA IBS: Derived public key is infinity\n");
+        LOG_E(TF5, "Derived public key is infinity\n");
         return -3;
     }
 
     /* Step 5: Deserialize signature */
     err = blst_p1_uncompress(&sig_affine, signature);
     if (err != BLST_SUCCESS) {
-        LOG_E(NR_RRC, "TESLA IBS: Failed to deserialize signature: %d\n", err);
+        LOG_E(TF5, "Failed to deserialize signature: %d\n", err);
         return -4;
     }
 
     /* Validate signature is in G1 */
     if (!blst_p1_affine_in_g1(&sig_affine)) {
-        LOG_E(NR_RRC, "TESLA IBS: Signature not in G1\n");
+        LOG_E(TF5, "Signature not in G1\n");
         return -4;
     }
 
@@ -207,11 +207,11 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
                                      NULL, 0);  /* No augmentation */
 
     if (err != BLST_SUCCESS) {
-        LOG_W(NR_RRC, "TESLA IBS: Signature verification failed: %d\n", err);
+        LOG_W(TF5, "Signature verification failed: %d\n", err);
         return -5;
     }
 
-    LOG_D(NR_RRC, "TESLA IBS: Signature verified successfully\n");
+    LOG_D(TF5, "Signature verified successfully\n");
     return 0;
 }
 

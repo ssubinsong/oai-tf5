@@ -4381,7 +4381,7 @@ int encode_measgap_config(const measgap_config_t *c, uint8_t *buf)
 void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
 {
   if (!cc->tf5_state || !cc->tf5_state->initialized) {
-    AssertFatal(0, "TESLA: SIB1 TESLA state not initialized\n");
+    AssertFatal(0, "TF5: SIB1 TESLA state not initialized\n");
   }
 
   NR_SIB1_t *sib1 = cc->sib1->message.choice.c1->choice.systemInformationBlockType1;
@@ -4399,7 +4399,7 @@ void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot
   sib1->lateNonCriticalExtension = saved_ext;
 
   AssertFatal(enc_rval.encoded > 0,
-              "TESLA: Failed to encode SIB1 for signing (rc=%zd)\n", enc_rval.encoded);
+              "TF5: Failed to encode SIB1 for signing (rc=%zd)\n", enc_rval.encoded);
   cc->sib1_original_length = (enc_rval.encoded + 7) / 8;  // bits to bytes
 
   // Prepare TESLA extension for current frame/slot
@@ -4409,18 +4409,18 @@ void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot
                                            cc->sib1_original,
                                            cc->sib1_original_length,
                                            &ext);
-  AssertFatal(rc == 0, "TESLA: Failed to prepare extension (rc=%d)\n", rc);
+  AssertFatal(rc == 0, "TF5: Failed to prepare extension (rc=%d)\n", rc);
 
   // Pack TESLA extension into binary
   uint8_t ext_buf[256];
   int ext_len = tf5_pack_extension(&ext, ext_buf, sizeof(ext_buf));
-  AssertFatal(ext_len >= 0, "TESLA: Failed to pack extension\n");
+  AssertFatal(ext_len >= 0, "TF5: Failed to pack extension\n");
 
   // Set lateNonCriticalExtension
   if (sib1->lateNonCriticalExtension == NULL) {
     sib1->lateNonCriticalExtension = calloc(1, sizeof(OCTET_STRING_t));
     AssertFatal(sib1->lateNonCriticalExtension != NULL,
-                "TESLA: Failed to allocate lateNonCriticalExtension\n");
+                "TF5: Failed to allocate lateNonCriticalExtension\n");
   }
 
   // Ensure extension buffer is allocated and large enough
@@ -4431,7 +4431,7 @@ void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot
     }
     sib1->lateNonCriticalExtension->buf = malloc(ext_len);
     AssertFatal(sib1->lateNonCriticalExtension->buf != NULL,
-                "TESLA: Failed to allocate extension buffer\n");
+                "TF5: Failed to allocate extension buffer\n");
   }
 
   // Copy extension data
@@ -4440,9 +4440,9 @@ void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot
 
   // Re-encode SIB1 with TESLA extension
   cc->sib1_bcch_length = encode_SIB_NR(cc->sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
-  AssertFatal(cc->sib1_bcch_length > 0, "TESLA: Failed to re-encode SIB1\n");
+  AssertFatal(cc->sib1_bcch_length > 0, "TF5: Failed to re-encode SIB1\n");
 
-  LOG_D(NR_MAC, "TESLA: Updated SIB1 for frame %d slot %d (interval %u, len=%d)\n",
+  LOG_D(TF5, "Updated SIB1 for frame %d slot %d (interval %u, len=%d)\n",
         frame, slot, ext.i, cc->sib1_bcch_length);
 }
 #endif /* ENABLE_TF5 */

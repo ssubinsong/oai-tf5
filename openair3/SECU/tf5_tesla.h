@@ -14,7 +14,6 @@
  */
 #define TF5_TESLA_KEY_LEN           16      // 128-bit TESLA chain keys (hardcoded)
 #define TF5_TESLA_TAG_LEN           16      // Truncated HMAC-SHA256 to 128 bits
-#define TF5_TESLA_CHAIN_LEN         65536   // ~21 minutes at T_int=20ms
 #define TF5_TESLA_DEFAULT_D_BOUND_US           1005    // Pre-calculated D bound (microseconds)
 #define TF5_TESLA_BUFFER_QUEUE_SIZE       4       // Max SIB1s buffered
 
