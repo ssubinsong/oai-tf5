@@ -13,10 +13,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* BLS12-381 key and signature sizes (non-ETH mode) */
-#define TF5_GNB_SECRET_KEY_LEN   32   /* Fr element */
-#define TF5_GNB_PUBKEY_LEN   96   /* G2 point (compressed) */
-#define TF5_SIG_LEN    48   /* G1 point (compressed) */
+#include "tf5_ibs_defs.h"
 
 /**
  * Initialize BLS library
@@ -57,16 +54,6 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
  * IBS (Identity-Based Signature) Functions
  * =============================================================================
  */
-
-/* IBS Cell ID size (also defined in tf5_tesla.h) */
-#ifndef TF5_IBS_CELL_ID_LEN
-#define TF5_IBS_CELL_ID_LEN   5    /* 36 bits = 5 bytes */
-#endif
-
-/* IBS Key validity period: 24 bits = 3 bytes (minutes since 2024-01-01) */
-#ifndef TF5_IBS_VALIDITY_PERIOD_LEN
-#define TF5_IBS_VALIDITY_PERIOD_LEN  3
-#endif
 
 /**
  * Verify IBS signature

@@ -27,9 +27,6 @@ void exit_function(const char *file, const char *function, const int line, const
 
 #include "tf5_test_vectors.h"
 
-// Extension packed size
-#define TF5_EXTENSION_PACKED_SIZE 102
-
 class TF5E2ETest : public ::testing::Test {
 protected:
     // gNB state

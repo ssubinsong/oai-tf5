@@ -22,39 +22,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-/*
- * Key sizes (BLS12-381 curve)
- */
-#define TF5_IBS_MASTER_SECRET_LEN   32   /* s: scalar in Z_r (big-endian) */
-#define TF5_IBS_MASTER_PUBLIC_LEN   96   /* MPK = s*Q: G2 point (compressed) */
-#define TF5_IBS_GNB_SECRET_LEN      32   /* sk_ID: scalar (big-endian) */
-
-/*
- * NR Cell ID: 36 bits = 5 bytes
- * Per 3GPP TS 38.331, cellIdentity is a BIT STRING (SIZE (36))
- */
-#define TF5_IBS_CELL_ID_LEN         5
-
-/*
- * Key validity period: 24 bits = 3 bytes
- * Encodes minutes since 2024-01-01 00:00:00 UTC
- * Range: 0 to 16,777,215 minutes (~31.9 years, covers until ~2056)
- */
-#define TF5_IBS_VALIDITY_LEN        3
-#define TF5_VALIDITY_EPOCH          1704067200UL  /* 2024-01-01 00:00:00 UTC (Unix seconds) */
-
-/*
- * Domain Separation Tag for H_s (identity-to-scalar hash)
- * Uses IETF hash-to-field approach via blst_keygen
- * IKM = DST || Cell_ID || gnb_key_validity_end
- */
-#define TF5_IBS_DST_HS      "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"
-#define TF5_IBS_DST_HS_LEN  35
-
-/* gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian) */
-#ifndef TF5_IBS_SK_FILE_SIZE
-#define TF5_IBS_SK_FILE_SIZE    (TF5_IBS_GNB_SECRET_LEN + TF5_IBS_VALIDITY_LEN)  /* 35 bytes */
-#endif
+#include "tf5_ibs_defs.h"
 
 /*
  * =============================================================================
@@ -118,7 +86,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
 int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
                             size_t cell_id_len,
                             uint32_t gnb_key_validity_end,
-                            uint8_t scalar_out[TF5_IBS_GNB_SECRET_LEN]);
+                            uint8_t scalar_out[TF5_GNB_SECRET_KEY_LEN]);
 
 /**
  * Parse Cell ID from hex string
@@ -176,7 +144,7 @@ int tf5_ibs_load_master_secret(const char *filepath,
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                 uint32_t gnb_key_validity_end,
-                                uint8_t sk_out[TF5_IBS_GNB_SECRET_LEN]);
+                                uint8_t sk_out[TF5_GNB_SECRET_KEY_LEN]);
 
 /*
  * =============================================================================

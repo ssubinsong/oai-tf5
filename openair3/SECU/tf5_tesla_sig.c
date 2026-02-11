@@ -93,10 +93,6 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
  * =============================================================================
  */
 
-/* IBS Domain Separation Tag for H_s (identity-to-scalar hash) */
-static const uint8_t TF5_IBS_DST_HS[] = "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1";
-static const size_t TF5_IBS_DST_HS_LEN = sizeof(TF5_IBS_DST_HS) - 1;
-
 /* IKM size: DST (35) + Cell_ID (5) + gnb_key_validity_end (3) = 43 bytes */
 #define TF5_IBS_IKM_LEN  (TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)
 

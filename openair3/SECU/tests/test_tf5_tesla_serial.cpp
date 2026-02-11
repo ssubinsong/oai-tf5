@@ -17,9 +17,6 @@ extern "C" {
 
 #include "tf5_test_vectors.h"
 
-// Extension packed size
-#define TF5_EXTENSION_PACKED_SIZE 102
-
 class TF5SerialTest : public ::testing::Test {
 protected:
     tf5_extension_t ext;

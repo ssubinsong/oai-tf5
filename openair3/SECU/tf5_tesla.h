@@ -30,14 +30,6 @@
  * IBS (Identity-Based Signature) Constants
  */
 #define TF5_MPK_LEN        TF5_GNB_PUBKEY_LEN  // BLS-IBS public key length (96 bytes)
-#define TF5_IBS_CELL_ID_LEN   5    // 36 bits = 5 bytes
-#define TF5_IBS_VALIDITY_PERIOD_LEN   3     // 24-bit minutes since epoch
-#define TF5_GNB_KEY_VALIDITY_EPOCH     1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
-
-// gNB secret key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
-#ifndef TF5_IBS_SK_FILE_SIZE
-#define TF5_IBS_SK_FILE_SIZE   (TF5_GNB_SECRET_KEY_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)  // 35 bytes
-#endif
 
 // Signature replay protection
 #define TF5_RP_DEFAULT_TIME_WINDOW_MS  60000   // 60 seconds default window
@@ -274,6 +266,9 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                     const uint8_t *original_sib1,
                                     size_t sib1_len,
                                     tf5_extension_t *ext);
+
+// Packed (wire format) size of tf5_extension_t
+#define TF5_EXTENSION_PACKED_SIZE  102
 
 /**
  * Pack TESLA extension into binary format
