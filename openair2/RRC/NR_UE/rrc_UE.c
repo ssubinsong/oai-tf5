@@ -663,7 +663,6 @@ static tf5_verify_result_t tf5_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     /* Success: Bootstrap the chain */
     memcpy(&state->tesla_params, &ext->tesla_params, sizeof(tf5_tesla_params_t));
     state->chain_bootstrapped = true;
-    // phase set by tf5_send_deferred_rrcsetupcomplete() below
 
     /* Accept disclosed key as trust anchor (signature authenticates it) */
     memcpy(state->trust_anchor_key, ext->key_disclosure, TF5_TESLA_KEY_LEN);
@@ -674,7 +673,6 @@ static tf5_verify_result_t tf5_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     LOG_I(TF5, "First-time UE - K_%d as anchor (interval %u)\n",
           state->trust_anchor_idx, ext->i);
 
-    tf5_send_deferred_rrcsetupcomplete(rrc, SI_info);
     return TF5_VERIFY_OK;
 }
 
