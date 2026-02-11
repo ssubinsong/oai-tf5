@@ -15,6 +15,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define TF5_SHA256_DIGEST_LEN       32      // SHA-256 output length in bytes
+
 /**
  * Compute SHA-256 hash
  *

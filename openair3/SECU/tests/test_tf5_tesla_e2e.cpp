@@ -754,6 +754,62 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
 }
 
 // ============================================================================
+// Timestamp Replay Protection Tests (Gap #7)
+// ============================================================================
+
+TEST_F(TF5E2ETest, E2E_TimestampReplay_ValidTimestampAccepted) {
+    // Extension prepared with current wall-clock → timestamp should be fresh
+    ASSERT_EQ(0, initGnb(100));
+    ASSERT_EQ(0, initUe());
+
+    const char sib1[] = "SIB1 content for timestamp test";
+    tf5_extension_t ext;
+    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
+
+    int ret = gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1),
+                                &ext, packed, sizeof(packed));
+    ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, ret);
+    ASSERT_NE(0u, ext.timestamp_ms) << "Extension should have a non-zero timestamp";
+
+    // UE checks timestamp freshness (simulates the caller's responsibility)
+    uint64_t ue_now_ms = tf5_rp_get_wallclock_ms();
+    ASSERT_NE(0u, ue_now_ms) << "UE wall-clock should be available";
+
+    int ts_ret = tf5_rp_validate_timestamp(ue_now_ms, ext.timestamp_ms,
+                                           ue_state.rp_timestamp_window_ms);
+
+    EXPECT_EQ(TF5_OK, ts_ret)
+        << "Fresh extension timestamp should pass replay protection check";
+}
+
+TEST_F(TF5E2ETest, E2E_TimestampReplay_StaleTimestampRejected) {
+    // Simulate a replayed extension with a zeroed (very old) timestamp
+    ASSERT_EQ(0, initGnb(100));
+    ASSERT_EQ(0, initUe());
+
+    const char sib1[] = "SIB1 content for replay test";
+    tf5_extension_t ext;
+    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
+
+    int ret = gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1),
+                                &ext, packed, sizeof(packed));
+    ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, ret);
+
+    // Attacker zeroes out the timestamp (simulating old replayed extension)
+    ext.timestamp_ms = 0;
+
+    // UE's current time should be far from 0
+    uint64_t ue_now_ms = tf5_rp_get_wallclock_ms();
+    ASSERT_NE(0u, ue_now_ms);
+
+    int ts_ret = tf5_rp_validate_timestamp(ue_now_ms, ext.timestamp_ms,
+                                           ue_state.rp_timestamp_window_ms);
+
+    EXPECT_NE(TF5_OK, ts_ret)
+        << "Stale/zeroed timestamp should fail replay protection check";
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 

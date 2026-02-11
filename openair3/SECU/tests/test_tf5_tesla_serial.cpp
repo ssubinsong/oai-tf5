@@ -356,11 +356,11 @@ TEST_F(TF5SerialTest, BuildSigAuthInput_ExceedsMaxAuthInput) {
     int ret = tf5_build_sig_auth_input(out, &out_len, big_sib1, sizeof(big_sib1),
                                        TF5_VERSION, &params, 525600, 42, key_disc, 0x123456);
 
-    EXPECT_EQ(-2, ret) << "SIB1 exceeding max auth input should return -2";
+    EXPECT_EQ(TF5_ERR_BUFFER_OVERFLOW, ret) << "SIB1 exceeding max auth input should return TF5_ERR_BUFFER_OVERFLOW";
 }
 
 TEST_F(TF5SerialTest, BuildMacAuthInput_ExceedsMaxAuthInput) {
-    // SIB1 larger than TF5_MAX_AUTH_INPUT - TF5_IBS_VALIDITY_PERIOD_LEN (3) should return -2
+    // SIB1 larger than TF5_MAX_AUTH_INPUT - TF5_IBS_VALIDITY_PERIOD_LEN (3) should return TF5_ERR_BUFFER_OVERFLOW
     uint8_t out[TF5_MAX_AUTH_INPUT + 100];
     size_t out_len = 0;
 
@@ -370,7 +370,7 @@ TEST_F(TF5SerialTest, BuildMacAuthInput_ExceedsMaxAuthInput) {
 
     int ret = tf5_build_mac_auth_input(out, &out_len, big_sib1, sizeof(big_sib1), 525600);
 
-    EXPECT_EQ(-2, ret) << "SIB1 exceeding max auth input should return -2";
+    EXPECT_EQ(TF5_ERR_BUFFER_OVERFLOW, ret) << "SIB1 exceeding max auth input should return TF5_ERR_BUFFER_OVERFLOW";
 }
 
 // ============================================================================

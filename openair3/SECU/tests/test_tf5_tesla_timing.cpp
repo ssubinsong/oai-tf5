@@ -104,7 +104,7 @@ TEST_F(TF5TimingTest, ValidateTimestamp_TooOld) {
 
     int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
 
-    EXPECT_EQ(-1, result) << "70 seconds old should be rejected as too old";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "70 seconds old should be rejected as too old";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_TooFuture) {
@@ -114,7 +114,7 @@ TEST_F(TF5TimingTest, ValidateTimestamp_TooFuture) {
 
     int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
 
-    EXPECT_EQ(-2, result) << "70 seconds in future should be rejected";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_FUTURE, result) << "70 seconds in future should be rejected";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_ExactBoundaryOld_Valid) {
@@ -179,7 +179,7 @@ TEST_F(TF5TimingTest, ValidateTimestamp_SmallWindow) {
 
     int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
 
-    EXPECT_EQ(-1, result) << "5 seconds old should be rejected with 3 second window";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "5 seconds old should be rejected with 3 second window";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_JustOutsideWindow_TooOld) {
@@ -189,7 +189,7 @@ TEST_F(TF5TimingTest, ValidateTimestamp_JustOutsideWindow_TooOld) {
 
     int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
 
-    EXPECT_EQ(-1, result) << "Timestamp just outside window (old) should be rejected";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "Timestamp just outside window (old) should be rejected";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_JustOutsideWindow_TooFuture) {
@@ -199,7 +199,7 @@ TEST_F(TF5TimingTest, ValidateTimestamp_JustOutsideWindow_TooFuture) {
 
     int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
 
-    EXPECT_EQ(-2, result) << "Timestamp just outside window (future) should be rejected";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_FUTURE, result) << "Timestamp just outside window (future) should be rejected";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_LargeTimeDrift_Rejected) {
@@ -210,7 +210,7 @@ TEST_F(TF5TimingTest, ValidateTimestamp_LargeTimeDrift_Rejected) {
 
     int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
 
-    EXPECT_EQ(-1, result) << "Large time drift (5 minutes old) should be rejected with 60s window";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "Large time drift (5 minutes old) should be rejected with 60s window";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_ReplayAttackScenario) {
@@ -226,7 +226,7 @@ TEST_F(TF5TimingTest, ValidateTimestamp_ReplayAttackScenario) {
     // Attacker waits 2 minutes and replays
     uint64_t replay_time_ms = original_time_ms + 120000;  // 2 minutes later
     int result2 = tf5_rp_validate_timestamp(replay_time_ms, original_timestamp, 60000);
-    EXPECT_EQ(-1, result2) << "Replayed timestamp (2 minutes later) should be rejected";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result2) << "Replayed timestamp (2 minutes later) should be rejected";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_ZeroWindow) {

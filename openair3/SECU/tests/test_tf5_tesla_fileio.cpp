@@ -118,7 +118,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_FileNotFound) {
 
     int result = tf5_load_gnb_privkey("/nonexistent/path/sk.bin", privkey_out, &validity_out);
 
-    EXPECT_EQ(-1, result) << "Non-existent file should return -1";
+    EXPECT_EQ(TF5_ERR_FILE_OPEN, result) << "Non-existent file should return TF5_ERR_FILE_OPEN";
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooSmall) {
@@ -134,7 +134,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooSmall) {
 
     int result = tf5_load_gnb_privkey(small_file.c_str(), privkey_out, &validity_out);
 
-    EXPECT_EQ(-2, result) << "File with wrong size should return -2";
+    EXPECT_EQ(TF5_ERR_FILE_IO, result) << "File with wrong size should return TF5_ERR_FILE_IO";
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooLarge) {
@@ -153,7 +153,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooLarge) {
     // The function reads exactly 35 bytes from the file. If the read succeeds,
     // it validates the key scalar. With garbage bytes, the scalar may be invalid.
     // Valid results: 0 (success), -2 (wrong size), or -3 (invalid key format)
-    EXPECT_TRUE(result == 0 || result == -2 || result == -3)
+    EXPECT_TRUE(result == TF5_OK || result == TF5_ERR_FILE_IO || result == TF5_ERR_KEY_INVALID)
         << "Larger file may succeed, fail size check, or fail key validation";
 }
 
@@ -163,7 +163,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_NullPath) {
 
     int result = tf5_load_gnb_privkey(nullptr, privkey_out, &validity_out);
 
-    EXPECT_EQ(-1, result) << "Null path should return -1";
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, result) << "Null path should return TF5_ERR_INVALID_PARAM";
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_NullPrivkeyOutput) {
@@ -172,7 +172,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_NullPrivkeyOutput) {
 
     int result = tf5_load_gnb_privkey(privkey_path.c_str(), nullptr, &validity_out);
 
-    EXPECT_EQ(-1, result) << "Null privkey output should return -1";
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, result) << "Null privkey output should return TF5_ERR_INVALID_PARAM";
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_NullValidityOutput) {
@@ -181,7 +181,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_NullValidityOutput) {
 
     int result = tf5_load_gnb_privkey(privkey_path.c_str(), privkey_out, nullptr);
 
-    EXPECT_EQ(-1, result) << "Null validity output should return -1";
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, result) << "Null validity output should return TF5_ERR_INVALID_PARAM";
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_InvalidKeyFormat) {
@@ -199,8 +199,8 @@ TEST_F(TF5FileIOTest, LoadPrivkey_InvalidKeyFormat) {
     int result = tf5_load_gnb_privkey(invalid_file.c_str(), privkey_out, &validity_out);
 
     // The key validation may fail
-    EXPECT_TRUE(result == 0 || result == -3)
-        << "Invalid key format may be detected (-3) or not, depending on validation";
+    EXPECT_TRUE(result == TF5_OK || result == TF5_ERR_KEY_INVALID)
+        << "Invalid key format may be detected (TF5_ERR_KEY_INVALID) or not, depending on validation";
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_EmptyFile) {
@@ -213,7 +213,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_EmptyFile) {
 
     int result = tf5_load_gnb_privkey(empty_file.c_str(), privkey_out, &validity_out);
 
-    EXPECT_EQ(-2, result) << "Empty file should return -2 (wrong size)";
+    EXPECT_EQ(TF5_ERR_FILE_IO, result) << "Empty file should return TF5_ERR_FILE_IO (wrong size)";
 }
 
 // ============================================================================
@@ -251,7 +251,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_FileNotFound) {
 
     int result = tf5_load_core_mpk("/nonexistent/path/mpk.bin", pubkey_out);
 
-    EXPECT_EQ(-1, result) << "Non-existent file should return -1";
+    EXPECT_EQ(TF5_ERR_FILE_OPEN, result) << "Non-existent file should return TF5_ERR_FILE_OPEN";
 }
 
 TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooSmall) {
@@ -265,7 +265,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooSmall) {
 
     int result = tf5_load_core_mpk(small_file.c_str(), pubkey_out);
 
-    EXPECT_EQ(-2, result) << "File with wrong size should return -2";
+    EXPECT_EQ(TF5_ERR_FILE_IO, result) << "File with wrong size should return TF5_ERR_FILE_IO";
 }
 
 TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooLarge) {
@@ -280,7 +280,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooLarge) {
     int result = tf5_load_core_mpk(large_file.c_str(), pubkey_out);
 
     // Function reads exactly 96 bytes, so larger file should work
-    EXPECT_TRUE(result == 0 || result == -2)
+    EXPECT_TRUE(result == TF5_OK || result == TF5_ERR_FILE_IO)
         << "Larger file handling depends on implementation";
 }
 
@@ -289,7 +289,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_NullPath) {
 
     int result = tf5_load_core_mpk(nullptr, pubkey_out);
 
-    EXPECT_EQ(-1, result) << "Null path should return -1";
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, result) << "Null path should return TF5_ERR_INVALID_PARAM";
 }
 
 TEST_F(TF5FileIOTest, LoadPubkey_NullOutput) {
@@ -297,7 +297,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_NullOutput) {
 
     int result = tf5_load_core_mpk(pubkey_path.c_str(), nullptr);
 
-    EXPECT_EQ(-1, result) << "Null output should return -1";
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, result) << "Null output should return TF5_ERR_INVALID_PARAM";
 }
 
 TEST_F(TF5FileIOTest, LoadPubkey_EmptyFile) {
@@ -309,7 +309,7 @@ TEST_F(TF5FileIOTest, LoadPubkey_EmptyFile) {
 
     int result = tf5_load_core_mpk(empty_file.c_str(), pubkey_out);
 
-    EXPECT_EQ(-2, result) << "Empty file should return -2 (wrong size)";
+    EXPECT_EQ(TF5_ERR_FILE_IO, result) << "Empty file should return TF5_ERR_FILE_IO (wrong size)";
 }
 
 // ============================================================================

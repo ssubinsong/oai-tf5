@@ -31,7 +31,7 @@ int tf5_bls_init(void);
  *
  * @param secret_key   BLS secret key (32 bytes)
  * @param public_key   Output: BLS public key (96 bytes)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_KEY_INVALID
  */
 int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
                                 uint8_t public_key[TF5_IBS_GNB_PK_LEN]);
@@ -43,7 +43,7 @@ int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
  * @param data         Data to sign
  * @param data_len     Length of data
  * @param signature    Output: BLS signature (48 bytes)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_KEY_INVALID
  */
 int tf5_bls_sign(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
                        const uint8_t *data,
@@ -70,13 +70,8 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
  * @param data         Signed data
  * @param data_len     Length of data
  * @param signature    Signature to verify (48 bytes, G1 point)
- * @return 0 on success (signature valid), negative on error
- *
- * Error codes:
- *   -1: Invalid parameters
- *   -3: Invalid MPK format
- *   -4: Invalid signature format
- *   -5: Signature verification failed
+ * @return TF5_OK on success (signature valid), or TF5_ERR_INVALID_PARAM,
+ *         TF5_ERR_CRYPTO, TF5_ERR_KEY_INVALID, TF5_ERR_VERIFY
  */
 int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],

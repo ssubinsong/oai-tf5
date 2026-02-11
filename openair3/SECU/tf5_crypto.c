@@ -11,7 +11,7 @@
 
 void tf5_sha256(const uint8_t *data, size_t len, uint8_t out[32])
 {
-    unsigned int md_len = 32;
+    unsigned int md_len = TF5_SHA256_DIGEST_LEN;
     int rc = EVP_Digest(data, len, out, &md_len, EVP_sha256(), NULL);
     AssertFatal(rc == 1, "tf5_sha256: EVP_Digest failed\n");
     (void)rc;
@@ -77,8 +77,8 @@ void tf5_hmac_sha256(const uint8_t *key, size_t key_len,
     rc = EVP_MAC_update(ctx, data, data_len);
     AssertFatal(rc == 1, "tf5_hmac: EVP_MAC_update failed\n");
 
-    size_t out_len = 32;
-    rc = EVP_MAC_final(ctx, out, &out_len, 32);
+    size_t out_len = TF5_SHA256_DIGEST_LEN;
+    rc = EVP_MAC_final(ctx, out, &out_len, TF5_SHA256_DIGEST_LEN);
     AssertFatal(rc == 1, "tf5_hmac: EVP_MAC_final failed\n");
 
     (void)rc;

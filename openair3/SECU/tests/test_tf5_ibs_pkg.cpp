@@ -101,9 +101,9 @@ TEST_F(TF5IbsPkgTest, HashToScalar_NullInput) {
     uint8_t scalar[TF5_IBS_GNB_SK_LEN];
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0};
 
-    EXPECT_EQ(-1, tf5_ibs_hash_to_scalar(nullptr, TF5_IBS_CELL_ID_LEN, 0, scalar));
-    EXPECT_EQ(-1, tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, 0, nullptr));
-    EXPECT_EQ(-1, tf5_ibs_hash_to_scalar(cell_id, 0, 0, scalar));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_to_scalar(nullptr, TF5_IBS_CELL_ID_LEN, 0, scalar));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, 0, nullptr));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_to_scalar(cell_id, 0, 0, scalar));
 }
 
 // ============================================================================
@@ -139,25 +139,25 @@ TEST_F(TF5IbsPkgTest, ParseCellIdHex_MixedCase) {
 TEST_F(TF5IbsPkgTest, ParseCellIdHex_TooShort) {
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     int rc = tf5_ibs_parse_cell_id_hex("12345678", cell_id);  // 8 chars instead of 9
-    EXPECT_EQ(-2, rc);
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, rc);
 }
 
 TEST_F(TF5IbsPkgTest, ParseCellIdHex_TooLong) {
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     int rc = tf5_ibs_parse_cell_id_hex("1234567890", cell_id);  // 10 chars instead of 9
-    EXPECT_EQ(-2, rc);
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, rc);
 }
 
 TEST_F(TF5IbsPkgTest, ParseCellIdHex_InvalidChars) {
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     int rc = tf5_ibs_parse_cell_id_hex("12345678G", cell_id);  // G is not hex
-    EXPECT_EQ(-3, rc);
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, rc);
 }
 
 TEST_F(TF5IbsPkgTest, ParseCellIdHex_NullInput) {
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
-    EXPECT_EQ(-1, tf5_ibs_parse_cell_id_hex(nullptr, cell_id));
-    EXPECT_EQ(-1, tf5_ibs_parse_cell_id_hex("123456789", nullptr));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_parse_cell_id_hex(nullptr, cell_id));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_parse_cell_id_hex("123456789", nullptr));
 }
 
 // ============================================================================
@@ -189,8 +189,8 @@ TEST_F(TF5IbsPkgTest, FormatCellIdHex_RoundTrip) {
 TEST_F(TF5IbsPkgTest, FormatCellIdHex_NullInput) {
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0};
     char hex_str[10];
-    EXPECT_EQ(-1, tf5_ibs_format_cell_id_hex(nullptr, hex_str));
-    EXPECT_EQ(-1, tf5_ibs_format_cell_id_hex(cell_id, nullptr));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_format_cell_id_hex(nullptr, hex_str));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_format_cell_id_hex(cell_id, nullptr));
 }
 
 // ============================================================================
@@ -211,7 +211,7 @@ TEST_F(TF5IbsPkgTest, LoadMasterSecret_Success) {
 TEST_F(TF5IbsPkgTest, LoadMasterSecret_FileNotFound) {
     uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN];
     int rc = tf5_ibs_load_master_secret("/nonexistent/path/msk.bin", msk_out);
-    EXPECT_EQ(-2, rc);
+    EXPECT_EQ(TF5_ERR_FILE_OPEN, rc);
 }
 
 TEST_F(TF5IbsPkgTest, LoadMasterSecret_WrongSize) {
@@ -223,15 +223,15 @@ TEST_F(TF5IbsPkgTest, LoadMasterSecret_WrongSize) {
 
     uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN];
     int rc = tf5_ibs_load_master_secret(msk_path.c_str(), msk_out);
-    EXPECT_EQ(-3, rc);
+    EXPECT_EQ(TF5_ERR_FILE_IO, rc);
 }
 
 TEST_F(TF5IbsPkgTest, LoadMasterSecret_NullInput) {
     uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN];
-    EXPECT_EQ(-1, tf5_ibs_load_master_secret(nullptr, msk_out));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_load_master_secret(nullptr, msk_out));
 
     std::string path = test_dir + "/test.bin";
-    EXPECT_EQ(-1, tf5_ibs_load_master_secret(path.c_str(), nullptr));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_load_master_secret(path.c_str(), nullptr));
 }
 
 // ============================================================================
@@ -299,9 +299,9 @@ TEST_F(TF5IbsPkgTest, ComputeGnbSecret_NullInput) {
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0};
     uint8_t sk_out[TF5_IBS_GNB_SK_LEN];
 
-    EXPECT_EQ(-1, tf5_ibs_compute_gnb_secret(nullptr, cell_id, 0, sk_out));
-    EXPECT_EQ(-1, tf5_ibs_compute_gnb_secret(msk, nullptr, 0, sk_out));
-    EXPECT_EQ(-1, tf5_ibs_compute_gnb_secret(msk, cell_id, 0, nullptr));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(nullptr, cell_id, 0, sk_out));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(msk, nullptr, 0, sk_out));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(msk, cell_id, 0, nullptr));
 }
 
 // ============================================================================
@@ -363,8 +363,8 @@ TEST_F(TF5IbsPkgTest, GenerateMasterKeypair_DifferentEachTime) {
 
 TEST_F(TF5IbsPkgTest, GenerateMasterKeypair_NullInput) {
     std::string valid_path = test_dir + "/test.bin";
-    EXPECT_EQ(-1, tf5_ibs_generate_master_keypair(nullptr, valid_path.c_str()));
-    EXPECT_EQ(-1, tf5_ibs_generate_master_keypair(valid_path.c_str(), nullptr));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_generate_master_keypair(nullptr, valid_path.c_str()));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_generate_master_keypair(valid_path.c_str(), nullptr));
 }
 
 // ============================================================================
@@ -448,7 +448,7 @@ TEST_F(TF5IbsPkgTest, IssueGnbKey_MskNotFound) {
     std::string sk_path = test_dir + "/sk.bin";
 
     int rc = tf5_ibs_issue_gnb_key("/nonexistent/msk.bin", cell_id, 525600, sk_path.c_str());
-    EXPECT_EQ(-2, rc);
+    EXPECT_EQ(TF5_ERR_FILE_OPEN, rc);
 }
 
 // ============================================================================

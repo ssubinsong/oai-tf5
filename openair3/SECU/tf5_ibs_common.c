@@ -29,7 +29,7 @@ int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
                             uint8_t scalar_out[TF5_IBS_GNB_SK_LEN])
 {
     if (!cell_id || !scalar_out || cell_id_len == 0) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     /*
@@ -82,19 +82,19 @@ int tf5_ibs_parse_cell_id_hex(const char *hex_str,
                                uint8_t cell_id[TF5_IBS_CELL_ID_LEN])
 {
     if (!hex_str || !cell_id) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     size_t len = strlen(hex_str);
     if (len != 9) {
         /* Expect exactly 9 hex chars for 36 bits */
-        return -2;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     /* Validate all characters are hex */
     for (size_t i = 0; i < len; i++) {
         if (!isxdigit((unsigned char)hex_str[i])) {
-            return -3;
+            return TF5_ERR_INVALID_PARAM;
         }
     }
 
@@ -130,7 +130,7 @@ int tf5_ibs_format_cell_id_hex(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                 char hex_str[10])
 {
     if (!cell_id || !hex_str) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     /* Reconstruct 36-bit value from 5 bytes */
@@ -151,12 +151,12 @@ int tf5_ibs_load_master_secret(const char *filepath,
                                 uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN])
 {
     if (!filepath || !msk_out) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     FILE *f = fopen(filepath, "rb");
     if (!f) {
-        return -2;
+        return TF5_ERR_FILE_OPEN;
     }
 
     size_t n = fread(msk_out, 1, TF5_IBS_MASTER_SECRET_LEN, f);
@@ -164,7 +164,7 @@ int tf5_ibs_load_master_secret(const char *filepath,
 
     if (n != TF5_IBS_MASTER_SECRET_LEN) {
         OPENSSL_cleanse(msk_out, TF5_IBS_MASTER_SECRET_LEN);
-        return -3;
+        return TF5_ERR_FILE_IO;
     }
 
     return 0;
@@ -181,7 +181,7 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 uint8_t sk_out[TF5_IBS_GNB_SK_LEN])
 {
     if (!msk || !cell_id || !sk_out) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     blst_scalar s, pk_id, sk_id;
@@ -192,14 +192,14 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
     /* Validate master secret is in valid range */
     if (!blst_sk_check(&s)) {
         OPENSSL_cleanse(&s, sizeof(s));
-        return -2;
+        return TF5_ERR_KEY_INVALID;
     }
 
     /* Compute pk_ID = H_s(cell_id || gnb_key_validity_end) */
     uint8_t pk_id_scalar[TF5_IBS_GNB_SK_LEN];
     if (tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, pk_id_scalar) != 0) {
         OPENSSL_cleanse(&s, sizeof(s));
-        return -4;
+        return TF5_ERR_CRYPTO;
     }
     blst_scalar_from_bendian(&pk_id, pk_id_scalar);
     OPENSSL_cleanse(pk_id_scalar, sizeof(pk_id_scalar));
@@ -209,7 +209,7 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
         /* Multiplication failed (result is zero, which shouldn't happen) */
         OPENSSL_cleanse(&s, sizeof(s));
         OPENSSL_cleanse(&pk_id, sizeof(pk_id));
-        return -3;
+        return TF5_ERR_CRYPTO;
     }
 
     /* Serialize result */

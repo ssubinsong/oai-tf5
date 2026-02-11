@@ -16,6 +16,41 @@
 #include <stddef.h>
 
 /* ==========================================================================
+ * Unified Error Codes
+ *
+ * Error handling policy:
+ *   - tf5_error_t:  All recoverable/expected failure conditions
+ *   - AssertFatal:  Unrecoverable system failures (e.g. OpenSSL primitives
+ *                   in tf5_crypto.c that should never fail with valid inputs)
+ *   - bool returns: Verification-only functions (safe packet test, key chain)
+ * ========================================================================== */
+
+typedef enum {
+    TF5_OK                      =  0,
+    /* Parameter validation */
+    TF5_ERR_INVALID_PARAM       = -1,   // NULL pointers, zero-length, bad format
+    TF5_ERR_BUFFER_OVERFLOW     = -2,   // Output buffer too small
+    /* Resource allocation */
+    TF5_ERR_ALLOC               = -3,   // malloc/calloc failure
+    /* Cryptographic operations */
+    TF5_ERR_CRYPTO              = -4,   // RNG, hash, or scalar multiplication failure
+    TF5_ERR_KEY_INVALID         = -5,   // Key deserialization or validation failure
+    /* Signature operations */
+    TF5_ERR_SIGN                = -6,   // Signature generation failure
+    TF5_ERR_VERIFY              = -7,   // Signature verification failure
+    /* File I/O */
+    TF5_ERR_FILE_OPEN           = -8,   // fopen / open failure
+    TF5_ERR_FILE_IO             = -9,   // fread size mismatch or read error
+    TF5_ERR_FILE_WRITE          = -10,  // fwrite or file creation failure
+    /* Protocol state */
+    TF5_ERR_CHAIN_EXHAUSTED     = -11,  // TESLA key chain interval exceeded
+    TF5_ERR_NO_DATA             = -12,  // No buffered entries for verification
+    /* Timestamp validation */
+    TF5_ERR_TIMESTAMP_OLD       = -13,  // Received timestamp too old
+    TF5_ERR_TIMESTAMP_FUTURE    = -14,  // Received timestamp too far in future
+} tf5_error_t;
+
+/* ==========================================================================
  * BLS12-381 Curve Base Constants
  * ========================================================================== */
 

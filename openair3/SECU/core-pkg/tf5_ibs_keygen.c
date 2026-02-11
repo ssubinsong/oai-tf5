@@ -51,7 +51,7 @@ static int read_random_bytes(uint8_t *buf, size_t len)
 int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
 {
     if (!msk_path || !mpk_path) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     uint8_t ikm[TF5_BLS_SCALAR_LEN];
@@ -62,7 +62,7 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
 
     /* Generate random IKM */
     if (read_random_bytes(ikm, TF5_BLS_SCALAR_LEN) != 0) {
-        return -2;
+        return TF5_ERR_CRYPTO;
     }
 
     /* Derive master secret key using blst_keygen */
@@ -75,7 +75,7 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
     if (!blst_sk_check(&s)) {
         fprintf(stderr, "Generated invalid secret key (probability ~2^-256)\n");
         OPENSSL_cleanse(&s, sizeof(s));
-        return -3;
+        return TF5_ERR_KEY_INVALID;
     }
 
     /* Derive master public key: MPK = s * Q (Q is G2 generator) */
@@ -91,7 +91,7 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
     /* Write master secret key (restricted permissions: owner read/write only) */
     if (write_key_file(msk_path, msk_bytes, TF5_IBS_MASTER_SECRET_LEN, 0600) != 0) {
         OPENSSL_cleanse(msk_bytes, TF5_IBS_MASTER_SECRET_LEN);
-        return -4;
+        return TF5_ERR_FILE_WRITE;
     }
 
     /* Clear msk from memory */
@@ -101,7 +101,7 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
     if (write_key_file(mpk_path, mpk_bytes, TF5_IBS_MASTER_PUBLIC_LEN, 0644) != 0) {
         /* Try to remove the msk file since we failed */
         unlink(msk_path);
-        return -4;
+        return TF5_ERR_FILE_WRITE;
     }
 
     return 0;

@@ -24,7 +24,7 @@ int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
                                 uint8_t public_key[TF5_IBS_GNB_PK_LEN])
 {
     if (!secret_key || !public_key) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     blst_scalar sk;
@@ -36,7 +36,7 @@ int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
     /* Check secret key validity */
     if (!blst_sk_check(&sk)) {
         LOG_E(TF5, "Invalid secret key scalar\n");
-        return -3;
+        return TF5_ERR_KEY_INVALID;
     }
 
     /* Derive public key in G2 */
@@ -57,7 +57,7 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
                        uint8_t signature[TF5_IBS_SIG_LEN])
 {
     if (!secret_key || !data || !signature || data_len == 0) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     blst_scalar sk;
@@ -71,7 +71,7 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
     if (!blst_sk_check(&sk)) {
         LOG_E(TF5, "Invalid secret key for signing\n");
         OPENSSL_cleanse(&sk, sizeof(sk));
-        return -3;
+        return TF5_ERR_KEY_INVALID;
     }
 
     /* Hash message to G1 */
@@ -116,7 +116,7 @@ int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
                           const uint8_t signature[TF5_IBS_SIG_LEN])
 {
     if (!mpk || !cell_id || !data || !signature || data_len == 0) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     blst_scalar pk_id;
@@ -131,7 +131,7 @@ int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
     uint8_t pk_id_scalar[TF5_IBS_GNB_SK_LEN];
     if (tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, pk_id_scalar) != 0) {
         LOG_E(TF5, "Failed to compute pk_ID hash\n");
-        return -2;
+        return TF5_ERR_CRYPTO;
     }
     blst_scalar_from_bendian(&pk_id, pk_id_scalar);
     OPENSSL_cleanse(pk_id_scalar, sizeof(pk_id_scalar));
@@ -145,7 +145,7 @@ int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
         if (err != BLST_SUCCESS) {
             LOG_E(TF5, "Failed to deserialize MPK: %d\n", err);
             OPENSSL_cleanse(&pk_id, sizeof(pk_id));
-            return -3;
+            return TF5_ERR_KEY_INVALID;
         }
 
         memcpy(s_mpk_cache.mpk, mpk, TF5_IBS_GNB_PK_LEN);
@@ -173,20 +173,20 @@ int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
     /* Check derived key is valid (not point at infinity) */
     if (blst_p2_affine_is_inf(&pk_final)) {
         LOG_E(TF5, "Derived public key is infinity\n");
-        return -3;
+        return TF5_ERR_KEY_INVALID;
     }
 
     /* Step 5: Deserialize signature */
     err = blst_p1_uncompress(&sig_affine, signature);
     if (err != BLST_SUCCESS) {
         LOG_E(TF5, "Failed to deserialize signature: %d\n", err);
-        return -4;
+        return TF5_ERR_KEY_INVALID;
     }
 
     /* Validate signature is in G1 */
     if (!blst_p1_affine_in_g1(&sig_affine)) {
         LOG_E(TF5, "Signature not in G1\n");
-        return -4;
+        return TF5_ERR_KEY_INVALID;
     }
 
     /* Step 6: Verify e(Σ, Q) = e(H_m(m), pk_ID * MPK) */
@@ -198,7 +198,7 @@ int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
 
     if (err != BLST_SUCCESS) {
         LOG_W(TF5, "Signature verification failed: %d\n", err);
-        return -5;
+        return TF5_ERR_VERIFY;
     }
 
     LOG_D(TF5, "Signature verified successfully\n");

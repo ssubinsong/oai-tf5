@@ -39,13 +39,8 @@
  *
  * @param msk_path  Path to save master secret key (32 bytes, binary)
  * @param mpk_path  Path to save master public key (96 bytes, binary)
- * @return 0 on success, negative on error
- *
- * Error codes:
- *   -1: Invalid parameters
- *   -2: Failed to read random bytes
- *   -3: Failed to create output file
- *   -4: Failed to write output file
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_CRYPTO,
+ *         TF5_ERR_KEY_INVALID, TF5_ERR_FILE_WRITE
  */
 int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path);
 
@@ -58,14 +53,8 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path);
  * @param cell_id      NR Cell ID (5 bytes, 36 bits with 4 padding bits)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
  * @param sk_path      Path to save gNB secret key (32 bytes, binary)
- * @return 0 on success, negative on error
- *
- * Error codes:
- *   -1: Invalid parameters
- *   -2: Failed to open master secret file
- *   -3: Invalid master secret format
- *   -4: Scalar multiplication failed
- *   -5: Failed to create output file
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_WRITE,
+ *         or propagated error from tf5_ibs_load_master_secret / tf5_ibs_compute_gnb_secret
  */
 int tf5_ibs_issue_gnb_key(const char *msk_path,
                            const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
@@ -82,7 +71,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
  * @param cell_id_len  Length of cell_id (should be TF5_IBS_CELL_ID_LEN)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
  * @param scalar_out   Output buffer for scalar (32 bytes, big-endian)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM
  */
 int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
                             size_t cell_id_len,
@@ -98,7 +87,7 @@ int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
  *
  * @param hex_str    Hex string (9 characters for 36 bits)
  * @param cell_id    Output buffer (5 bytes)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM
  */
 int tf5_ibs_parse_cell_id_hex(const char *hex_str,
                                uint8_t cell_id[TF5_IBS_CELL_ID_LEN]);
@@ -110,7 +99,7 @@ int tf5_ibs_parse_cell_id_hex(const char *hex_str,
  *
  * @param cell_id    Cell ID (5 bytes)
  * @param hex_str    Output buffer (must be at least 10 bytes for 9 chars + null)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM
  */
 int tf5_ibs_format_cell_id_hex(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                 char hex_str[10]);
@@ -126,7 +115,7 @@ int tf5_ibs_format_cell_id_hex(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
  *
  * @param filepath   Path to master secret key file
  * @param msk_out    Output buffer (32 bytes)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_OPEN, TF5_ERR_FILE_IO
  */
 int tf5_ibs_load_master_secret(const char *filepath,
                                 uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN]);
@@ -140,7 +129,7 @@ int tf5_ibs_load_master_secret(const char *filepath,
  * @param cell_id      NR Cell ID (5 bytes)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
  * @param sk_out       Output gNB secret key (32 bytes)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_KEY_INVALID, TF5_ERR_CRYPTO
  */
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],

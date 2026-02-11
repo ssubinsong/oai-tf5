@@ -36,7 +36,7 @@ void tf5_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
     input[0] = TF5_DS_PREFIX_CHAIN_KEY;  // Domain separation prefix
     memcpy(input + 1, key_next, TF5_TESLA_KEY_LEN);
 
-    uint8_t full_hash[32];
+    uint8_t full_hash[TF5_SHA256_DIGEST_LEN];
     tf5_sha256(input, sizeof(input), full_hash);
 
     // Truncate to 16 bytes
@@ -49,16 +49,16 @@ int tf5_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
                           uint8_t tag_out[TF5_TESLA_TAG_LEN])
 {
     if (!key || !auth_input || !tag_out || auth_input_len == 0) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     // Derive MAC key K'_i from K_i
-    uint8_t mac_key[32];
+    uint8_t mac_key[TF5_SHA256_DIGEST_LEN];
     tf5_derive_mac_key(key, mac_key);
 
     // Compute HMAC-SHA256(K'_i, auth_input)
-    uint8_t full_tag[32];
-    tf5_hmac_sha256(mac_key, 32, auth_input, auth_input_len, full_tag);
+    uint8_t full_tag[TF5_SHA256_DIGEST_LEN];
+    tf5_hmac_sha256(mac_key, TF5_SHA256_DIGEST_LEN, auth_input, auth_input_len, full_tag);
 
     // Truncate to 16 bytes
     memcpy(tag_out, full_tag, TF5_TESLA_TAG_LEN);
@@ -86,10 +86,9 @@ static uint32_t tf5_tesla_get_interval_index(const tf5_slot_time_t *current,
     uint64_t slots = tf5_tesla_slots_since_t0(current, t0, slots_per_frame);
 
     // Calculate time in milliseconds
-    // Each frame = 10ms, slots_per_frame slots per frame
-    // So each slot = 10 / slots_per_frame ms
-    // time_ms = slots * 10 / slots_per_frame
-    uint64_t time_ms = (slots * 10) / slots_per_frame;
+    // Each frame = TF5_NR_FRAME_DURATION_MS ms, slots_per_frame slots per frame
+    // time_ms = slots * TF5_NR_FRAME_DURATION_MS / slots_per_frame
+    uint64_t time_ms = (slots * TF5_NR_FRAME_DURATION_MS) / slots_per_frame;
 
     return (uint32_t)(time_ms / t_int_ms);
 }
@@ -114,21 +113,21 @@ int tf5_rp_validate_timestamp(uint64_t ue_time_ms,
                                  uint32_t ext_timestamp_ms,
                                  uint64_t window_ms)
 {
-    uint32_t ue_time_lsb_ms = (uint32_t)ue_time_ms & 0xFFFFFFu;
-    uint32_t ext_time_lsb_ms = ext_timestamp_ms & 0xFFFFFFu;
+    uint32_t ue_time_lsb_ms = (uint32_t)ue_time_ms & TF5_RP_TIMESTAMP_MASK;
+    uint32_t ext_time_lsb_ms = ext_timestamp_ms & TF5_RP_TIMESTAMP_MASK;
     // Proper 24-bit modular signed difference: map into [-2^23, 2^23)
-    int32_t diff_ms = (int32_t)(((ue_time_lsb_ms - ext_time_lsb_ms + 0x800000u) & 0xFFFFFFu)) - 0x800000;
+    int32_t diff_ms = (int32_t)(((ue_time_lsb_ms - ext_time_lsb_ms + TF5_RP_TIMESTAMP_HALF) & TF5_RP_TIMESTAMP_MASK)) - (int32_t)TF5_RP_TIMESTAMP_HALF;
 
     // This comparison assumes window_ms << 2^23 (fits into 24-bit signed range).
     if (diff_ms > 0 && (uint64_t)diff_ms > window_ms) {
-        return -1;  // Too old
+        return TF5_ERR_TIMESTAMP_OLD;
     }
 
     if (diff_ms < 0 && (uint64_t)(-diff_ms) > window_ms) {
-        return -2;  // Too far in future
+        return TF5_ERR_TIMESTAMP_FUTURE;
     }
 
-    return 0;  // Valid
+    return TF5_OK;
 }
 
 /*
@@ -147,10 +146,10 @@ static size_t tf5_encode_tesla_params(uint8_t *buf,
     tf5_encode_u16_be(buf + offset, p->t0.sfn); offset += 2;
     tf5_encode_u16_be(buf + offset, p->t0.slot); offset += 2;
     tf5_encode_u32_be(buf + offset, p->chain_len); offset += 4;
-    return offset;  /* Always 11 */
+    return offset;  /* Always TF5_TESLA_PARAMS_PACKED_SIZE */
 }
 
-/* Decode tesla params (11 bytes) from buffer */
+/* Decode tesla params (TF5_TESLA_PARAMS_PACKED_SIZE bytes) from buffer */
 static size_t tf5_decode_tesla_params(const uint8_t *buf,
                                        tf5_tesla_params_t *p)
 {
@@ -160,7 +159,7 @@ static size_t tf5_decode_tesla_params(const uint8_t *buf,
     p->t0.sfn = tf5_decode_u16_be(buf + offset); offset += 2;
     p->t0.slot = tf5_decode_u16_be(buf + offset); offset += 2;
     p->chain_len = tf5_decode_u32_be(buf + offset); offset += 4;
-    return offset;  /* Always 11 */
+    return offset;  /* Always TF5_TESLA_PARAMS_PACKED_SIZE */
 }
 
 int tf5_build_mac_auth_input(uint8_t *out,
@@ -170,11 +169,11 @@ int tf5_build_mac_auth_input(uint8_t *out,
                                    uint32_t gnb_key_validity_end)
 {
     if (!out || !out_len || !original_sib1) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     if (sib1_len + TF5_IBS_VALIDITY_PERIOD_LEN > TF5_MAX_AUTH_INPUT) {
-        return -2;
+        return TF5_ERR_BUFFER_OVERFLOW;
     }
 
     size_t offset = 0;
@@ -203,12 +202,11 @@ int tf5_build_sig_auth_input(uint8_t *out,
                                    uint32_t timestamp_ms)
 {
     if (!out || !out_len || !original_sib1 || !tesla_params || !key_disclosure) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
-    // Overhead: validity(3) + te_version(1) + tesla_params(11) + interval(4) + key(16) + timestamp(3) = 38
-    if (sib1_len + 38 > TF5_MAX_AUTH_INPUT) {
-        return -2;
+    if (sib1_len + TF5_SIG_AUTH_OVERHEAD > TF5_MAX_AUTH_INPUT) {
+        return TF5_ERR_BUFFER_OVERFLOW;
     }
 
     // Build MAC auth input first (SIB1 + gnb_key_validity_end only)
@@ -248,12 +246,12 @@ int tf5_pack_extension(const tf5_extension_t *ext,
                              size_t buf_len)
 {
     if (!ext || !buf) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     const size_t required_len = TF5_EXTENSION_PACKED_SIZE;
     if (buf_len < required_len) {
-        return -2;
+        return TF5_ERR_BUFFER_OVERFLOW;
     }
 
     size_t offset = 0;
@@ -296,12 +294,12 @@ int tf5_unpack_extension(const uint8_t *buf,
                                tf5_extension_t *ext)
 {
     if (!buf || !ext) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     const size_t required_len = TF5_EXTENSION_PACKED_SIZE;
     if (buf_len < required_len) {
-        return -2;
+        return TF5_ERR_BUFFER_OVERFLOW;
     }
 
     size_t offset = 0;
@@ -354,7 +352,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
                        uint16_t slots_per_frame)
 {
     if (!state || !private_key || !t0 || chain_len == 0 || t_int_ms == 0) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     // Clean up any previous state (prevents memory leak on reinitialization)
@@ -370,7 +368,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
     state->key_chain = calloc(chain_len + 1, TF5_TESLA_KEY_LEN);
     if (!state->key_chain) {
         LOG_E(TF5, "Failed to allocate key chain\n");
-        return -3;
+        return TF5_ERR_ALLOC;
     }
     state->key_chain_len = chain_len;
 
@@ -379,7 +377,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
     if (RAND_bytes(state->key_chain[last_key_idx], TF5_TESLA_KEY_LEN) != 1) {
         LOG_E(TF5, "Failed to generate random key\n");
         free(state->key_chain);
-        return -4;
+        return TF5_ERR_CRYPTO;
     }
 
     // Generate backward chain: K_i = F(K_{i+1}) for i = N-2 down to -1
@@ -415,7 +413,7 @@ void tf5_gnb_free(tf5_gnb_state_t *state)
             OPENSSL_cleanse(state->key_chain, (state->key_chain_len + 1) * TF5_TESLA_KEY_LEN);
             free(state->key_chain);
         }
-        OPENSSL_cleanse(state->private_key, 32);
+        OPENSSL_cleanse(state->private_key, TF5_IBS_GNB_SK_LEN);
         memset(state, 0, sizeof(*state));
     }
 }
@@ -443,7 +441,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                     tf5_extension_t *ext)
 {
     if (!state || !state->initialized || !original_sib1 || !ext) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     // Get current interval
@@ -453,7 +451,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
     if (interval >= state->key_chain_len) {
         LOG_E(TF5, "Interval %u exceeds chain length %u\n",
               interval, state->key_chain_len);
-        return -2;
+        return TF5_ERR_CHAIN_EXHAUSTED;
     }
 
     // Copy TESLA params
@@ -477,10 +475,10 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
     }
 
     // Set wall-clock timestamp for signature replay protection
-    ext->timestamp_ms = (uint32_t)tf5_rp_get_wallclock_ms() & 0xFFFFFFu;
+    ext->timestamp_ms = (uint32_t)tf5_rp_get_wallclock_ms() & TF5_RP_TIMESTAMP_MASK;
     if (ext->timestamp_ms == 0) {
         LOG_E(TF5, "Failed to get wall-clock time\n");
-        return -7;
+        return TF5_ERR_CRYPTO;
     }
 
     // Build signature auth input
@@ -496,7 +494,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                             ext->timestamp_ms);
     if (rc != 0) {
         LOG_E(TF5, "Failed to build signature auth input\n");
-        return -3;
+        return rc;
     }
 
     // Compute BLS signature over full content
@@ -505,7 +503,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                             ext->signature);
     if (rc != 0) {
         LOG_E(TF5, "Failed to compute signature\n");
-        return -4;
+        return TF5_ERR_SIGN;
     }
 
     // Build MAC auth input (SIB1 + gnb_key_validity_end only)
@@ -516,7 +514,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                         ext->validity_end);
     if (rc != 0) {
         LOG_E(TF5, "Failed to build MAC auth input\n");
-        return -5;
+        return rc;
     }
 
     // Compute TESLA tag using K_i
@@ -525,7 +523,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                ext->tesla_tag);
     if (rc != 0) {
         LOG_E(TF5, "Failed to compute tag\n");
-        return -6;
+        return rc;
     }
 
     LOG_D(TF5, "Prepared extension for interval %u (SFN%u.%u)\n",
@@ -547,7 +545,7 @@ int tf5_ue_init(tf5_ue_state_t *state,
                       uint64_t rp_timestamp_window_ms)
 {
     if (!state || !mpk) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     memset(state, 0, sizeof(*state));
@@ -565,7 +563,7 @@ int tf5_ue_init(tf5_ue_state_t *state,
     // D parameter (CLI-configured)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)
     // Pre-compute D in slots (ceiling division for upper bound)
-    uint32_t slot_duration_us = 10000 / slots_per_frame;
+    uint32_t slot_duration_us = TF5_NR_FRAME_DURATION_US / slots_per_frame;
     state->d_offset_slots = (d_bound_us + slot_duration_us - 1) / slot_duration_us;
 
     state->initialized = true;
@@ -602,7 +600,7 @@ bool tf5_ue_safe_packet_test(tf5_ue_state_t *ue_state,
     // This is the highest interval the sender could possibly be in
     uint64_t t0_abs_slots = tf5_absolute_slots(&ue_state->tesla_params.t0, ue_state->slots_per_frame);
     uint64_t slots_since_t0 = (t_j_abs_slots >= t0_abs_slots) ? (t_j_abs_slots - t0_abs_slots) : 0;
-    uint64_t time_ms = (slots_since_t0 * 10) / ue_state->slots_per_frame;
+    uint64_t time_ms = (slots_since_t0 * TF5_NR_FRAME_DURATION_MS) / ue_state->slots_per_frame;
     uint32_t x = (uint32_t)(time_ms / ue_state->tesla_params.t_int_ms);
 
     // Safe if: x < i + d
@@ -647,13 +645,13 @@ int tf5_ue_buffer_msg(tf5_ue_state_t *state,
                              bool triggered_rrc_setup)
 {
     if (!state || !state->initialized || !auth_input || !tag) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     if (auth_input_len > TF5_MAX_AUTH_INPUT) {
         LOG_E(TF5, "Auth input too large (%zu > %d)\n",
               auth_input_len, TF5_MAX_AUTH_INPUT);
-        return -2;
+        return TF5_ERR_BUFFER_OVERFLOW;
     }
 
     // Find target slot: prefer invalid entry, then oldest entry
@@ -749,7 +747,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
                                                      bool *rrc_trigger_verified)
 {
     if (!ue_state || !ue_state->initialized || !key_disclosure || !rrc_trigger_verified) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
     *rrc_trigger_verified = false;
 
@@ -773,7 +771,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
 
     if (!has_buffered_entries) {
         LOG_D(TF5, "No buffered entries for verification\n");
-        return -2;
+        return TF5_ERR_NO_DATA;
     }
 
     DevAssert(earliest_buffered > ue_state->trust_anchor_idx);
@@ -789,7 +787,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
     if (verify_start > verify_end) {
         LOG_D(TF5, "No intervals in verifiable range [%u, %u]\n",
               verify_start, verify_end);
-        return -2;
+        return TF5_ERR_NO_DATA;
     }
 
     // Step 3: Derive keys incrementally and verify buffered entries
@@ -863,13 +861,13 @@ int tf5_load_gnb_privkey(const char *filepath,
                            uint32_t *validity_out)
 {
     if (!filepath || !privkey_out || !validity_out) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
         LOG_E(TF5, "Cannot open secret key file: %s\n", filepath);
-        return -1;
+        return TF5_ERR_FILE_OPEN;
     }
 
     // Read 35-byte key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
@@ -880,7 +878,7 @@ int tf5_load_gnb_privkey(const char *filepath,
     if (n != TF5_IBS_SK_FILE_SIZE) {
         LOG_E(TF5, "Secret key file has wrong size: %zu (expected %d)\n",
               n, TF5_IBS_SK_FILE_SIZE);
-        return -2;
+        return TF5_ERR_FILE_IO;
     }
 
     // Extract secret key (bytes 0-31)
@@ -897,7 +895,7 @@ int tf5_load_gnb_privkey(const char *filepath,
     if (tf5_bls_derive_pubkey(privkey_out, pubkey_test) != 0) {
         LOG_E(TF5, "Invalid BLS secret key format\n");
         OPENSSL_cleanse(privkey_out, TF5_IBS_GNB_SK_LEN);
-        return -3;
+        return TF5_ERR_KEY_INVALID;
     }
 
     return 0;
@@ -907,13 +905,13 @@ int tf5_load_core_mpk(const char *filepath,
                       uint8_t mpk_out[TF5_IBS_MPK_LEN])
 {
     if (!filepath || !mpk_out) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
         LOG_E(TF5, "Cannot open MPK file: %s\n", filepath);
-        return -1;
+        return TF5_ERR_FILE_OPEN;
     }
 
     size_t n = fread(mpk_out, 1, TF5_IBS_MPK_LEN, fp);
@@ -922,7 +920,7 @@ int tf5_load_core_mpk(const char *filepath,
     if (n != TF5_IBS_MPK_LEN) {
         LOG_E(TF5, "MPK file has wrong size: %zu (expected %d)\n",
               n, TF5_IBS_MPK_LEN);
-        return -2;
+        return TF5_ERR_FILE_IO;
     }
 
     LOG_I(TF5, "Loaded Core MPK from %s (%d bytes)\n",

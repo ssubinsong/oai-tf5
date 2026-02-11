@@ -149,6 +149,52 @@ TEST_F(TF5UeTest, UeInit_DefaultTimestampWindow) {
 }
 
 // ============================================================================
+// d_offset_slots Verification Tests (Gap #3)
+// ============================================================================
+
+TEST_F(TF5UeTest, UeInit_DOffsetSlots_DefaultParams) {
+    // Default: d_bound=1005us, slots_per_frame=20 (mu=1, 30kHz SCS)
+    // slot_duration = 10000/20 = 500us
+    // d_offset_slots = ceil(1005/500) = (1005+499)/500 = 3
+    int ret = initUeDefault();
+    ASSERT_EQ(0, ret);
+    EXPECT_EQ(3u, ue_state.d_offset_slots)
+        << "mu=1: ceil(1005/500) should be 3 slots";
+}
+
+TEST_F(TF5UeTest, UeInit_DOffsetSlots_Mu0) {
+    // mu=0 (15kHz SCS): slots_per_frame=10
+    // slot_duration = 10000/10 = 1000us
+    // d_offset_slots = ceil(1005/1000) = (1005+999)/1000 = 2
+    int ret = tf5_ue_init(&ue_state, test_mpk, 10,
+                          TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+    ASSERT_EQ(0, ret);
+    EXPECT_EQ(2u, ue_state.d_offset_slots)
+        << "mu=0: ceil(1005/1000) should be 2 slots";
+}
+
+TEST_F(TF5UeTest, UeInit_DOffsetSlots_Mu2) {
+    // mu=2 (60kHz SCS): slots_per_frame=40
+    // slot_duration = 10000/40 = 250us
+    // d_offset_slots = ceil(1005/250) = (1005+249)/250 = 5
+    int ret = tf5_ue_init(&ue_state, test_mpk, 40,
+                          TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+    ASSERT_EQ(0, ret);
+    EXPECT_EQ(5u, ue_state.d_offset_slots)
+        << "mu=2: ceil(1005/250) should be 5 slots";
+}
+
+TEST_F(TF5UeTest, UeInit_DOffsetSlots_ExactDivisor) {
+    // d_bound=1000us, slots_per_frame=10 → slot_duration=1000us
+    // d_offset_slots = ceil(1000/1000) = 1
+    int ret = tf5_ue_init(&ue_state, test_mpk, 10,
+                          1000, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+    ASSERT_EQ(0, ret);
+    EXPECT_EQ(1u, ue_state.d_offset_slots)
+        << "Exact divisor: ceil(1000/1000) should be 1 slot";
+}
+
+// ============================================================================
 // Safe Packet Test (tf5_ue_safe_packet_test)
 // ============================================================================
 
@@ -492,6 +538,63 @@ TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
                                                                 7, &rrc_trigger_verified);
 
     EXPECT_EQ(0, ret) << "Key recovery should succeed";
+}
+
+// ============================================================================
+// verify_buffered_msgs Null/Error Input Tests (Gap #2)
+// ============================================================================
+
+TEST_F(TF5UeTest, VerifyBuffered_NullState_ReturnsError) {
+    uint8_t key[TF5_TESLA_KEY_LEN] = {0};
+    bool rrc_trigger = false;
+
+    int ret = tf5_tesla_ue_verify_buffered_msgs(nullptr, key, 1, &rrc_trigger);
+
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, ret)
+        << "NULL ue_state should return TF5_ERR_INVALID_PARAM";
+}
+
+TEST_F(TF5UeTest, VerifyBuffered_NullKeyDisclosure_ReturnsError) {
+    ASSERT_EQ(0, initUeDefault());
+    bool rrc_trigger = false;
+
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, nullptr, 1, &rrc_trigger);
+
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, ret)
+        << "NULL key_disclosure should return TF5_ERR_INVALID_PARAM";
+}
+
+TEST_F(TF5UeTest, VerifyBuffered_NullRrcTrigger_ReturnsError) {
+    ASSERT_EQ(0, initUeDefault());
+    uint8_t key[TF5_TESLA_KEY_LEN] = {0};
+
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, key, 1, nullptr);
+
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, ret)
+        << "NULL rrc_trigger_verified should return TF5_ERR_INVALID_PARAM";
+}
+
+TEST_F(TF5UeTest, VerifyBuffered_UninitializedState_ReturnsError) {
+    // ue_state is memset(0) in SetUp() — initialized == false
+    uint8_t key[TF5_TESLA_KEY_LEN] = {0};
+    bool rrc_trigger = false;
+
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, key, 1, &rrc_trigger);
+
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, ret)
+        << "Uninitialized state should return TF5_ERR_INVALID_PARAM";
+}
+
+TEST_F(TF5UeTest, VerifyBuffered_EmptyBuffer_ReturnsNoData) {
+    ASSERT_EQ(0, initUeDefault());
+    uint8_t key[TF5_TESLA_KEY_LEN] = {0};
+    bool rrc_trigger = false;
+
+    // No entries buffered — buffer_queue_count == 0
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, key, 1, &rrc_trigger);
+
+    EXPECT_EQ(TF5_ERR_NO_DATA, ret)
+        << "Empty buffer should return TF5_ERR_NO_DATA";
 }
 
 // ============================================================================

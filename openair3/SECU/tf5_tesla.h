@@ -37,6 +37,20 @@
 #define TF5_TESLA_BUFFER_QUEUE_SIZE        4       // Max SIB1s buffered per UE
 #define TF5_RP_DEFAULT_TIME_WINDOW_MS      60000   // Replay protection window (60s)
 
+/* ── NR Radio Timing Constants (3GPP TS 38.211) ──────── */
+#define TF5_NR_FRAME_DURATION_MS    10      // 1 radio frame = 10ms
+#define TF5_NR_FRAME_DURATION_US    10000   // Frame duration in microseconds
+#define TF5_NR_SFN_MODULUS          1024    // SFN wraps at 1024 (0-1023)
+
+/* ── Replay Protection Timestamp Constants ────────────── */
+#define TF5_RP_TIMESTAMP_BITS       24
+#define TF5_RP_TIMESTAMP_MASK       ((1u << TF5_RP_TIMESTAMP_BITS) - 1)   // 0xFFFFFF
+#define TF5_RP_TIMESTAMP_HALF       (1u << (TF5_RP_TIMESTAMP_BITS - 1))   // 0x800000
+
+/* ── Wire Format Sizes ────────────────────────────────── */
+#define TF5_TESLA_PARAMS_PACKED_SIZE  11    // t_int(2) + d(1) + t0(4) + chain_len(4)
+#define TF5_SIG_AUTH_OVERHEAD         (TF5_IBS_VALIDITY_PERIOD_LEN + 1 + TF5_TESLA_PARAMS_PACKED_SIZE + 4 + TF5_TESLA_KEY_LEN + 3)  // 38 bytes
+
 /**
  * Generic PHY Timing (SFN/slot)
  */
@@ -182,7 +196,7 @@ typedef struct {
  * @param private_key   BLS secret key (32 bytes)
  * @param t0            T_0 timing (HFN/SFN/slot at interval 0 start)
  * @param slots_per_frame Number of slots per frame
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_ALLOC, TF5_ERR_CRYPTO
  */
 int tf5_gnb_init(tf5_gnb_state_t *state,
                        uint16_t t_int_ms,
@@ -213,7 +227,7 @@ void tf5_gnb_free(tf5_gnb_state_t *state);
  * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
  * @param sib1_len      Length of original SIB1 data
  * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_build_mac_auth_input(uint8_t *out,
                                    size_t *out_len,
@@ -237,7 +251,7 @@ int tf5_build_mac_auth_input(uint8_t *out,
  * @param interval_index Current interval index
  * @param disclosed_key Disclosed key K_{i-d}
  * @param timestamp_ms  Wall-clock timestamp LSB (ms since Unix epoch) for replay protection (24-bit)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_build_sig_auth_input(uint8_t *out,
                                    size_t *out_len,
@@ -261,7 +275,8 @@ int tf5_build_sig_auth_input(uint8_t *out,
  * @param original_sib1 Original SIB1 encoded data
  * @param sib1_len      Length of original SIB1 data
  * @param ext           Output: complete TESLA extension
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_CHAIN_EXHAUSTED,
+ *         TF5_ERR_SIGN, TF5_ERR_CRYPTO, or propagated error from sub-operations
  */
 int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                     uint16_t sfn,
@@ -276,7 +291,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
  * @param ext           TESLA extension structure
  * @param buf           Output buffer
  * @param buf_len       Size of output buffer
- * @return Number of bytes written, or negative on error
+ * @return Number of bytes written on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_pack_extension(const tf5_extension_t *ext,
                              uint8_t *buf,
@@ -296,7 +311,7 @@ int tf5_pack_extension(const tf5_extension_t *ext,
  * @param slots_per_frame Number of slots per frame
  * @param d_bound_us    D bound for safe packet test (microseconds)
  * @param rp_timestamp_window_ms Timestamp window for signature replay protection (ms)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM
  */
 int tf5_ue_init(tf5_ue_state_t *state,
                       const uint8_t mpk[TF5_IBS_MPK_LEN],
@@ -317,7 +332,7 @@ void tf5_ue_free(tf5_ue_state_t *state);
  * @param buf           Input buffer
  * @param buf_len       Length of input buffer
  * @param ext           Output: unpacked TESLA extension
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_unpack_extension(const uint8_t *buf,
                                size_t buf_len,
@@ -360,7 +375,7 @@ bool tf5_ue_safe_packet_test(tf5_ue_state_t *ue_state,
  * @param interval_index     Interval index of this SIB1
  * @param tag                TESLA tag from SIB1
  * @param triggered_rrc_setup True if this SIB1 triggered the current RRC session
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_ue_buffer_msg(tf5_ue_state_t *state,
                              const uint8_t *auth_input,
@@ -394,9 +409,7 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
  * @param key_disclosure          Key that has been verified via key chain
  * @param key_disclosure_interval Interval index of verified key
  * @param rrc_trigger_verified    Output: true if any buffered RRC-trigger SIB1 was verified
- * @return 0 if operation success, negative on error:
- *         -1: Invalid parameters
- *         -2: No buffered entries to verify
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_NO_DATA
  */
 int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
                                                      const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
@@ -417,10 +430,8 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
  * @param filepath      Path to binary key file (35 bytes)
  * @param privkey_out   Output: 32-byte raw secret key
  * @param validity_out  Output: key validity (minutes since 2024-01-01 00:00 UTC)
- * @return 0 on success, negative on error:
- *         -1: Invalid parameters or cannot open file
- *         -2: File read error or wrong size
- *         -3: Invalid key format
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_OPEN,
+ *         TF5_ERR_FILE_IO, TF5_ERR_KEY_INVALID
  */
 int tf5_load_gnb_privkey(const char *filepath,
                            uint8_t privkey_out[TF5_IBS_GNB_SK_LEN],
@@ -431,10 +442,7 @@ int tf5_load_gnb_privkey(const char *filepath,
  *
  * @param filepath  Path to binary file containing MPK (96-byte BLS12-381 G2 point)
  * @param mpk_out   Output: 96-byte raw MPK
- * @return 0 on success, negative on error:
- *         -1: Cannot open file
- *         -2: File read error or wrong size
- *         -3: Invalid key format
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_OPEN, TF5_ERR_FILE_IO
  */
 int tf5_load_core_mpk(const char *filepath,
                       uint8_t mpk_out[TF5_IBS_MPK_LEN]);
@@ -480,7 +488,7 @@ void tf5_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
  * @param auth_input    Data to authenticate
  * @param auth_input_len Length of data
  * @param tag_out       Output tag (16 bytes)
- * @return 0 on success, negative on error
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM
  */
 int tf5_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
                           const uint8_t *auth_input,
@@ -516,7 +524,7 @@ static inline tf5_slot_time_t tf5_slots_to_slot_time(uint64_t abs_slots,
                                                             uint16_t slots_per_frame)
 {
     // abs_slots = sfn * slots_per_frame + slot
-    uint16_t sfn = (uint16_t)((abs_slots / slots_per_frame) % 1024);
+    uint16_t sfn = (uint16_t)((abs_slots / slots_per_frame) % TF5_NR_SFN_MODULUS);
     uint16_t slot = abs_slots % slots_per_frame;
     return tf5_slot_time_make(sfn, slot);
 }
@@ -595,7 +603,8 @@ uint64_t tf5_rp_get_wallclock_ms(void);
  * @param ue_time_ms      UE's current wall-clock time (ms since epoch)
  * @param ext_timestamp_ms Timestamp LSB from received extension
  * @param window_ms       Acceptable time window in milliseconds
- * @return 0 if valid, -1 if too old, -2 if too far in future
+ * @return TF5_OK if valid, TF5_ERR_TIMESTAMP_OLD if too old,
+ *         TF5_ERR_TIMESTAMP_FUTURE if too far in future
  */
 int tf5_rp_validate_timestamp(uint64_t ue_time_ms,
                                  uint32_t ext_timestamp_ms,

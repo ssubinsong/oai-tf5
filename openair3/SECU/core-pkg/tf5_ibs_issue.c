@@ -33,7 +33,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
                            const char *sk_path)
 {
     if (!msk_path || !cell_id || !sk_path) {
-        return -1;
+        return TF5_ERR_INVALID_PARAM;
     }
 
     uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
@@ -43,7 +43,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     /* Load master secret key */
     rc = tf5_ibs_load_master_secret(msk_path, msk);
     if (rc != 0) {
-        return -2;
+        return rc;
     }
 
     /* Compute gNB secret key with validity period */
@@ -53,7 +53,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     OPENSSL_cleanse(msk, TF5_IBS_MASTER_SECRET_LEN);
 
     if (rc != 0) {
-        return -4;
+        return rc;
     }
 
     /* Build combined key file: sk_id (32 bytes) + gnb_key_validity_end (3 bytes, big-endian) */
@@ -73,7 +73,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     OPENSSL_cleanse(sk_id, TF5_IBS_GNB_SK_LEN);
 
     if (rc != 0) {
-        return -5;
+        return TF5_ERR_FILE_WRITE;
     }
 
     return 0;
@@ -186,13 +186,15 @@ int main(int argc, char *argv[])
     rc = tf5_ibs_issue_gnb_key(msk_path, cell_id, gnb_key_validity_end, sk_path);
     if (rc != 0) {
         switch (rc) {
-        case -2:
+        case TF5_ERR_FILE_OPEN:
+        case TF5_ERR_FILE_IO:
             fprintf(stderr, "Failed to load master secret from %s\n", msk_path);
             break;
-        case -4:
+        case TF5_ERR_KEY_INVALID:
+        case TF5_ERR_CRYPTO:
             fprintf(stderr, "Failed to compute gNB secret key\n");
             break;
-        case -5:
+        case TF5_ERR_FILE_WRITE:
             fprintf(stderr, "Failed to write key file to %s\n", sk_path);
             break;
         default:
