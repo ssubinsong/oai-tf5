@@ -29,7 +29,7 @@ The gNB signs every SIB1 with both an **IBS signature** (for first-time UE authe
 
 ## Initialization Flow
 
-TESLA initialization occurs in `nr_mac_configure_sib1()` ([config.c:1166-1265](../openair2/LAYER2/NR_MAC_gNB/config.c#L1166-L1265)).
+TESLA initialization occurs in `nr_mac_configure_sib1()` ([config.c:1185-1270](../openair2/LAYER2/NR_MAC_gNB/config.c#L1185-L1270)).
 
 ### Steps
 
@@ -91,7 +91,7 @@ TESLA initialization occurs in `nr_mac_configure_sib1()` ([config.c:1166-1265](.
 
 ## Per-SIB1 Extension Update
 
-Before each SIB1 transmission, `nr_mac_update_sib1_tf5()` is called ([nr_radio_config.c:4381-4447](../openair2/LAYER2/NR_MAC_gNB/nr_radio_config.c#L4381-L4447)).
+Before each SIB1 transmission, `nr_mac_update_sib1_tf5()` is called ([nr_radio_config.c:4379-4446](../openair2/LAYER2/NR_MAC_gNB/nr_radio_config.c#L4379-L4446)).
 
 ### Steps
 

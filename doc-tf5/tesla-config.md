@@ -104,17 +104,21 @@ The TESLA config inherits all other parameters from the base configuration:
 ```bash
 cd cmake_targets/ran_build/build
 
-# Generate TESLA keys
-../../../scripts/tf5_generate_bls_keys.sh
+# Generate TESLA keys (from build directory)
+mkdir -p pkg_keys gnb_keys
+./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
+./tf5_ibs_issue pkg_keys/msk.bin 000000e00 2628000 gnb_keys/sk_gnb.bin
 
 # Run gNB with TESLA config
 sudo ./nr-softmodem \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
-    --rfsim
+    --rfsim \
+    --tf5-privkey gnb_keys/sk_gnb.bin
 
 # Run UE (separate terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim \
-    -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.conf
+    -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.conf \
+    --tesla-core-mpk pkg_keys/mpk.bin
 ```
 
 ---
@@ -150,4 +154,4 @@ If the error persists after adding `sib1_tda`:
 2. Verify the config file is being loaded correctly (check gNB startup logs for parameter values)
 3. Try a different CORESET0 index (10, 11, or 12 all provide 48 RBs)
 
-See [Troubleshooting](troubleshooting.md) for more details.
+If the issue persists, check the gNB startup logs for additional diagnostic information.

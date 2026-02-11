@@ -250,14 +250,14 @@ ctest -N
 
 | Test Suite | File | Coverage |
 |------------|------|----------|
-| `test_tf5_tesla_crypto` | `test_tf5_tesla_crypto.cpp` | SHA-256 (`sha_256`), key chain (`tf5_tesla_chain_key`), MAC key derivation (`tf5_tesla_derive_mac_key`), tag computation (`tf5_tesla_compute_tag`), auth input builders (`tf5_tesla_build_mac_auth_input`, `tf5_tesla_build_sig_auth_input`) |
+| `test_tf5_tesla_crypto` | `test_tf5_tesla_crypto.cpp` | SHA-256 (`tf5_sha256` from `tf5_crypto.h`), key chain (`tf5_chain_key`), MAC key derivation (`tf5_derive_mac_key`), tag computation (`tf5_compute_tag`), auth input builders (`tf5_build_mac_auth_input`, `tf5_build_sig_auth_input`) |
 | `test_tf5_tesla_gnb` | `test_tf5_tesla_gnb.cpp` | gNB init, interval calculation, extension preparation, resource cleanup |
-| `test_tf5_tesla_ue` | `test_tf5_tesla_ue.cpp` | UE init, safe packet test, SIB1 buffering, key chain verification, buffered verification, key recovery, IBS signature verification (`tf5_tesla_ibs_verify`), legacy buffered verification (`tf5_tesla_ue_verify_buffered`) |
+| `test_tf5_tesla_ue` | `test_tf5_tesla_ue.cpp` | UE init, safe packet test, SIB1 buffering, key chain verification, buffered verification, key recovery, IBS signature verification (`tf5_sig_verify`), buffered message verification (`tf5_tesla_ue_verify_buffered_msgs`) |
 | `test_tf5_tesla_serial` | `test_tf5_tesla_serial.cpp` | Extension pack/unpack (102-byte format), big-endian encoding helpers |
 | `test_tf5_tesla_bls` | `test_tf5_tesla_bls.cpp` | BLS keygen, sign, verify; IBS hash-to-scalar, IBS verification |
 | `test_tf5_tesla_e2e` | `test_tf5_tesla_e2e.cpp` | Full gNB→UE flow, tamper detection, key recovery scenarios |
 | `test_tf5_tesla_timing` | `test_tf5_tesla_timing.cpp` | Timing utilities (`tf5_tesla_slots_since_t0`, `tf5_tesla_get_interval_index`), replay protection (`tf5_rp_get_wallclock_ms`, `tf5_rp_validate_timestamp`) |
-| `test_tf5_tesla_fileio` | `test_tf5_tesla_fileio.cpp` | Key file I/O (`tf5_tesla_load_privkey`, `tf5_tesla_load_pubkey`) |
+| `test_tf5_tesla_fileio` | `test_tf5_tesla_fileio.cpp` | Key file I/O (`tf5_load_gnb_privkey`, `tf5_load_core_mpk`) |
 
 ### Test Files Location
 

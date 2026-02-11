@@ -40,8 +40,8 @@ Located in `openair2/LAYER2/NR_MAC_gNB/`:
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `config.c` | 1166-1265 | TESLA state initialization in `nr_mac_configure_sib1()` |
-| `nr_radio_config.c` | 4370-4448 | Per-SIB1 extension update in `nr_mac_update_sib1_tf5()` |
+| `config.c` | 1185-1270 | TESLA state initialization in `nr_mac_configure_sib1()` |
+| `nr_radio_config.c` | 4379-4446 | Per-SIB1 extension update in `nr_mac_update_sib1_tf5()` |
 | `gNB_scheduler_bch.c` | 601-606 | Scheduler integration (calls update before TX) |
 | `nr_mac_gNB.h` | 334-340 | State pointer in `NR_COMMON_channels_t` |
 
@@ -52,7 +52,7 @@ Located in `openair2/RRC/NR_UE/`:
 | File | Lines | Purpose |
 |------|-------|---------|
 | `rrc_UE.c` | 600-801 | Main verification logic (`tf5_verify_sib1()`, etc.) |
-| `rrc_UE.c` | 2396-2410 | NAS gating / RRCSetupComplete deferral |
+| `rrc_UE.c` | 2354 | NAS gating / RRCSetupComplete deferral |
 | `rrc_defs.h` | 165-167 | State pointer in `NR_UE_RRC_SI_INFO` |
 
 ### Unit Tests
@@ -61,15 +61,15 @@ Located in `openair3/SECU/tests/`:
 
 | File | Purpose |
 |------|---------|
-| `test_tf5_tesla_crypto.c` | Cryptographic primitives |
-| `test_tf5_tesla_gnb.c` | gNB functions |
-| `test_tf5_tesla_ue.c` | UE verification |
-| `test_tf5_tesla_e2e.c` | End-to-end flow |
-| `test_tf5_tesla_bls.c` | BLS signatures |
-| `test_tf5_tesla_serial.c` | Serialization |
-| `test_tf5_tesla_timing.c` | Timing/replay protection |
-| `test_tf5_tesla_fileio.c` | Key file I/O |
-| `test_tf5_ibs_pkg.c` | Core PKG key management |
+| `test_tf5_tesla_crypto.cpp` | Cryptographic primitives |
+| `test_tf5_tesla_gnb.cpp` | gNB functions |
+| `test_tf5_tesla_ue.cpp` | UE verification |
+| `test_tf5_tesla_e2e.cpp` | End-to-end flow |
+| `test_tf5_tesla_bls.cpp` | BLS signatures |
+| `test_tf5_tesla_serial.cpp` | Serialization |
+| `test_tf5_tesla_timing.cpp` | Timing/replay protection |
+| `test_tf5_tesla_fileio.cpp` | Key file I/O |
+| `test_tf5_ibs_pkg.cpp` | Core PKG key management |
 | `tf5_test_vectors.h` | Common test vectors |
 
 ---
@@ -135,7 +135,7 @@ All TF5 code is guarded by `#ifdef ENABLE_TF5`:
 The `ENABLE_TF5` option is defined in CMake:
 
 ```cmake
-option(ENABLE_TF5 "Enable TESLA for 5G (TF5) broadcast authentication" ON)
+add_boolean_option(ENABLE_TF5 OFF "Enable TESLA broadcast authentication for SIB1 (fake base station protection)" ON)
 
 if(ENABLE_TF5)
   add_definitions(-DENABLE_TF5)
@@ -173,7 +173,6 @@ gNB_scheduler()
         └── nr_mac_update_sib1_tf5()               [nr_radio_config.c:4381]
               ├── uper_encode_to_buffer()          (original SIB1)
               ├── tf5_gnb_prepare_extension()      [tf5_tesla.c]
-              │     ├── tf5_gnb_get_interval()
               │     ├── tf5_bls_sign()
               │     └── tf5_compute_tag()
               ├── tf5_pack_extension()             [tf5_tesla.c]

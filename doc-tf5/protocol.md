@@ -103,7 +103,7 @@ Per RFC 4082 Section 3.2, `K_i = F(K_{i+1})`. Extending this relationship:
 
 When the UE receives a SIB1 during a bootstrap interval:
 1. The IBS signature authenticates `K_{-1}` along with all other extension fields
-2. `K_{-1}` becomes the trust anchor with `trust_anchor_idx = TF5_TESLA_BOOTSTRAP_IDX`
+2. `K_{-1}` becomes the trust anchor with `trust_anchor_idx = -1`
 3. When `K_0` is disclosed later, the UE verifies `F(K_0) == K_{-1}`
 4. Upon successful verification, the anchor is promoted to `K_0` for O(1) future verifications
 

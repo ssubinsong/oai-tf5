@@ -258,7 +258,7 @@ With the removal of `timesync_info` from the TESLA extension, explicit initial t
 
 | Parameter | Default | Rationale |
 |-----------|---------|-----------|
-| `TF5_DEFAULT_D_BOUND_US` | 1005 μs | CP-based derivation: CP_max (4.69 μs) + M_impl (1000 μs) |
+| `TF5_TESLA_DEFAULT_D_BOUND_US` | 1005 μs | CP-based derivation: CP_max (4.69 μs) + M_impl (1000 μs) |
 
 ### 10.4 Graceful Degradation
 
@@ -286,8 +286,8 @@ Note: Initial time sync verification is now implicit. Once the gNB is authentica
 
 | Function | File | Purpose |
 |----------|------|---------|
-| `tf5_tesla_ue_safe_packet_test()` | `openair3/SECU/tf5_tesla.c` | Safe packet test (uses D) |
-| `tf5_tesla_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize UE with D and timestamp window |
+| `tf5_ue_safe_packet_test()` | `openair3/SECU/tf5_tesla.c` | Safe packet test (uses D) |
+| `tf5_ue_init()` | `openair3/SECU/tf5_tesla.c` | Initialize UE with D and timestamp window |
 | `nr_rrc_process_sib1()` | `openair2/RRC/NR_UE/rrc_UE.c` | SIB1 processing with time sync |
 
 ### 10.7 Configuration

@@ -2,7 +2,7 @@
 
 [Back to Index](index.md)
 
-**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c)
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c), [tf5_crypto.h](../openair3/SECU/tf5_crypto.h)/[tf5_crypto.c](../openair3/SECU/tf5_crypto.c) (SHA-256/HMAC primitives)
 
 ---
 
@@ -67,21 +67,21 @@ Keys are stored as raw binary files:
 ### Sign Operation
 
 ```c
-int tf5_tesla_bls_sign(const uint8_t secret_key[32],  // sk_ID
-                       const uint8_t *data,
-                       size_t data_len,
-                       uint8_t signature[48]);
+int tf5_bls_sign(const uint8_t secret_key[32],  // sk_ID
+                 const uint8_t *data,
+                 size_t data_len,
+                 uint8_t signature[48]);
 ```
 
 ### IBS Verify Operation
 
 ```c
-int tf5_tesla_ibs_verify(const uint8_t mpk[96],           // Core's MPK
-                          const uint8_t cell_id[5],        // gNB's Cell ID
-                          uint32_t validity_end,           // Key expiration (minutes since 2024-01-01)
-                          const uint8_t *data,
-                          size_t data_len,
-                          const uint8_t signature[48]);
+int tf5_sig_verify(const uint8_t mpk[96],           // Core's MPK
+                   const uint8_t cell_id[5],        // gNB's Cell ID
+                   uint32_t validity_end,           // Key expiration (minutes since 2024-01-01)
+                   const uint8_t *data,
+                   size_t data_len,
+                   const uint8_t signature[48]);
 ```
 
 The verification derives `pk_ID = H_s(cell_id || validity_end)` and computes
@@ -91,7 +91,7 @@ The verification derives `pk_ID = H_s(cell_id || validity_end)` and computes
 
 ## Key Chain Function (F)
 
-**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_chain_key()`
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_chain_key()`
 
 Derives the previous key in the chain:
 ```c
@@ -100,12 +100,12 @@ K_i = F(K_{i+1}) = SHA-256(0x00 || K_{i+1})[0:15]
 
 Implementation:
 ```c
-void tf5_tesla_chain_key(const uint8_t key_next[16], uint8_t key_out[16]) {
+void tf5_chain_key(const uint8_t key_next[16], uint8_t key_out[16]) {
     uint8_t input[1 + 16];
     input[0] = 0x00;  // Domain separation prefix
     memcpy(input + 1, key_next, 16);
     uint8_t hash_out[32];
-    SHA256(input, sizeof(input), hash_out);
+    tf5_sha256(input, sizeof(input), hash_out);
     memcpy(key_out, hash_out, 16);  // Truncate to 128 bits
 }
 ```
@@ -114,7 +114,7 @@ void tf5_tesla_chain_key(const uint8_t key_next[16], uint8_t key_out[16]) {
 
 ## MAC Key Derivation (F')
 
-**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_derive_mac_key()`
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_derive_mac_key()`
 
 Derives the MAC key from a TESLA key:
 ```c
@@ -130,7 +130,7 @@ so revealing K_i doesn't directly expose the MAC key used.
 
 ## TESLA Tag Computation
 
-**Source**: [tf5_tesla.c:79](../openair3/SECU/tf5_tesla.c#L79) `tf5_tesla_compute_tag()`
+**Source**: [tf5_tesla.c:46](../openair3/SECU/tf5_tesla.c#L46) `tf5_compute_tag()`
 
 ```c
 tag = HMAC-SHA256(K'_i, auth_input)[0:15]
@@ -146,7 +146,7 @@ The signature and MAC use different authentication inputs:
 
 ### Signature Auth Input
 
-**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_build_sig_auth_input()`
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_build_sig_auth_input()`
 
 ```
 sig_auth_input = original_SIB1 || te_version || tesla_params || validity_end || i || key_disclosure || timestamp_ms
@@ -162,7 +162,7 @@ sig_auth_input = original_SIB1 || te_version || tesla_params || validity_end || 
 
 ### MAC Auth Input
 
-**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_tesla_build_mac_auth_input()`
+**Source**: [tf5_tesla.c](../openair3/SECU/tf5_tesla.c) `tf5_build_mac_auth_input()`
 
 Per RFC 4082, the MAC does NOT include interval index and key disclosure.
 Additionally, `tesla_params` is excluded as it is already authenticated by

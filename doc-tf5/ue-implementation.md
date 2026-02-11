@@ -171,11 +171,11 @@ tf5_verify_result_t tf5_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot)
 
 ## Buffer Management
 
-The UE maintains a buffer queue for pending SIB1 verification ([tf5_tesla.h:57-65](../openair3/SECU/tf5_tesla.h#L57-L65)):
+The UE maintains a buffer queue for pending SIB1 verification ([tf5_tesla.h:66-73](../openair3/SECU/tf5_tesla.h#L66-L73)):
 
 ```c
 typedef struct {
-    uint8_t  auth_input[TF5_MAX_AUTH_INPUT];  // 512B - MAC input data
+    uint8_t  auth_input[TF5_MAX_AUTH_INPUT];  // 372B - MAC input data
     size_t   auth_input_len;
     uint32_t rx_interval_index;               // Interval of this SIB1
     uint8_t  tag[TF5_TESLA_TAG_LEN];          // 16B - Received TESLA tag
@@ -194,7 +194,7 @@ typedef struct {
 
 ## NAS Gating State Machine
 
-The UE defers NAS registration until SIB1 is authenticated. Phase tracking is in `tf5_ue_phase_t` ([tf5_tesla.h:136-143](../openair3/SECU/tf5_tesla.h#L136-L143)):
+The UE defers NAS registration until SIB1 is authenticated. Phase tracking is in `tf5_ue_phase_t` ([tf5_tesla.h:144-152](../openair3/SECU/tf5_tesla.h#L144-L152)):
 
 ```c
 typedef enum {

@@ -16,7 +16,7 @@ Generic PHY timing representing a point in 5G NR time:
 typedef struct {
     uint16_t sfn;   // 2B - System Frame Number (0-1023)
     uint16_t slot;  // 2B - Slot within frame
-} tf5_tesla_slot_time_t;
+} tf5_slot_time_t;
 ```
 
 Used for T_0 reference, TX timing, and RX timing throughout the TESLA module.
@@ -30,13 +30,13 @@ This struct represents one buffered SIB1:
 
 ```c
 typedef struct {
-    uint8_t  auth_input[TF5_MAX_AUTH_INPUT];  // 512B - MAC input data
+    uint8_t  auth_input[TF5_MAX_AUTH_INPUT];  // 372B - MAC input data
     size_t   auth_input_len;
     uint32_t rx_interval_index;               // Interval index of this SIB1
     uint8_t  tag[TF5_TESLA_TAG_LEN];          // 16B - Received TESLA tag
     bool     valid;                           // Entry contains valid data
     bool     triggered_rrc_setup;             // This SIB1 triggered the current RRC session
-} tf5_tesla_buffer_entry_t;
+} tf5_buffer_entry_t;
 ```
 
 **Fields**:
@@ -56,8 +56,9 @@ typedef enum {
     TF5_PHASE_BUFFERED_AUTHENTICATED,         // Buffered SIB1 authenticated
     TF5_PHASE_RRCSETUP_DEFERRED,              // RRCSetup received while auth pending
     TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,// Deferred RRCSetup + auth complete
-    TF5_PHASE_RRCSETUP_COMPLETE               // RRC setup complete
-} tf5_phase_t;
+    TF5_PHASE_RRCSETUP_COMPLETE,              // RRC setup complete
+    TF5_AUTH_STATE_AUTH_FAILED                 // Authentication failed
+} tf5_ue_phase_t;
 ```
 
 Used by `tf5_ue_state_t` to coordinate RRCSetupComplete deferral.
@@ -83,7 +84,7 @@ Parameters constant for the lifetime of a key chain.
 typedef struct {
     uint16_t t_int_ms;             // 2B - Interval duration (20ms)
     uint8_t  d;                    // 1B - Key disclosure delay (e.g., 1)
-    tf5_tesla_slot_time_t t0;      // 4B - T_0: interval 0 start (transmitted in wire format)
+    tf5_slot_time_t t0;      // 4B - T_0: interval 0 start (transmitted in wire format)
     uint32_t chain_len;            // 4B - Number of intervals N
 } tf5_tesla_params_t;
 ```
@@ -104,7 +105,7 @@ typedef struct {
     uint8_t                     key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                    validity_end;                  // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                    timestamp_ms;                  // 3B - Unix epoch LSB (ms) for replay protection
-    uint8_t                     signature[TF5_SIG_LEN];  // 48B - BLS signature
+    uint8_t                     signature[TF5_IBS_SIG_LEN];  // 48B - BLS signature
     uint8_t                     tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_extension_t;
 ```
@@ -171,7 +172,7 @@ typedef struct {
     uint32_t key_chain_len;         // Number of intervals N (array has N+1 entries)
 
     // IBS keys
-    uint8_t  private_key[TF5_GNB_SKEY_LEN];   // 32B - sk_ID (issued by Core PKG)
+    uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 32B - sk_ID (issued by Core PKG)
     uint32_t key_validity_end;      // Key expiration (minutes since 2024-01-01)
 
     // Timing
@@ -183,7 +184,7 @@ typedef struct {
 
 **Key constants**:
 - `TF5_TESLA_KEY_LEN` = 16 (128-bit TESLA chain keys)
-- `TF5_GNB_SKEY_LEN` = 32 (BLS secret key)
+- `TF5_IBS_GNB_SK_LEN` = 32 (BLS secret key)
 
 ---
 
@@ -195,7 +196,7 @@ typedef struct {
     uint32_t d_offset_slots;          // D bound for safe packet test (in slots, pre-computed)
 
     // Pre-provisioned Core Master Public Key (IBS mode)
-    uint8_t  mpk[TF5_MPK_LEN];        // 96B - Core's MPK = s*Q (G2 point)
+    uint8_t  mpk[TF5_IBS_MPK_LEN];        // 96B - Core's MPK = s*Q (G2 point)
 
     // Verification state (trust anchor for key chain verification)
     // trust_anchor_idx = -1 indicates K_{-1} (bootstrap key)
@@ -203,7 +204,7 @@ typedef struct {
     uint8_t  trust_anchor_key[TF5_TESLA_KEY_LEN];  // Key used as anchor for chain verification
 
     // Buffer queue for pending TESLA verification (RFC 4082 multi-packet)
-    tf5_tesla_buffer_entry_t buffer_queue[TF5_TESLA_BUFFER_QUEUE_SIZE];  // Array of 4
+    tf5_buffer_entry_t buffer_queue[TF5_TESLA_BUFFER_QUEUE_SIZE];  // Array of 4
     uint8_t buffer_queue_count;       // Number of valid entries in queue
 
     // Slots per frame (depends on numerology)
@@ -214,7 +215,7 @@ typedef struct {
 
     // Parallel authentication state (for NAS gating)
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent)
-    tf5_phase_t curr_phase;           // Current authentication phase
+    tf5_ue_phase_t curr_phase;           // Current authentication phase
 
     // Saved transaction ID for deferred RRCSetupComplete (used when phase == RRCSETUP_DEFERRED)
     uint8_t  rrcsetup_transaction_id;
@@ -225,7 +226,7 @@ typedef struct {
 ```
 
 **Key constants**:
-- `TF5_MPK_LEN` = 96 (BLS public key / G2 point)
+- `TF5_IBS_MPK_LEN` = 96 (BLS public key / G2 point)
 - `TF5_TESLA_KEY_LEN` = 16 (128-bit TESLA chain keys)
 - `TF5_TESLA_BUFFER_QUEUE_SIZE` = 4 (max buffered SIB1s)
 
