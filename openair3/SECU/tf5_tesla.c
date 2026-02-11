@@ -774,8 +774,6 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
         return TF5_ERR_NO_DATA;
     }
 
-    DevAssert(earliest_buffered > ue_state->trust_anchor_idx);
-
     // Step 2: Determine verification range
     // Lower bound: don't re-verify already verified intervals
     uint32_t verify_start = earliest_buffered;
@@ -791,6 +789,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
     }
 
     // Step 3: Derive keys incrementally and verify buffered entries
+    bool mac_failed = false;
     uint8_t current_key[TF5_TESLA_KEY_LEN];
     memcpy(current_key, key_disclosure, TF5_TESLA_KEY_LEN);
 
@@ -829,6 +828,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
                 LOG_E(TF5, "MAC verification FAILED for interval %u\n",
                       i);
               entry->valid = false;
+              mac_failed = true;
               if (entry->triggered_rrc_setup) {
                 *rrc_trigger_verified = false;
               }
@@ -847,7 +847,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
     // Step 4: Update queue count
     tf5_ue_recount_buffer(ue_state);
 
-    return 0;
+    return mac_failed ? TF5_ERR_VERIFY : TF5_OK;
 }
 
 /*

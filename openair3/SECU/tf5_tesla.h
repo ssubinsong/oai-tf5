@@ -143,6 +143,7 @@ typedef struct {
 
 typedef enum {
   TF5_PHASE_INITIAL = 0, // No SIB1 has been buffered & marked for RRC
+  TF5_PHASE_IBS_AUTHENTICATED, // SIB1 authenticated via IBS signature (first-time UE)
   TF5_PHASE_BUFFERED, // An SIB1 has been buffered & marked for RRC
   TF5_PHASE_BUFFERED_AUTHENTICATED,
   TF5_PHASE_RRCSETUP_DEFERRED, // An SIB1 has been buffered & marked for RRC and RRCSetupComplete is deferred
@@ -408,7 +409,8 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
  * @param key_disclosure          Key that has been verified via key chain
  * @param key_disclosure_interval Interval index of verified key
  * @param rrc_trigger_verified    Output: true if any buffered RRC-trigger SIB1 was verified
- * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_NO_DATA
+ * @return TF5_OK on success, TF5_ERR_VERIFY if any MAC verification failed,
+ *         or TF5_ERR_INVALID_PARAM, TF5_ERR_NO_DATA
  */
 int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
                                                      const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
