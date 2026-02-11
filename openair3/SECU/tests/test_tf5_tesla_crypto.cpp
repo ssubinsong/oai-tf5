@@ -11,8 +11,7 @@
  * - tf5_tesla_build_sig_auth_input(): Build signature authentication input
  */
 
-#include <gtest/gtest.h>
-#include <cstring>
+#include "tf5_test_common.h"
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
@@ -39,15 +38,8 @@ TEST_F(TF5CryptoTest, ChainKey_BasicDerivation) {
     tf5_chain_key(tf5_test::TV_KEY_CHAIN_K5, key_out);
 
     // Should produce a 16-byte output
-    // Verify it's not all zeros (basic sanity check)
-    bool all_zeros = true;
-    for (int i = 0; i < TF5_TESLA_KEY_LEN; i++) {
-        if (key_out[i] != 0) {
-            all_zeros = false;
-            break;
-        }
-    }
-    EXPECT_FALSE(all_zeros) << "Chain key output should not be all zeros";
+    EXPECT_FALSE(is_all_zeros(key_out, TF5_TESLA_KEY_LEN))
+        << "Chain key output should not be all zeros";
 }
 
 TEST_F(TF5CryptoTest, ChainKey_KnownVector) {
@@ -126,14 +118,8 @@ TEST_F(TF5CryptoTest, DeriveMacKey_BasicDerivation) {
     tf5_derive_mac_key(tf5_test::TV_MAC_KEY_INPUT, mac_key_out);
 
     // Should produce a 32-byte output (full SHA-256)
-    bool all_zeros = true;
-    for (int i = 0; i < 32; i++) {
-        if (mac_key_out[i] != 0) {
-            all_zeros = false;
-            break;
-        }
-    }
-    EXPECT_FALSE(all_zeros) << "MAC key output should not be all zeros";
+    EXPECT_FALSE(is_all_zeros(mac_key_out, 32))
+        << "MAC key output should not be all zeros";
 }
 
 TEST_F(TF5CryptoTest, DeriveMacKey_KnownVector) {
@@ -187,14 +173,8 @@ TEST_F(TF5CryptoTest, ComputeTag_BasicComputation) {
     EXPECT_EQ(0, ret) << "Tag computation should return 0 on success";
 
     // Verify output is not all zeros
-    bool all_zeros = true;
-    for (int i = 0; i < TF5_TESLA_TAG_LEN; i++) {
-        if (tag_out[i] != 0) {
-            all_zeros = false;
-            break;
-        }
-    }
-    EXPECT_FALSE(all_zeros) << "Tag output should not be all zeros";
+    EXPECT_FALSE(is_all_zeros(tag_out, TF5_TESLA_TAG_LEN))
+        << "Tag output should not be all zeros";
 }
 
 TEST_F(TF5CryptoTest, ComputeTag_Deterministic) {
@@ -335,14 +315,8 @@ TEST_F(TF5CryptoTest, Sha256_LargeInput) {
     tf5_sha256(large_input, 1024, output);
 
     // Just verify it produces 32 bytes and is not all zeros
-    bool all_zeros = true;
-    for (int i = 0; i < 32; i++) {
-        if (output[i] != 0) {
-            all_zeros = false;
-            break;
-        }
-    }
-    EXPECT_FALSE(all_zeros) << "SHA-256 of large input should not be all zeros";
+    EXPECT_FALSE(is_all_zeros(output, 32))
+        << "SHA-256 of large input should not be all zeros";
 }
 
 TEST_F(TF5CryptoTest, Sha256_Deterministic) {

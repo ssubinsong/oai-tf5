@@ -8,21 +8,12 @@
  * - UE deserializes and verifies the extension
  */
 
-#include <gtest/gtest.h>
-#include <cstring>
+#define TF5_TEST_NEEDS_OAI_STUBS
+#include "tf5_test_common.h"
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
 #include "openair3/SECU/tf5_ibs_pkg.h"
-#include "common/config/config_userapi.h"
-#include "log.h"
-
-// Required by OAI logging infrastructure
-configmodule_interface_t *uniqCfg;
-void exit_function(const char *file, const char *function, const int line, const char *s, const int assert) {
-    if (assert) abort();
-    else exit(EXIT_SUCCESS);
-}
 }
 
 #include "tf5_test_vectors.h"

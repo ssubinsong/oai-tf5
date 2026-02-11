@@ -196,18 +196,13 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
     }
 
     /* Compute pk_ID = H_s(cell_id || gnb_key_validity_end) */
-    uint8_t ikm[TF5_IBS_IKM_LEN];
-    memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
-    memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, TF5_IBS_CELL_ID_LEN);
-
-    /* Encode gnb_key_validity_end as 3 bytes big-endian */
-    size_t off = TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN;
-    ikm[off + 0] = (gnb_key_validity_end >> 16) & 0xFF;
-    ikm[off + 1] = (gnb_key_validity_end >> 8) & 0xFF;
-    ikm[off + 2] = gnb_key_validity_end & 0xFF;
-
-    blst_keygen(&pk_id, ikm, sizeof(ikm), NULL, 0);
-    OPENSSL_cleanse(ikm, sizeof(ikm));
+    uint8_t pk_id_scalar[TF5_IBS_GNB_SK_LEN];
+    if (tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, pk_id_scalar) != 0) {
+        OPENSSL_cleanse(&s, sizeof(s));
+        return -4;
+    }
+    blst_scalar_from_bendian(&pk_id, pk_id_scalar);
+    OPENSSL_cleanse(pk_id_scalar, sizeof(pk_id_scalar));
 
     /* Compute sk_ID = s * pk_ID mod r */
     if (!blst_sk_mul_n_check(&sk_id, &s, &pk_id)) {

@@ -12,7 +12,6 @@
 /***************************************************************************************************************************************/
 #ifdef ENABLE_TF5
 #define CONFIG_HLP_TF5_PRIVKEY    "TESLA-for-5G BLS secret key file (35 bytes: sk + validity). REQUIRED.\n"
-#define CONFIG_HLP_TF5_PUBKEY     "TESLA-for-5G BLS public key file (raw binary, 96 bytes). REQUIRED.\n"
 #define CONFIG_HLP_TF5_TESLA_CHAINLEN   "TESLA-for-5G key chain length (default: 65536, approx. 21.8 min with T_int=20ms)\n"
 #define TF5_DEFAULT_CHAIN_LEN       65536
 #endif
@@ -29,7 +28,6 @@
 #ifdef ENABLE_TF5
 #define CMDLINE_TF5_PARAMS_GNB \
   {"tf5-privkey",              CONFIG_HLP_TF5_PRIVKEY,  0,                .strptr=&tf5_privkey_file,              .defstrval=NULL, TYPE_STRING, 0},     \
-  {"tf5-pubkey",               CONFIG_HLP_TF5_PUBKEY,   0,                .strptr=&tf5_pubkey_file,               .defstrval=NULL,  TYPE_STRING, 0},     \
   {"tf5-chain-len",            CONFIG_HLP_TF5_TESLA_CHAINLEN, 0,                .uptr=&tf5_tesla_chain_len,                   .defuintval=TF5_DEFAULT_CHAIN_LEN,   TYPE_UINT,   0},
 #else
 #define CMDLINE_TF5_PARAMS_GNB
@@ -61,7 +59,6 @@ extern uint64_t ulsch_slot_bitmap;
 extern char *uecap_file;
 #ifdef ENABLE_TF5
 extern char *tf5_privkey_file;
-extern char *tf5_pubkey_file;
 extern unsigned int tf5_tesla_chain_len;
 #endif
 

@@ -1,6 +1,7 @@
 #ifdef ENABLE_TF5
 
 #include "tf5_tesla_sig.h"
+#include "tf5_ibs_pkg.h"
 #include "common/utils/LOG/log.h"
 
 #include <string.h>
@@ -126,19 +127,14 @@ int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
     uint8_t pk_id_bytes[32];
     BLST_ERROR err;
 
-    /* Step 1: Compute pk_ID = H_s(cell_id || gnb_key_validity_end) using expanded IKM */
-    uint8_t ikm[TF5_IBS_IKM_LEN];
-    memcpy(ikm, TF5_IBS_DST_HS, TF5_IBS_DST_HS_LEN);
-    memcpy(ikm + TF5_IBS_DST_HS_LEN, cell_id, TF5_IBS_CELL_ID_LEN);
-
-    /* Encode gnb_key_validity_end as 3 bytes big-endian */
-    size_t off = TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN;
-    ikm[off + 0] = (gnb_key_validity_end >> 16) & 0xFF;
-    ikm[off + 1] = (gnb_key_validity_end >> 8) & 0xFF;
-    ikm[off + 2] = gnb_key_validity_end & 0xFF;
-
-    blst_keygen(&pk_id, ikm, sizeof(ikm), NULL, 0);
-    OPENSSL_cleanse(ikm, sizeof(ikm));
+    /* Step 1: Compute pk_ID = H_s(cell_id || gnb_key_validity_end) */
+    uint8_t pk_id_scalar[TF5_IBS_GNB_SK_LEN];
+    if (tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, pk_id_scalar) != 0) {
+        LOG_E(TF5, "Failed to compute pk_ID hash\n");
+        return -2;
+    }
+    blst_scalar_from_bendian(&pk_id, pk_id_scalar);
+    OPENSSL_cleanse(pk_id_scalar, sizeof(pk_id_scalar));
 
     /* Step 2: Deserialize/validate MPK once per thread and cache result */
     if (s_mpk_cache.valid &&

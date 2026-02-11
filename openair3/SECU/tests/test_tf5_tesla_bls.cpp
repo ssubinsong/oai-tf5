@@ -9,27 +9,12 @@
  * - tf5_sig_verify(): Identity-Based Signature verification
  */
 
-#include <gtest/gtest.h>
-#include <cstring>
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <filesystem>
+#define TF5_TEST_NEEDS_OAI_STUBS
+#include "tf5_test_common.h"
 
 extern "C" {
 #include "openair3/SECU/tf5_ibs_pkg.h"
 #include "openair3/SECU/tf5_tesla.h"
-#include "common/config/config_userapi.h"
-#include "log.h"
-
-// Required by OAI logging infrastructure
-configmodule_interface_t *uniqCfg;
-void exit_function(const char *file, const char *function, const int line, const char *s, const int assert) {
-    if (assert) abort();
-    else exit(EXIT_SUCCESS);
-}
 }
 
 #include "tf5_test_vectors.h"
@@ -80,14 +65,8 @@ TEST_F(TF5BlsTest, BlsDerivePublic_Success) {
     EXPECT_EQ(0, ret) << "Public key derivation should succeed";
 
     // Verify public key is not all zeros
-    bool all_zeros = true;
-    for (int i = 0; i < TF5_IBS_GNB_PK_LEN; i++) {
-        if (public_key[i] != 0) {
-            all_zeros = false;
-            break;
-        }
-    }
-    EXPECT_FALSE(all_zeros) << "Public key should not be all zeros";
+    EXPECT_FALSE(is_all_zeros(public_key, TF5_IBS_GNB_PK_LEN))
+        << "Public key should not be all zeros";
 }
 
 TEST_F(TF5BlsTest, BlsDerivePublic_Deterministic) {
@@ -135,14 +114,8 @@ TEST_F(TF5BlsTest, BlsSign_Success) {
     EXPECT_EQ(0, ret) << "BLS sign should succeed";
 
     // Verify signature is not all zeros
-    bool all_zeros = true;
-    for (int i = 0; i < TF5_IBS_SIG_LEN; i++) {
-        if (signature[i] != 0) {
-            all_zeros = false;
-            break;
-        }
-    }
-    EXPECT_FALSE(all_zeros) << "Signature should not be all zeros";
+    EXPECT_FALSE(is_all_zeros(signature, TF5_IBS_SIG_LEN))
+        << "Signature should not be all zeros";
 }
 
 TEST_F(TF5BlsTest, BlsSign_Deterministic) {
@@ -236,100 +209,25 @@ TEST_F(TF5BlsTest, IbsVerify_NullSignature_ReturnsError) {
 // IBS End-to-End Tests using PKG binaries
 // ============================================================================
 
+bool TF5IbsTestFixture::bls_initialized = false;
+
 /**
  * Test fixture that uses the Core PKG library to generate IBS keys.
- * This enables full end-to-end IBS signature testing with properly issued keys.
+ * Inherits common key generation from TF5IbsTestFixture.
  */
-class TF5IbsE2ETest : public ::testing::Test {
+class TF5IbsE2ETest : public TF5IbsTestFixture {
 protected:
-    std::string test_dir;
-    std::string msk_path;
-    std::string mpk_path;
-    std::string sk_gnb_path;
-
-    uint8_t msk[TF5_IBS_GNB_SK_LEN];
-    uint8_t mpk[TF5_IBS_MPK_LEN];
-    uint8_t sk_gnb[TF5_IBS_GNB_SK_LEN];
-    uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
-    uint32_t validity_end;
-
-    static bool bls_initialized;
+    // Aliases for backward compatibility with existing tests
+    uint8_t (&msk)[TF5_IBS_GNB_SK_LEN] = ibs_msk;
+    uint8_t (&mpk)[TF5_IBS_MPK_LEN] = ibs_mpk;
+    uint8_t (&sk_gnb)[TF5_IBS_GNB_SK_LEN] = ibs_sk;
 
     void SetUp() override {
-        // Initialize BLS library once
-        if (!bls_initialized) {
-            tf5_bls_init();
-            bls_initialized = true;
-        }
-
-        // Set up test parameters
-        memset(cell_id, 0, TF5_IBS_CELL_ID_LEN);
-        cell_id[0] = 0x12;
-        cell_id[1] = 0x34;
-        cell_id[2] = 0x56;
-        cell_id[3] = 0x78;
-        cell_id[4] = 0x90;  // 36-bit cell ID = 0x123456789
-
-        validity_end = 1051200;  // 2 years from epoch
-
-        // Create temp directory
-        test_dir = "/tmp/tf5_ibs_e2e_test_" + std::to_string(getpid());
-        std::filesystem::create_directories(test_dir);
-        msk_path = test_dir + "/msk.bin";
-        mpk_path = test_dir + "/mpk.bin";
-        sk_gnb_path = test_dir + "/sk_gnb.bin";
-
-        // Generate keys using library functions
-        generateKeys();
-    }
-
-    void TearDown() override {
-        // Clean up
-        std::filesystem::remove_all(test_dir);
-    }
-
-    void generateKeys() {
-        // Generate master keypair using library function
-        int rc = tf5_ibs_generate_master_keypair(msk_path.c_str(), mpk_path.c_str());
-        ASSERT_EQ(0, rc) << "Failed to generate master keypair";
-
-        // Issue gNB key using library function
-        rc = tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, validity_end, sk_gnb_path.c_str());
-        ASSERT_EQ(0, rc) << "Failed to issue gNB key";
-
-        // Load generated keys into member variables
-        loadGeneratedKeys();
-    }
-
-    void loadGeneratedKeys() {
-        // Load MSK using library function
-        int rc = tf5_ibs_load_master_secret(msk_path.c_str(), msk);
-        ASSERT_EQ(0, rc) << "Failed to load MSK";
-
-        // Load MPK using library function
-        rc = tf5_load_core_mpk(mpk_path.c_str(), mpk);
-        ASSERT_EQ(0, rc) << "Failed to load MPK";
-
-        // Load gNB secret key (35 bytes: 32 sk + 3 validity)
-        FILE* f = fopen(sk_gnb_path.c_str(), "rb");
-        ASSERT_NE(nullptr, f) << "Failed to open gNB SK file";
-        uint8_t sk_file[TF5_IBS_SK_FILE_SIZE];
-        size_t n = fread(sk_file, 1, TF5_IBS_SK_FILE_SIZE, f);
-        fclose(f);
-        ASSERT_EQ(TF5_IBS_SK_FILE_SIZE, n) << "Failed to read gNB SK";
-
-        // Extract secret key (first 32 bytes)
-        memcpy(sk_gnb, sk_file, TF5_IBS_GNB_SK_LEN);
-
-        // Extract validity (last 3 bytes, big-endian) for verification
-        uint32_t file_validity = ((uint32_t)sk_file[32] << 16) |
-                                 ((uint32_t)sk_file[33] << 8) |
-                                 (uint32_t)sk_file[34];
-        ASSERT_EQ(validity_end, file_validity) << "Validity mismatch in key file";
+        TF5IbsTestFixture::SetUp();
+        setupTestDir("tf5_ibs_e2e_test");
+        generateAndLoadKeys();
     }
 };
-
-bool TF5IbsE2ETest::bls_initialized = false;
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_ValidSignature_Success) {
     const char message[] = "Test message for IBS signature verification";

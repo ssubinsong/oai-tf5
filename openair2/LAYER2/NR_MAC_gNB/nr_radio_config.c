@@ -49,8 +49,6 @@
 #include "xer_encoder.h"
 #ifdef ENABLE_TF5
 #include "openair3/SECU/tf5_tesla.h"
-#include "common/ran_context.h"
-#include "openair2/RRC/NR/nr_rrc_defs.h"
 #endif
 
 #define NR_MAX_SUPPORTED_DL_LAYERS 4

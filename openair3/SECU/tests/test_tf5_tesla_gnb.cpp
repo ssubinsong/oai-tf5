@@ -8,21 +8,11 @@
  * - tf5_tesla_gnb_free(): Resource cleanup
  */
 
-#include <gtest/gtest.h>
-#include <cstring>
-#include <cstdlib>
+#define TF5_TEST_NEEDS_OAI_STUBS
+#include "tf5_test_common.h"
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
-#include "common/config/config_userapi.h"
-#include "log.h"
-
-// Required by OAI logging infrastructure
-configmodule_interface_t *uniqCfg;
-void exit_function(const char *file, const char *function, const int line, const char *s, const int assert) {
-    if (assert) abort();
-    else exit(EXIT_SUCCESS);
-}
 }
 
 #include "tf5_test_vectors.h"
@@ -275,14 +265,8 @@ TEST_F(TF5GnbTest, PrepareExtension_TagComputed) {
     tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     // Tag should not be all zeros
-    bool all_zeros = true;
-    for (int i = 0; i < TF5_TESLA_TAG_LEN; i++) {
-        if (ext.tesla_tag[i] != 0) {
-            all_zeros = false;
-            break;
-        }
-    }
-    EXPECT_FALSE(all_zeros) << "TESLA tag should be computed (not all zeros)";
+    EXPECT_FALSE(is_all_zeros(ext.tesla_tag, TF5_TESLA_TAG_LEN))
+        << "TESLA tag should be computed (not all zeros)";
 }
 
 TEST_F(TF5GnbTest, PrepareExtension_SignatureComputed) {
@@ -294,14 +278,8 @@ TEST_F(TF5GnbTest, PrepareExtension_SignatureComputed) {
     tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     // Signature should not be all zeros
-    bool all_zeros = true;
-    for (int i = 0; i < TF5_IBS_SIG_LEN; i++) {
-        if (ext.signature[i] != 0) {
-            all_zeros = false;
-            break;
-        }
-    }
-    EXPECT_FALSE(all_zeros) << "BLS signature should be computed (not all zeros)";
+    EXPECT_FALSE(is_all_zeros(ext.signature, TF5_IBS_SIG_LEN))
+        << "BLS signature should be computed (not all zeros)";
 }
 
 TEST_F(TF5GnbTest, PrepareExtension_ParamsIncluded) {

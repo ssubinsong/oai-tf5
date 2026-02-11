@@ -22,27 +22,7 @@
 #include <sys/stat.h>
 #include <time.h>
 
-/*
- * Write binary data to file with specified permissions
- */
-static int write_key_file(const char *path, const uint8_t *data, size_t len, mode_t mode)
-{
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
-    if (fd < 0) {
-        perror("Failed to create output file");
-        return -1;
-    }
-
-    ssize_t n = write(fd, data, len);
-    close(fd);
-
-    if (n != (ssize_t)len) {
-        fprintf(stderr, "Failed to write %zu bytes to %s\n", len, path);
-        return -1;
-    }
-
-    return 0;
-}
+#include "tf5_ibs_file_util.h"
 
 /*
  * Issue gNB secret key and save to file
@@ -150,7 +130,7 @@ static void print_pk_id(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN], uint32_t gnb
     }
     printf("\n");
 
-    memset(pk_id_bytes, 0, 32);
+    OPENSSL_cleanse(pk_id_bytes, 32);
 }
 
 #ifndef TF5_IBS_NO_MAIN

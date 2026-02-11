@@ -1,0 +1,158 @@
+/**
+ * @file tf5_test_common.h
+ * @brief Shared test infrastructure for TF5 unit tests
+ *
+ * Provides:
+ * - OAI logging infrastructure stubs (exit_function, uniqCfg)
+ * - Common test utilities (is_all_zeros)
+ * - IBS test fixture base class (TF5IbsTestFixture)
+ */
+
+#ifndef TF5_TEST_COMMON_H
+#define TF5_TEST_COMMON_H
+
+#include <gtest/gtest.h>
+#include <cstring>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <filesystem>
+
+/*
+ * =============================================================================
+ * OAI Logging Infrastructure Stubs
+ * =============================================================================
+ *
+ * Required by OAI modules that use AssertFatal/LOG_* macros.
+ * Only include this section in test files that link against OAI logging.
+ */
+#ifdef TF5_TEST_NEEDS_OAI_STUBS
+
+extern "C" {
+#include "common/config/config_userapi.h"
+#include "log.h"
+
+configmodule_interface_t *uniqCfg;
+void exit_function(const char *file, const char *function, const int line, const char *s, const int assert) {
+    if (assert) abort();
+    else exit(EXIT_SUCCESS);
+}
+}
+
+#endif /* TF5_TEST_NEEDS_OAI_STUBS */
+
+/*
+ * =============================================================================
+ * Common Test Utilities
+ * =============================================================================
+ */
+
+/**
+ * Check if a buffer is all zeros
+ */
+static inline bool is_all_zeros(const uint8_t *buf, size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        if (buf[i] != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/*
+ * =============================================================================
+ * IBS Test Fixture Base Class
+ * =============================================================================
+ *
+ * Common setup for tests that need PKG-generated IBS keys.
+ * Generates master keypair, issues gNB key, and loads all keys into members.
+ *
+ * Subclasses should call TF5IbsTestFixture::SetUp() in their own SetUp().
+ */
+
+extern "C" {
+#include "openair3/SECU/tf5_ibs_pkg.h"
+#include "openair3/SECU/tf5_tesla.h"
+}
+
+class TF5IbsTestFixture : public ::testing::Test {
+protected:
+    std::string test_dir;
+    std::string msk_path;
+    std::string mpk_path;
+    std::string sk_gnb_path;
+
+    uint8_t ibs_msk[TF5_IBS_GNB_SK_LEN];
+    uint8_t ibs_mpk[TF5_IBS_MPK_LEN];
+    uint8_t ibs_sk[TF5_IBS_GNB_SK_LEN];
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
+    uint32_t validity_end;
+
+    static bool bls_initialized;
+
+    void SetUp() override {
+        if (!bls_initialized) {
+            tf5_bls_init();
+            bls_initialized = true;
+        }
+
+        memset(cell_id, 0, TF5_IBS_CELL_ID_LEN);
+        cell_id[0] = 0x12;
+        cell_id[1] = 0x34;
+        cell_id[2] = 0x56;
+        cell_id[3] = 0x78;
+        cell_id[4] = 0x90;  // 36-bit cell ID = 0x123456789
+
+        validity_end = 1051200;  // 2 years from epoch
+    }
+
+    void TearDown() override {
+        if (!test_dir.empty()) {
+            std::filesystem::remove_all(test_dir);
+        }
+    }
+
+    void setupTestDir(const std::string &prefix) {
+        test_dir = "/tmp/" + prefix + "_" + std::to_string(getpid());
+        std::filesystem::create_directories(test_dir);
+        msk_path = test_dir + "/msk.bin";
+        mpk_path = test_dir + "/mpk.bin";
+        sk_gnb_path = test_dir + "/sk_gnb.bin";
+    }
+
+    void generateAndLoadKeys() {
+        int rc = tf5_ibs_generate_master_keypair(msk_path.c_str(), mpk_path.c_str());
+        ASSERT_EQ(0, rc) << "Failed to generate master keypair";
+
+        rc = tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, validity_end, sk_gnb_path.c_str());
+        ASSERT_EQ(0, rc) << "Failed to issue gNB key";
+
+        loadGeneratedKeys();
+    }
+
+    void loadGeneratedKeys() {
+        int rc = tf5_ibs_load_master_secret(msk_path.c_str(), ibs_msk);
+        ASSERT_EQ(0, rc) << "Failed to load MSK";
+
+        rc = tf5_load_core_mpk(mpk_path.c_str(), ibs_mpk);
+        ASSERT_EQ(0, rc) << "Failed to load MPK";
+
+        FILE* f = fopen(sk_gnb_path.c_str(), "rb");
+        ASSERT_NE(nullptr, f) << "Failed to open gNB SK file";
+        uint8_t sk_file[TF5_IBS_SK_FILE_SIZE];
+        size_t n = fread(sk_file, 1, TF5_IBS_SK_FILE_SIZE, f);
+        fclose(f);
+        ASSERT_EQ(TF5_IBS_SK_FILE_SIZE, n) << "Failed to read gNB SK";
+
+        memcpy(ibs_sk, sk_file, TF5_IBS_GNB_SK_LEN);
+    }
+};
+
+// Static member definition - must be in exactly one translation unit
+// Each test file that uses TF5IbsTestFixture should define this:
+//   bool TF5IbsTestFixture::bls_initialized = false;
+
+#endif /* TF5_TEST_COMMON_H */

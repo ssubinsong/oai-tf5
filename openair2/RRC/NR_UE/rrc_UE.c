@@ -490,7 +490,6 @@ static void get_sib19_schedinfo(NR_UE_RRC_SI_INFO *SI_info, NR_SI_SchedulingInfo
 #ifdef ENABLE_TF5
 /* Forward declarations for TESLA parallel authentication */
 static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, uint8_t Transaction_id);
-static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index);
 
 /*
  * Extract NR Cell ID (36 bits) from SIB1's cellAccessRelatedInfo.
@@ -830,6 +829,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
       return;
     case TF5_VERIFY_SKIP_UNSAFE:
       LOG_W(TF5, "Packet unsafe - discarding packet\n");
+      return;
     default:
       AssertFatal(false, "Unexpected TESLA verify_rc %d\n", verify_rc);
   }
@@ -1689,7 +1689,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
           free(ptr->SInfo.tf5_state);
           ptr->SInfo.tf5_state = NULL;
         } else {
-          uint8_t mpk[TF5_MPK_LEN];
+          uint8_t mpk[TF5_IBS_MPK_LEN];
           rc = tf5_load_core_mpk(params->tf5_core_mpk_file, mpk);
           if (rc == 0) {
             // Default slots_per_frame, will be updated when SIB1 is received with numerology info
@@ -2246,50 +2246,6 @@ static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, const 
   nr_pdcp_data_req_srb(rrc->ue_id, srb_id, 0, size, buffer, deliver_pdu_srb_rlc, NULL);
 }
 
-#ifdef ENABLE_TF5
-/**
- * Abort RRC connection due to TESLA authentication failure
- *
- * This function is called when SIB1 authentication fails (either signature
- * verification for first-time UE or TESLA MAC verification for returning UE).
- * It resets the RRC state to IDLE and stops any ongoing RACH procedure.
- */
-static void nr_rrc_abort_connection(NR_UE_RRC_INST_t *rrc, int gNB_index)
-{
-  LOG_E(TF5, "[UE %ld]Aborting RRC connection due to authentication failure\n", rrc->ue_id);
-
-  NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
-
-  /* Stop SIB1 timer */
-  nr_timer_stop(&SI_info->sib1_timer);
-
-  /* Stop any running timers (T300, T301, etc.) */
-  NR_UE_Timers_Constants_t *timers = &rrc->timers_and_constants;
-  nr_timer_stop(&timers->T300);
-  nr_timer_stop(&timers->T301);
-  nr_timer_stop(&timers->T319);
-
-  /* Reset RRC state to IDLE */
-  rrc->nrRrcState = RRC_STATE_IDLE_NR;
-  rrc->ra_trigger = RA_NOT_RUNNING;
-
-  /* Clear RNTI */
-  rrc->rnti = 0;
-
-  /* Reset MAC and release the default MAC Cell Group configuration */
-  NR_UE_MAC_reset_cause_t cause = GO_TO_IDLE;
-  nr_mac_rrc_message_t rrc_msg = {0};
-  rrc_msg.payload_type = NR_MAC_RRC_CONFIG_RESET;
-  rrc_msg.payload.config_reset.cause = cause;
-  nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
-
-  /* Clear TESLA pending state */
-  SI_info->tf5_state->curr_phase = TF5_AUTH_STATE_AUTH_FAILED;
-
-  LOG_W(TF5, "[UE %ld]Connection aborted - UE returns to IDLE\n", rrc->ue_id);
-}
-#endif
-
 static void nr_rrc_rrcsetup_fallback(NR_UE_RRC_INST_t *rrc)
 {
   LOG_W(NR_RRC,
@@ -2387,11 +2343,7 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
      * By convention, perNB[0] is always used for the initial/serving cell.
      * Multi-gNB scenarios (DC, handover) only occur after RRC_CONNECTED. */
     const int gNB_index = 0;
-    
-    /* Sanity check: RRCSetup should only be received before entering CONNECTED state */
-    AssertFatal(rrc->nrRrcState != RRC_STATE_CONNECTED_NR,
-                "RRCSetup received in CONNECTED state - invalid state transition\n");
-    
+
     NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
 
     if (SI_info->tf5_state) {
@@ -2409,12 +2361,12 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
           DevAssert(false);
       }
     }
+  }
 #endif
 
-    // set the content of RRCSetupComplete message (TESLA disabled or no tesla_state)
-    // TODO procedues described in 5.3.3.4 seems more complex than what we actualy do
-    rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
-  }
+  // set the content of RRCSetupComplete message (TESLA disabled or no tesla_state)
+  // TODO procedues described in 5.3.3.4 seems more complex than what we actualy do
+  rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
 }
 
 static void nr_rrc_process_rrcreject(NR_UE_RRC_INST_t *rrc, const NR_RRCReject_t *rrcReject)

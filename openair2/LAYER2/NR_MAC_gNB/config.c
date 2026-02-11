@@ -51,6 +51,7 @@
 #ifdef ENABLE_TF5
 #include "openair3/SECU/tf5_tesla.h"
 #include "openair3/SECU/tf5_tesla_sig.h"
+#include "tf5_ibs_pkg.h"
 #endif
 #include "common/ran_context.h"
 #include "common/utils/T/T.h"
@@ -61,7 +62,6 @@
 #include "nfapi_interface.h"
 #include "nfapi_nr_interface.h"
 #include "nfapi_nr_interface_scf.h"
-#include "tf5_ibs_pkg.h"
 #include "utils.h"
 
 c16_t convert_precoder_weight(double complex c_in)
@@ -1195,7 +1195,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   extern char *tf5_privkey_file;
   extern unsigned int tf5_tesla_chain_len;
 
-  uint8_t private_key[TF5_GNB_SECRET_KEY_LEN];
+  uint8_t private_key[TF5_IBS_GNB_SK_LEN];
   uint32_t key_validity_end;
   int rc;
 

@@ -21,6 +21,8 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+#include "tf5_ibs_file_util.h"
+
 /*
  * Read cryptographically secure random bytes from /dev/urandom
  */
@@ -37,28 +39,6 @@ static int read_random_bytes(uint8_t *buf, size_t len)
 
     if (n != (ssize_t)len) {
         fprintf(stderr, "Failed to read %zu random bytes\n", len);
-        return -1;
-    }
-
-    return 0;
-}
-
-/*
- * Write binary data to file with specified permissions
- */
-static int write_key_file(const char *path, const uint8_t *data, size_t len, mode_t mode)
-{
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
-    if (fd < 0) {
-        perror("Failed to create output file");
-        return -1;
-    }
-
-    ssize_t n = write(fd, data, len);
-    close(fd);
-
-    if (n != (ssize_t)len) {
-        fprintf(stderr, "Failed to write %zu bytes to %s\n", len, path);
         return -1;
     }
 

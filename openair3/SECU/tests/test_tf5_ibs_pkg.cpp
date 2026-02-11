@@ -13,12 +13,8 @@
  * - Validity period conversion utilities
  */
 
-#include <gtest/gtest.h>
-#include <cstring>
-#include <cstdio>
+#include "tf5_test_common.h"
 #include <fstream>
-#include <filesystem>
-#include <sys/stat.h>
 
 extern "C" {
 #include "tf5_ibs_pkg.h"
@@ -255,14 +251,8 @@ TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Success) {
 
     EXPECT_EQ(0, rc);
     // Verify output is not all zeros
-    bool all_zeros = true;
-    for (int i = 0; i < TF5_IBS_GNB_SK_LEN; i++) {
-        if (sk_out[i] != 0) {
-            all_zeros = false;
-            break;
-        }
-    }
-    EXPECT_FALSE(all_zeros) << "Output should not be all zeros";
+    EXPECT_FALSE(is_all_zeros(sk_out, TF5_IBS_GNB_SK_LEN))
+        << "Output should not be all zeros";
 }
 
 TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Deterministic) {

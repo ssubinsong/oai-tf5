@@ -620,6 +620,25 @@ bool tf5_ue_safe_packet_test(tf5_ue_state_t *ue_state,
     return safe;
 }
 
+/* Recount valid entries in the buffer queue */
+static void tf5_ue_recount_buffer(tf5_ue_state_t *state)
+{
+    state->buffer_queue_count = 0;
+    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
+        if (state->buffer_queue[i].valid) {
+            state->buffer_queue_count++;
+        }
+    }
+}
+
+/* Apply one-way chain function in-place: key = F(key) */
+static void tf5_chain_key_inplace(uint8_t key[TF5_TESLA_KEY_LEN])
+{
+    uint8_t tmp[TF5_TESLA_KEY_LEN];
+    tf5_chain_key(key, tmp);
+    memcpy(key, tmp, TF5_TESLA_KEY_LEN);
+}
+
 int tf5_ue_buffer_msg(tf5_ue_state_t *state,
                              const uint8_t *auth_input,
                              size_t auth_input_len,
@@ -670,12 +689,7 @@ int tf5_ue_buffer_msg(tf5_ue_state_t *state,
     entry->triggered_rrc_setup = triggered_rrc_setup;
 
     // Update queue count
-    state->buffer_queue_count = 0;
-    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
-        if (state->buffer_queue[i].valid) {
-            state->buffer_queue_count++;
-        }
-    }
+    tf5_ue_recount_buffer(state);
 
     LOG_D(TF5, "Buffered SIB1 for interval %u (slot %d, queue count %u, rrc_trigger=%d)\n",
           interval_index, target_slot, state->buffer_queue_count, triggered_rrc_setup);
@@ -709,9 +723,7 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
 
     uint32_t steps = (uint32_t)(disclosed_interval - ue_state->trust_anchor_idx);
     for (uint32_t i = 0; i < steps; i++) {
-      uint8_t next_key[TF5_TESLA_KEY_LEN];
-      tf5_chain_key(computed_key, next_key);
-      memcpy(computed_key, next_key, TF5_TESLA_KEY_LEN);
+      tf5_chain_key_inplace(computed_key);
     }
 
     if (memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
@@ -831,18 +843,11 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
         }
 
         // Derive key for next (earlier) interval: K_{i-1} = F(K_i)
-        uint8_t next_key[TF5_TESLA_KEY_LEN];
-        tf5_chain_key(current_key, next_key);
-        memcpy(current_key, next_key, TF5_TESLA_KEY_LEN);
+        tf5_chain_key_inplace(current_key);
     }
 
     // Step 4: Update queue count
-    ue_state->buffer_queue_count = 0;
-    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
-      if (ue_state->buffer_queue[i].valid) {
-        ue_state->buffer_queue_count++;
-      }
-    }
+    tf5_ue_recount_buffer(ue_state);
 
     return 0;
 }
@@ -882,9 +887,7 @@ int tf5_load_gnb_privkey(const char *filepath,
     memcpy(privkey_out, buffer, TF5_IBS_GNB_SK_LEN);
 
     // Extract validity from bytes 32-34 (big-endian)
-    *validity_out = ((uint32_t)buffer[32] << 16) |
-                    ((uint32_t)buffer[33] << 8) |
-                    (uint32_t)buffer[34];
+    *validity_out = tf5_decode_u24_be(&buffer[32]);
 
     // Clear buffer
     OPENSSL_cleanse(buffer, TF5_IBS_SK_FILE_SIZE);
