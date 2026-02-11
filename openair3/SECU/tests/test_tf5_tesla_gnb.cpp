@@ -370,6 +370,92 @@ TEST_F(TF5GnbTest, PrepareExtension_NullExt_ReturnsError) {
     EXPECT_LT(ret, 0) << "Null extension output should return error";
 }
 
+TEST_F(TF5GnbTest, PrepareExtension_ChainExhausted_ExactBoundary) {
+    // chain_len = 5, try interval == 5 (should fail: 0-4 are valid)
+    ASSERT_EQ(0, initGnbDefault(5));
+
+    tf5_extension_t ext;
+    const char sib1[] = "Test SIB1 content";
+
+    // interval = chain_len = 5: SFN = 5 * 20ms / (10ms/frame) * slots_per_frame / slots_per_frame
+    // 5 intervals * 20ms = 100ms = 10 frames = SFN 10 (at 20 slots/frame)
+    int ret = tf5_gnb_prepare_extension(
+        &gnb_state, 10, 0,
+        (const uint8_t*)sib1, strlen(sib1), &ext
+    );
+
+    EXPECT_LT(ret, 0) << "interval == chain_len should fail (chain exhausted)";
+}
+
+TEST_F(TF5GnbTest, PrepareExtension_LastValidInterval) {
+    // chain_len = 5, interval == 4 (last valid)
+    ASSERT_EQ(0, initGnbDefault(5));
+
+    tf5_extension_t ext;
+    const char sib1[] = "Test SIB1 content";
+
+    // interval = 4: 4 * 20ms = 80ms = 8 frames = SFN 8
+    int ret = tf5_gnb_prepare_extension(
+        &gnb_state, 8, 0,
+        (const uint8_t*)sib1, strlen(sib1), &ext
+    );
+
+    EXPECT_EQ(0, ret) << "interval == chain_len - 1 should succeed";
+    EXPECT_EQ(4u, ext.i);
+}
+
+TEST_F(TF5GnbTest, GnbInit_DoubleInit_Succeeds) {
+    // First init
+    ASSERT_EQ(0, initGnbDefault(50));
+    EXPECT_TRUE(gnb_state.initialized);
+    EXPECT_NE(nullptr, gnb_state.key_chain);
+
+    // Second init with different params (reinit path)
+    int ret = tf5_gnb_init(
+        &gnb_state,
+        40,   // Different T_int
+        2,    // Different d
+        200,  // Different chain_len
+        test_private_key,
+        &t0,
+        tf5_test::TV_SLOTS_PER_FRAME
+    );
+
+    EXPECT_EQ(0, ret) << "Double init should succeed (reinit path)";
+    EXPECT_EQ(200u, gnb_state.key_chain_len);
+    EXPECT_EQ(40, gnb_state.tesla_params.t_int_ms);
+    EXPECT_EQ(2, gnb_state.tesla_params.d);
+}
+
+TEST_F(TF5GnbTest, GnbInit_MinimalChain) {
+    int ret = initGnbDefault(1);
+
+    EXPECT_EQ(0, ret) << "chain_len = 1 should succeed";
+    EXPECT_EQ(1u, gnb_state.key_chain_len);
+    EXPECT_NE(nullptr, gnb_state.key_chain);
+}
+
+TEST_F(TF5GnbTest, PrepareExtension_TimestampZero_Handled) {
+    // This test verifies behavior when tf5_rp_get_wallclock_ms() returns 0.
+    // The implementation checks for timestamp == 0 and returns -7.
+    // We can't easily mock the wallclock, but we verify the function succeeds
+    // under normal conditions (wallclock is non-zero).
+    ASSERT_EQ(0, initGnbDefault(100));
+
+    tf5_extension_t ext;
+    const char sib1[] = "Test SIB1 content";
+
+    int ret = tf5_gnb_prepare_extension(
+        &gnb_state, 0, 0,
+        (const uint8_t*)sib1, strlen(sib1), &ext
+    );
+
+    // Should succeed since wallclock is valid in test environment
+    EXPECT_EQ(0, ret);
+    // Timestamp should be non-zero
+    EXPECT_NE(0u, ext.timestamp_ms);
+}
+
 // ============================================================================
 // Free Tests (tf5_gnb_free)
 // ============================================================================

@@ -571,15 +571,13 @@ static inline uint32_t tf5_decode_u24_be(const uint8_t *buf) {
 }
 
 /* Encode 24-bit gnb_key_validity_end as 3 bytes big-endian */
-static inline void tf5_encode_gnb_key_validity_end(uint8_t *buf, uint32_t gnb_key_validity_end) {
-    buf[0] = (gnb_key_validity_end >> 16) & 0xFF;
-    buf[1] = (gnb_key_validity_end >> 8) & 0xFF;
-    buf[2] = gnb_key_validity_end & 0xFF;
+static inline void tf5_encode_gnb_key_validity_end(uint8_t *buf, uint32_t val) {
+    tf5_encode_u24_be(buf, val);
 }
 
 /* Decode 24-bit gnb_key_validity_end from 3 bytes big-endian */
 static inline uint32_t tf5_decode_gnb_key_validity_end(const uint8_t *buf) {
-    return ((uint32_t)buf[0] << 16) | ((uint32_t)buf[1] << 8) | buf[2];
+    return tf5_decode_u24_be(buf);
 }
 
 /*

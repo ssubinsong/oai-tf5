@@ -137,26 +137,39 @@ TEST_F(TF5TimingTest, ValidateTimestamp_ExactBoundaryFuture_Valid) {
     EXPECT_EQ(0, result) << "Exactly at future boundary should be valid";
 }
 
-// DISABLED: 24-bit wraparound handling is not explicitly implemented in the current version.
-// The function uses simple 64-bit arithmetic without special 24-bit wrap logic.
-// Re-enable this test if/when 24-bit wraparound is implemented.
-TEST_F(TF5TimingTest, DISABLED_ValidateTimestamp_24BitWrap_PositiveWrap) {
-    // Test 24-bit wraparound: UE at 0x100, ext at 0xFFFFF0 (appears to be in future due to wrap)
-    // This tests the LSB comparison logic
-    uint64_t ue_time_ms = 0x100;  // UE has wrapped around
-    uint32_t ext_timestamp_ms = 0xFFFFF0;  // gNB hasn't wrapped yet (appears future)
+TEST_F(TF5TimingTest, ValidateTimestamp_24BitWrap_PositiveWrap) {
+    // Test 24-bit wraparound: UE at 0x100, ext at 0xFFFFF0
+    // In 24-bit modular signed math: diff = 0x100 - 0xFFFFF0 = +0x110 (272 ms old)
+    uint64_t ue_time_ms = 0x100;
+    uint32_t ext_timestamp_ms = 0xFFFFF0;
     uint64_t window_ms = 60000;
-
-    // The 24-bit difference: 0x100 - 0xFFFFF0 = 0x100 - 0xFFFFF0 in 24-bit space
-    // This is a large negative value in signed interpretation, which means ext is "in the future"
-    // But since 0xFFFFF0 is close to wrap, ext is actually just slightly old
-    // The function should handle this case
 
     int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
 
-    // In 24-bit math: 0x100 - 0xFFFFF0 wraps to a small positive value (0x110)
-    // So ext appears to be 0x110 ms old, which is within the window
-    EXPECT_EQ(0, result) << "24-bit wrap case should handle correctly";
+    EXPECT_EQ(0, result) << "24-bit wrap: ext 272ms old should be valid";
+}
+
+TEST_F(TF5TimingTest, ValidateTimestamp_24BitWrap_NegativeWrap) {
+    // UE near max (0xFFFFF0), ext just after wrap (0x100)
+    // In 24-bit modular signed math: diff = 0xFFFFF0 - 0x100 = -0x110 (-272 ms, ext is in future)
+    uint64_t ue_time_ms = 0xFFFFF0;
+    uint32_t ext_timestamp_ms = 0x100;
+    uint64_t window_ms = 60000;
+
+    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+
+    EXPECT_EQ(0, result) << "24-bit wrap: ext 272ms in future should be valid";
+}
+
+TEST_F(TF5TimingTest, ValidateTimestamp_TimestampZero) {
+    // Verify behavior when ext_timestamp_ms = 0
+    uint64_t ue_time_ms = 500;
+    uint32_t ext_timestamp_ms = 0;
+    uint64_t window_ms = 60000;
+
+    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+
+    EXPECT_EQ(0, result) << "ext_timestamp=0 with UE at 500ms should be valid (500ms old, within 60s window)";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_SmallWindow) {
@@ -247,7 +260,7 @@ TEST_F(TF5TimingTest, AbsoluteSlots_Basic) {
 
 TEST_F(TF5TimingTest, SlotsToSlotTime_RoundTrip) {
     tf5_slot_time_t original = tf5_slot_time_make(123, 17);
-    uint64_t abs_slots = tf5_slot_time_to_slots(&original, SLOTS_PER_FRAME);
+    uint64_t abs_slots = tf5_absolute_slots(&original, SLOTS_PER_FRAME);
     tf5_slot_time_t recovered = tf5_slots_to_slot_time(abs_slots, SLOTS_PER_FRAME);
 
     EXPECT_EQ(original.sfn, recovered.sfn);

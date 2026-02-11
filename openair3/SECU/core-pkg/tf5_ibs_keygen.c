@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <openssl/crypto.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -90,12 +91,12 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
     blst_keygen(&s, ikm, TF5_IBS_KEYGEN_IKM_LEN, NULL, 0);
 
     /* Clear IKM from memory */
-    memset(ikm, 0, TF5_IBS_KEYGEN_IKM_LEN);
+    OPENSSL_cleanse(ikm, TF5_IBS_KEYGEN_IKM_LEN);
 
     /* Validate secret key */
     if (!blst_sk_check(&s)) {
         fprintf(stderr, "Generated invalid secret key (probability ~2^-256)\n");
-        memset(&s, 0, sizeof(s));
+        OPENSSL_cleanse(&s, sizeof(s));
         return -3;
     }
 
@@ -107,16 +108,16 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
     blst_p2_compress(mpk_bytes, &mpk);
 
     /* Clear scalar from memory before file I/O */
-    memset(&s, 0, sizeof(s));
+    OPENSSL_cleanse(&s, sizeof(s));
 
     /* Write master secret key (restricted permissions: owner read/write only) */
     if (write_key_file(msk_path, msk_bytes, TF5_IBS_MASTER_SECRET_LEN, 0600) != 0) {
-        memset(msk_bytes, 0, TF5_IBS_MASTER_SECRET_LEN);
+        OPENSSL_cleanse(msk_bytes, TF5_IBS_MASTER_SECRET_LEN);
         return -4;
     }
 
     /* Clear msk from memory */
-    memset(msk_bytes, 0, TF5_IBS_MASTER_SECRET_LEN);
+    OPENSSL_cleanse(msk_bytes, TF5_IBS_MASTER_SECRET_LEN);
 
     /* Write master public key (public readable) */
     if (write_key_file(mpk_path, mpk_bytes, TF5_IBS_MASTER_PUBLIC_LEN, 0644) != 0) {

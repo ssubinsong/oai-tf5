@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <openssl/crypto.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -69,7 +70,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     rc = tf5_ibs_compute_gnb_secret(msk, cell_id, gnb_key_validity_end, sk_id);
 
     /* Clear master secret from memory */
-    memset(msk, 0, TF5_IBS_MASTER_SECRET_LEN);
+    OPENSSL_cleanse(msk, TF5_IBS_MASTER_SECRET_LEN);
 
     if (rc != 0) {
         return -4;
@@ -88,8 +89,8 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     rc = write_key_file(sk_path, key_file_data, TF5_IBS_SK_FILE_SIZE, 0600);
 
     /* Clear key data from memory */
-    memset(key_file_data, 0, TF5_IBS_SK_FILE_SIZE);
-    memset(sk_id, 0, TF5_GNB_SECRET_KEY_LEN);
+    OPENSSL_cleanse(key_file_data, TF5_IBS_SK_FILE_SIZE);
+    OPENSSL_cleanse(sk_id, TF5_GNB_SECRET_KEY_LEN);
 
     if (rc != 0) {
         return -5;

@@ -5,6 +5,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <openssl/crypto.h>
 #include "blst.h"
 
 /* Domain Separation Tag for hash-to-curve (IETF BLS basic scheme) */
@@ -44,7 +45,7 @@ int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
     blst_p2_compress(public_key, &pk_p2);
 
     /* Clear secret key from memory */
-    memset(&sk, 0, sizeof(sk));
+    OPENSSL_cleanse(&sk, sizeof(sk));
 
     return 0;
 }
@@ -68,7 +69,7 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
     /* Check secret key validity */
     if (!blst_sk_check(&sk)) {
         LOG_E(TF5, "Invalid secret key for signing\n");
-        memset(&sk, 0, sizeof(sk));
+        OPENSSL_cleanse(&sk, sizeof(sk));
         return -3;
     }
 
@@ -82,7 +83,7 @@ int tf5_bls_sign(const uint8_t secret_key[TF5_GNB_SECRET_KEY_LEN],
     blst_p1_compress(signature, &sig_p1);
 
     /* Clear secret key from memory */
-    memset(&sk, 0, sizeof(sk));
+    OPENSSL_cleanse(&sk, sizeof(sk));
 
     return 0;
 }
@@ -140,7 +141,7 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
     ikm[off + 2] = gnb_key_validity_end & 0xFF;
 
     blst_keygen(&pk_id, ikm, sizeof(ikm), NULL, 0);
-    memset(ikm, 0, sizeof(ikm));
+    OPENSSL_cleanse(ikm, sizeof(ikm));
 
     /* Step 2: Deserialize/validate MPK once per thread and cache result */
     if (s_mpk_cache.valid &&
@@ -150,7 +151,7 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
         err = blst_p2_uncompress(&mpk_affine, mpk);
         if (err != BLST_SUCCESS) {
             LOG_E(TF5, "Failed to deserialize MPK: %d\n", err);
-            memset(&pk_id, 0, sizeof(pk_id));
+            OPENSSL_cleanse(&pk_id, sizeof(pk_id));
             return -3;
         }
 
@@ -170,8 +171,8 @@ int tf5_sig_verify(const uint8_t mpk[TF5_GNB_PUBKEY_LEN],
     blst_p2_mult(&derived_pk, &derived_pk, pk_id_bytes, 256);
 
     /* Clear sensitive pk_id_bytes */
-    memset(pk_id_bytes, 0, sizeof(pk_id_bytes));
-    memset(&pk_id, 0, sizeof(pk_id));
+    OPENSSL_cleanse(pk_id_bytes, sizeof(pk_id_bytes));
+    OPENSSL_cleanse(&pk_id, sizeof(pk_id));
 
     /* Step 4: Convert to affine for verification */
     blst_p2_to_affine(&pk_final, &derived_pk);

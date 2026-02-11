@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <openssl/crypto.h>
 
 /*
  * Hash identity (Cell ID || gnb_key_validity_end) to scalar in Z_r
@@ -60,8 +61,8 @@ int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
     blst_bendian_from_scalar(scalar_out, &pk_id);
 
     /* Clear sensitive data */
-    memset(&pk_id, 0, sizeof(pk_id));
-    memset(ikm, 0, sizeof(ikm));
+    OPENSSL_cleanse(&pk_id, sizeof(pk_id));
+    OPENSSL_cleanse(ikm, sizeof(ikm));
 
     return 0;
 }
@@ -162,7 +163,7 @@ int tf5_ibs_load_master_secret(const char *filepath,
     fclose(f);
 
     if (n != TF5_IBS_MASTER_SECRET_LEN) {
-        memset(msk_out, 0, TF5_IBS_MASTER_SECRET_LEN);
+        OPENSSL_cleanse(msk_out, TF5_IBS_MASTER_SECRET_LEN);
         return -3;
     }
 
@@ -190,7 +191,7 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
 
     /* Validate master secret is in valid range */
     if (!blst_sk_check(&s)) {
-        memset(&s, 0, sizeof(s));
+        OPENSSL_cleanse(&s, sizeof(s));
         return -2;
     }
 
@@ -206,13 +207,13 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
     ikm[off + 2] = gnb_key_validity_end & 0xFF;
 
     blst_keygen(&pk_id, ikm, sizeof(ikm), NULL, 0);
-    memset(ikm, 0, sizeof(ikm));
+    OPENSSL_cleanse(ikm, sizeof(ikm));
 
     /* Compute sk_ID = s * pk_ID mod r */
     if (!blst_sk_mul_n_check(&sk_id, &s, &pk_id)) {
         /* Multiplication failed (result is zero, which shouldn't happen) */
-        memset(&s, 0, sizeof(s));
-        memset(&pk_id, 0, sizeof(pk_id));
+        OPENSSL_cleanse(&s, sizeof(s));
+        OPENSSL_cleanse(&pk_id, sizeof(pk_id));
         return -3;
     }
 
@@ -220,9 +221,9 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
     blst_bendian_from_scalar(sk_out, &sk_id);
 
     /* Clear sensitive data from memory */
-    memset(&s, 0, sizeof(s));
-    memset(&pk_id, 0, sizeof(pk_id));
-    memset(&sk_id, 0, sizeof(sk_id));
+    OPENSSL_cleanse(&s, sizeof(s));
+    OPENSSL_cleanse(&pk_id, sizeof(pk_id));
+    OPENSSL_cleanse(&sk_id, sizeof(sk_id));
 
     return 0;
 }

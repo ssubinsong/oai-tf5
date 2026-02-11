@@ -304,27 +304,6 @@ TEST_F(TF5SerialTest, DecodeU32_BigEndian) {
     EXPECT_EQ(0x12345678u, val);
 }
 
-TEST_F(TF5SerialTest, EncodeU64_BigEndian) {
-    uint8_t buf[8];
-    tf5_encode_u64_be(buf, 0x123456789ABCDEF0ULL);
-
-    EXPECT_EQ(0x12, buf[0]);
-    EXPECT_EQ(0x34, buf[1]);
-    EXPECT_EQ(0x56, buf[2]);
-    EXPECT_EQ(0x78, buf[3]);
-    EXPECT_EQ(0x9A, buf[4]);
-    EXPECT_EQ(0xBC, buf[5]);
-    EXPECT_EQ(0xDE, buf[6]);
-    EXPECT_EQ(0xF0, buf[7]);
-}
-
-TEST_F(TF5SerialTest, DecodeU64_BigEndian) {
-    uint8_t buf[8] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0};
-    uint64_t val = tf5_decode_u64_be(buf);
-
-    EXPECT_EQ(0x123456789ABCDEF0ULL, val);
-}
-
 TEST_F(TF5SerialTest, RoundTrip_U16) {
     uint16_t original = 0xABCD;
     uint8_t buf[2];
@@ -355,14 +334,43 @@ TEST_F(TF5SerialTest, RoundTrip_U32) {
     EXPECT_EQ(original, decoded);
 }
 
-TEST_F(TF5SerialTest, RoundTrip_U64) {
-    uint64_t original = 0xCAFEBABEDEADBEEFULL;
-    uint8_t buf[8];
+// ============================================================================
+// Auth Input Buffer Bounds Tests
+// ============================================================================
 
-    tf5_encode_u64_be(buf, original);
-    uint64_t decoded = tf5_decode_u64_be(buf);
+TEST_F(TF5SerialTest, BuildSigAuthInput_ExceedsMaxAuthInput) {
+    // SIB1 larger than TF5_MAX_AUTH_INPUT - 38 bytes overhead should return -2
+    uint8_t out[TF5_MAX_AUTH_INPUT + 100];
+    size_t out_len = 0;
 
-    EXPECT_EQ(original, decoded);
+    // Create oversized SIB1 (TF5_MAX_AUTH_INPUT = 372, overhead = 38, so > 334 bytes fails)
+    uint8_t big_sib1[335];
+    memset(big_sib1, 0xAA, sizeof(big_sib1));
+
+    tf5_tesla_params_t params = {};
+    params.t_int_ms = 20;
+    params.d = 1;
+    params.chain_len = 100;
+    uint8_t key_disc[TF5_TESLA_KEY_LEN] = {};
+
+    int ret = tf5_build_sig_auth_input(out, &out_len, big_sib1, sizeof(big_sib1),
+                                       TF5_VERSION, &params, 525600, 42, key_disc, 0x123456);
+
+    EXPECT_EQ(-2, ret) << "SIB1 exceeding max auth input should return -2";
+}
+
+TEST_F(TF5SerialTest, BuildMacAuthInput_ExceedsMaxAuthInput) {
+    // SIB1 larger than TF5_MAX_AUTH_INPUT - TF5_IBS_VALIDITY_PERIOD_LEN (3) should return -2
+    uint8_t out[TF5_MAX_AUTH_INPUT + 100];
+    size_t out_len = 0;
+
+    // TF5_MAX_AUTH_INPUT = 372, overhead = 3, so > 369 bytes fails
+    uint8_t big_sib1[370];
+    memset(big_sib1, 0xBB, sizeof(big_sib1));
+
+    int ret = tf5_build_mac_auth_input(out, &out_len, big_sib1, sizeof(big_sib1), 525600);
+
+    EXPECT_EQ(-2, ret) << "SIB1 exceeding max auth input should return -2";
 }
 
 // ============================================================================

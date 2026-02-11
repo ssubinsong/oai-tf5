@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <openssl/rand.h>
+#include <openssl/crypto.h>
 
 /*
  * =============================================================================
@@ -115,9 +116,10 @@ int tf5_rp_validate_timestamp(uint64_t ue_time_ms,
 {
     uint32_t ue_time_lsb_ms = (uint32_t)ue_time_ms & 0xFFFFFFu;
     uint32_t ext_time_lsb_ms = ext_timestamp_ms & 0xFFFFFFu;
-    int32_t diff_ms = (int32_t)(ue_time_lsb_ms - ext_time_lsb_ms);
+    // Proper 24-bit modular signed difference: map into [-2^23, 2^23)
+    int32_t diff_ms = (int32_t)(((ue_time_lsb_ms - ext_time_lsb_ms + 0x800000u) & 0xFFFFFFu)) - 0x800000;
 
-    // This comparison assumes window_ms << 2^31 (fits into int32_t).
+    // This comparison assumes window_ms << 2^23 (fits into 24-bit signed range).
     if (diff_ms > 0 && (uint64_t)diff_ms > window_ms) {
         return -1;  // Too old
     }
@@ -171,6 +173,10 @@ int tf5_build_mac_auth_input(uint8_t *out,
         return -1;
     }
 
+    if (sib1_len + TF5_IBS_VALIDITY_PERIOD_LEN > TF5_MAX_AUTH_INPUT) {
+        return -2;
+    }
+
     size_t offset = 0;
 
     // 1. Original SIB1 content
@@ -198,6 +204,11 @@ int tf5_build_sig_auth_input(uint8_t *out,
 {
     if (!out || !out_len || !original_sib1 || !tesla_params || !key_disclosure) {
         return -1;
+    }
+
+    // Overhead: validity(3) + te_version(1) + tesla_params(11) + interval(4) + key(16) + timestamp(3) = 38
+    if (sib1_len + 38 > TF5_MAX_AUTH_INPUT) {
+        return -2;
     }
 
     // Build MAC auth input first (SIB1 + gnb_key_validity_end only)
@@ -240,8 +251,7 @@ int tf5_pack_extension(const tf5_extension_t *ext,
         return -1;
     }
 
-    // Total size: 1 + 11 + 3 + 4 + 16 + 3 + 48 + 16 = 102 bytes (with BLS signatures)
-    const size_t required_len = 102;
+    const size_t required_len = TF5_EXTENSION_PACKED_SIZE;
     if (buf_len < required_len) {
         return -2;
     }
@@ -289,8 +299,7 @@ int tf5_unpack_extension(const uint8_t *buf,
         return -1;
     }
 
-    // Total size: 1 + 11 + 3 + 4 + 16 + 3 + 48 + 16 = 102 bytes (with BLS signatures)
-    const size_t required_len = 102;
+    const size_t required_len = TF5_EXTENSION_PACKED_SIZE;
     if (buf_len < required_len) {
         return -2;
     }
@@ -403,10 +412,10 @@ void tf5_gnb_free(tf5_gnb_state_t *state)
     if (state) {
         if (state->key_chain) {
             // Clear sensitive data (chain_len + 1 entries including K_{-1})
-            memset(state->key_chain, 0, (state->key_chain_len + 1) * TF5_TESLA_KEY_LEN);
+            OPENSSL_cleanse(state->key_chain, (state->key_chain_len + 1) * TF5_TESLA_KEY_LEN);
             free(state->key_chain);
         }
-        memset(state->private_key, 0, 32);
+        OPENSSL_cleanse(state->private_key, 32);
         memset(state, 0, sizeof(*state));
     }
 }
@@ -878,13 +887,13 @@ int tf5_load_gnb_privkey(const char *filepath,
                     (uint32_t)buffer[34];
 
     // Clear buffer
-    memset(buffer, 0, TF5_IBS_SK_FILE_SIZE);
+    OPENSSL_cleanse(buffer, TF5_IBS_SK_FILE_SIZE);
 
     // Validate by trying to derive public key (this checks the key is valid)
     uint8_t pubkey_test[TF5_MPK_LEN];
     if (tf5_bls_derive_pubkey(privkey_out, pubkey_test) != 0) {
         LOG_E(TF5, "Invalid BLS secret key format\n");
-        memset(privkey_out, 0, TF5_GNB_SECRET_KEY_LEN);
+        OPENSSL_cleanse(privkey_out, TF5_GNB_SECRET_KEY_LEN);
         return -3;
     }
 
