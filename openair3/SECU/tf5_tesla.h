@@ -142,13 +142,11 @@ typedef struct {
 } tf5_gnb_state_t;
 
 typedef enum {
-  TF5_PHASE_INITIAL = 0, // No SIB1 has been buffered & marked for RRC
-  TF5_PHASE_IBS_AUTHENTICATED, // SIB1 authenticated via IBS signature (first-time UE)
-  TF5_PHASE_BUFFERED, // An SIB1 has been buffered & marked for RRC
-  TF5_PHASE_BUFFERED_AUTHENTICATED,
-  TF5_PHASE_RRCSETUP_DEFERRED, // An SIB1 has been buffered & marked for RRC and RRCSetupComplete is deferred
-  TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,
-  TF5_PHASE_RRCSETUP_COMPLETE,
+  TF5_PHASE_INITIAL = 0,           // No SIB1 has been buffered & marked for RRC
+  TF5_PHASE_AUTHENTICATED,        // Authenticated via IBS signature or TESLA MAC
+  TF5_PHASE_BUFFERED,              // SIB1 buffered, pending TESLA verification
+  TF5_PHASE_RRCSETUP_DEFERRED,    // RRCSetup arrived, verification pending
+  TF5_PHASE_RRCSETUP_COMPLETE,    // Connection established
 } tf5_ue_phase_t;
 
 /*

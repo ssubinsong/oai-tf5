@@ -51,24 +51,23 @@ Tracks UE-side authentication progress for NAS gating:
 
 ```c
 typedef enum {
-    TF5_PHASE_INITIAL = 0,                    // No SIB1 has been buffered & marked for RRC
-    TF5_PHASE_BUFFERED,                       // An SIB1 has been buffered & marked for RRC
-    TF5_PHASE_BUFFERED_AUTHENTICATED,         // Buffered SIB1 authenticated
-    TF5_PHASE_RRCSETUP_DEFERRED,              // RRCSetup received while auth pending
-    TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,// Deferred RRCSetup + auth complete
-    TF5_PHASE_RRCSETUP_COMPLETE,              // RRC setup complete
+    TF5_PHASE_INITIAL = 0,           // No SIB1 has been buffered & marked for RRC
+    TF5_PHASE_AUTHENTICATED,        // Authenticated via IBS signature or TESLA MAC
+    TF5_PHASE_BUFFERED,              // SIB1 buffered, pending TESLA verification
+    TF5_PHASE_RRCSETUP_DEFERRED,    // RRCSetup arrived, verification pending
+    TF5_PHASE_RRCSETUP_COMPLETE,    // Connection established
 } tf5_ue_phase_t;
 ```
 
 Used by `tf5_ue_state_t` to coordinate RRCSetupComplete deferral.
 
 Phase transitions:
+- `INITIAL` → `AUTHENTICATED`: IBS signature verification succeeds (first-time UE)
 - `INITIAL` → `BUFFERED`: UE buffers SIB1 for TESLA MAC verification
+- `BUFFERED` → `AUTHENTICATED`: MAC verification succeeds before RRCSetup
 - `BUFFERED` → `RRCSETUP_DEFERRED`: RRCSetup arrives before auth completes
-- `BUFFERED` → `BUFFERED_AUTHENTICATED`: MAC verification succeeds before RRCSetup
-- `RRCSETUP_DEFERRED` → `RRCSETUP_DEFERRED_AUTHENTICATED`: MAC verification succeeds
-- `RRCSETUP_DEFERRED_AUTHENTICATED` → `RRCSETUP_COMPLETE`: Sends deferred RRCSetupComplete
-- `BUFFERED_AUTHENTICATED` → `RRCSETUP_COMPLETE`: Normal flow with pre-authenticated SIB1
+- `RRCSETUP_DEFERRED` → `RRCSETUP_COMPLETE`: MAC verification succeeds, sends deferred RRCSetupComplete
+- `AUTHENTICATED` → `RRCSETUP_COMPLETE`: RRCSetup arrives after auth
 
 ---
 

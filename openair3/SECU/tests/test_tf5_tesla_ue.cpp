@@ -441,17 +441,17 @@ TEST_F(TF5UeTest, VerifyKeyChain_InvalidChain_ReturnsFalse) {
     EXPECT_FALSE(valid) << "Fake key should not chain to anchor";
 }
 
-TEST_F(TF5UeTest, VerifyKeyChain_SkippedKeys_MultipleHashOps) {
+TEST_F(TF5UeTest, VerifyKeyChain_MultiStep_Rejected) {
     ASSERT_EQ(0, initUeDefault());
     ASSERT_EQ(0, initGnbDefault(10));
 
     // Set up UE with K_0 as trust anchor
     setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
-    // Verify K_5 chains to K_0 (requires 5 hash operations)
+    // Multi-step (gap > 1) should be rejected
     bool valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(5)], 5);
 
-    EXPECT_TRUE(valid) << "K_5 should chain to K_0 via 5 hash ops";
+    EXPECT_FALSE(valid) << "Multi-step key recovery (gap=5) should be rejected";
 }
 
 TEST_F(TF5UeTest, VerifyKeyChain_BootstrapAnchor) {
@@ -491,53 +491,6 @@ TEST_F(TF5UeTest, VerifyKeyChain_NullInputs_ReturnsFalse) {
 
     valid = tf5_ue_verify_key_disclosure(&ue_state, nullptr, 1);
     EXPECT_FALSE(valid) << "Null key should return false";
-}
-
-// ============================================================================
-// Key Recovery Tests (tf5_tesla_ue_verify_buffered_msgs)
-// ============================================================================
-
-TEST_F(TF5UeTest, KeyRecovery_SingleMissedInterval) {
-    ASSERT_EQ(0, initUeDefault());
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // Generate extensions for intervals 5 and 7
-    tf5_extension_t ext5, ext7;
-    const char sib1_5[] = "SIB1 at interval 5";
-    const char sib1_7[] = "SIB1 at interval 7";
-
-    // Interval 5 = 200 slots = SFN 10
-    tf5_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5);
-    // Interval 7 = 280 slots = SFN 14
-    tf5_gnb_prepare_extension(&gnb_state, 14, 0, (const uint8_t*)sib1_7, strlen(sib1_7), &ext7);
-
-    // Set up UE
-    ue_state.tesla_params = ext5.tesla_params;
-    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
-
-    // Buffer SIB1 from interval 5
-    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_input_len;
-    tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
-                                   (const uint8_t*)sib1_5, strlen(sib1_5),
-                                   gnb_state.key_validity_end);
-
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, 5, ext5.tesla_tag, false);
-
-    // Simulate missed disclosure for interval 5, receive at interval 7
-    // Use key from interval 7 to recover key for interval 5
-    bool rrc_trigger_verified = false;
-
-    // First verify key chain (K_7 -> anchor)
-    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)], 7);
-    EXPECT_TRUE(key_valid) << "Key chain should verify";
-
-    // Then verify buffered entries using the disclosed key
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)],
-                                                                7, &rrc_trigger_verified);
-
-    EXPECT_EQ(0, ret) << "Key recovery should succeed";
 }
 
 // ============================================================================
@@ -910,9 +863,10 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
     const char sib1[] = "SIB1 that triggers RRC setup";
     tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
-    // Set up UE
+    // Set up UE with anchor at K_{i-d} (consecutive verification only)
     ue_state.tesla_params = ext.tesla_params;
-    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
+    int32_t anchor_idx = (int32_t)ext.i - ext.tesla_params.d;
+    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(anchor_idx)], anchor_idx);
 
     // Buffer with triggered_rrc_setup = true
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];

@@ -105,11 +105,12 @@ protected:
         return tf5_unpack_extension(packed, packed_len, ext);
     }
 
-    // Setup UE with TESLA params and bootstrap anchor
+    // Setup UE with TESLA params and bootstrap anchor (mimics IBS path: anchor = K_{i-d})
     void bootstrapUe(const tf5_extension_t* ext) {
         ue_state.tesla_params = ext->tesla_params;
-        memcpy(ue_state.trust_anchor_key, gnb_state.key_chain[tf5_key_interval_to_index(-1)], TF5_TESLA_KEY_LEN);
-        ue_state.trust_anchor_idx = -1;
+        int32_t anchor_idx = (int32_t)ext->i - ext->tesla_params.d;
+        memcpy(ue_state.trust_anchor_key, gnb_state.key_chain[tf5_key_interval_to_index(anchor_idx)], TF5_TESLA_KEY_LEN);
+        ue_state.trust_anchor_idx = anchor_idx;
         ue_state.chain_bootstrapped = true;
     }
 };
@@ -160,21 +161,10 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     ret = tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, rx_ext.i, rx_ext.tesla_tag, false);
     ASSERT_EQ(0, ret);
 
-    // UE: Verify key chain (disclosed key K_{i-d} chains to anchor)
-    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, rx_ext.key_disclosure, rx_ext.i - 1);
-    EXPECT_TRUE(key_valid) << "Disclosed key should chain to trust anchor";
-
-    // UE: Verify buffered SIB1 using disclosed key
+    // bootstrapUe already set anchor to K_{i-d} (= K_4 for i=5, d=1)
+    // Verify K_i (= K_5) against anchor K_4 (1 step)
     bool rrc_trigger = false;
-
-    // The disclosed key in ext is K_{i-d}, we need the key for the interval we buffered
-    // Since we buffered at interval 5, and d=1, we need K_5 to verify
-    // The disclosed key is K_{5-1} = K_4
-    // We need to wait for next disclosure to get K_5, or use key at current interval
-
-    // For this test, let's verify using the key for the buffered interval directly
-    // First verify key chain
-    key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(rx_ext.i)], rx_ext.i);
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(rx_ext.i)], rx_ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
     ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(rx_ext.i)],
@@ -183,8 +173,8 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     EXPECT_EQ(0, ret) << "Buffered SIB1 verification should succeed";
 }
 
-// Key recovery test: buffers entries at intervals 5 and 6, then verifies using K_7.
-// Fixed: verify_start was calculated after verify_key_chain updated trust_anchor_idx.
+// Consecutive interval verification: buffers entries at intervals 5 and 6,
+// verifies each with its own key (no multi-step recovery).
 TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
     // Setup
     ASSERT_EQ(0, initGnb(100));
@@ -214,26 +204,28 @@ TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
                                    (const uint8_t*)sib1_6, strlen(sib1_6),
                                    gnb_state.key_validity_end);
 
-    tf5_slot_time_t rx_time5 = tf5_slot_time_make(10, 0);
-    tf5_slot_time_t rx_time6 = tf5_slot_time_make(12, 0);
-
     tf5_ue_buffer_msg(&ue_state, mac_auth5, mac_auth5_len, ext5.i, ext5.tesla_tag, false);
     tf5_ue_buffer_msg(&ue_state, mac_auth6, mac_auth6_len, ext6.i, ext6.tesla_tag, false);
 
     EXPECT_EQ(2, ue_state.buffer_queue_count);
 
-    // UE: Verify both using key recovery from interval 7
+    // UE: Verify interval 5 with K_5
     bool rrc_trigger = false;
+    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext5.i)], ext5.i);
+    EXPECT_TRUE(key_valid) << "Key chain for interval 5 should verify";
 
-    // First verify key chain
-    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)], 7);
-    EXPECT_TRUE(key_valid) << "Key chain should verify";
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext5.i)],
+                                                                ext5.i, &rrc_trigger);
+    EXPECT_EQ(0, ret) << "Interval 5 verification should succeed";
+    EXPECT_EQ(1, ue_state.buffer_queue_count) << "One entry should remain after first verification";
 
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(7)],
-                                                                7, &rrc_trigger);
+    // UE: Verify interval 6 with K_6
+    key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext6.i)], ext6.i);
+    EXPECT_TRUE(key_valid) << "Key chain for interval 6 should verify";
 
-    EXPECT_EQ(0, ret) << "Key recovery verification should succeed";
-    // Buffer queue should be empty after verification
+    ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext6.i)],
+                                                            ext6.i, &rrc_trigger);
+    EXPECT_EQ(0, ret) << "Interval 6 verification should succeed";
     EXPECT_EQ(0, ue_state.buffer_queue_count) << "Buffer should be empty after verification";
 }
 
@@ -380,54 +372,6 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
     // Key chain verification should fail with wrong key
     bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, wrong_key, ext.i);
     EXPECT_FALSE(key_valid) << "Key chain should fail with wrong key";
-}
-
-// ============================================================================
-// Key Recovery Scenario Tests
-// ============================================================================
-
-// Key recovery test: buffers SIB1 at interval 5, misses disclosures until interval 8.
-// Uses K_8 to recover and verify the buffered entry from interval 5.
-// Fixed: verify_start was calculated after verify_key_chain updated trust_anchor_idx.
-TEST_F(TF5E2ETest, E2E_MissedDisclosure_KeyRecovery) {
-    // Setup
-    ASSERT_EQ(0, initGnb(100));
-    ASSERT_EQ(0, initUe());
-
-    // Simulate receiving SIB1 at interval 5, but missing disclosures until interval 8
-    const char sib1_5[] = "SIB1 at interval 5";
-    tf5_extension_t ext5;
-    uint8_t packed5[TF5_EXTENSION_PACKED_SIZE];
-
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5, packed5, sizeof(packed5));
-
-    // UE: Setup with bootstrap
-    bootstrapUe(&ext5);
-
-    // Buffer SIB1 from interval 5
-    uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_len;
-    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
-                                   (const uint8_t*)sib1_5, strlen(sib1_5),
-                                   gnb_state.key_validity_end);
-
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext5.i, ext5.tesla_tag, false);
-
-    // Simulate missing disclosures for intervals 6, 7
-    // Now receive at interval 8 with K_7 disclosed (since d=1)
-
-    // Verify using key from interval 8 (should recover K_5, K_6, K_7)
-    bool rrc_trigger = false;
-
-    // First verify key chain
-    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(8)], 8);
-    EXPECT_TRUE(key_valid) << "Key chain should verify";
-
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(8)],
-                                                                8, &rrc_trigger);
-
-    EXPECT_EQ(0, ret) << "Key recovery should succeed";
 }
 
 // ============================================================================
@@ -607,9 +551,9 @@ TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
     EXPECT_EQ(0, ret) << "Verification should succeed";
     EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 should be verified";
 
-    // RRC layer would now set phase = AUTHENTICATED and send RRCSetupComplete
-    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED;
-    EXPECT_EQ(TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED, ue_state.curr_phase);
+    // RRC layer would now send deferred RRCSetupComplete and transition to RRCSETUP_COMPLETE
+    ue_state.curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
+    EXPECT_EQ(TF5_PHASE_RRCSETUP_COMPLETE, ue_state.curr_phase);
 }
 
 TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
@@ -684,7 +628,7 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     // At this point:
     // - SIB1 is buffered, auth pending
     // - NAS message (with SUCI) MUST NOT be sent yet
-    EXPECT_NE(TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED, ue_state.curr_phase)
+    EXPECT_NE(TF5_PHASE_RRCSETUP_COMPLETE, ue_state.curr_phase)
         << "Auth not complete - NAS must wait";
 
     // RRCSetup arrives
@@ -692,7 +636,7 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     ue_state.rrcsetup_transaction_id = 3;
 
     // Still must not send NAS
-    EXPECT_NE(TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED, ue_state.curr_phase)
+    EXPECT_NE(TF5_PHASE_RRCSETUP_COMPLETE, ue_state.curr_phase)
         << "Still auth pending - NAS must wait";
 
     // Auth succeeds
@@ -705,10 +649,10 @@ TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
     tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
                                                       ext.i, &rrc_trigger_verified);
 
-    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED;
+    ue_state.curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
 
-    // NOW NAS can be sent (RRC layer checks phase == AUTHENTICATED)
-    EXPECT_EQ(TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED, ue_state.curr_phase)
+    // NOW NAS can be sent (RRC layer checks phase == RRCSETUP_COMPLETE)
+    EXPECT_EQ(TF5_PHASE_RRCSETUP_COMPLETE, ue_state.curr_phase)
         << "Auth complete - NAS can proceed";
     EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 verified";
 }

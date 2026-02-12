@@ -194,15 +194,14 @@ typedef struct {
 
 ## NAS Gating State Machine
 
-The UE defers NAS registration until SIB1 is authenticated. Phase tracking is in `tf5_ue_phase_t` ([tf5_tesla.h:144-152](../openair3/SECU/tf5_tesla.h#L144-L152)):
+The UE defers NAS registration until SIB1 is authenticated. Phase tracking is in `tf5_ue_phase_t` ([tf5_tesla.h:144-150](../openair3/SECU/tf5_tesla.h#L144-L150)):
 
 ```c
 typedef enum {
     TF5_PHASE_INITIAL = 0,
+    TF5_PHASE_AUTHENTICATED,
     TF5_PHASE_BUFFERED,
-    TF5_PHASE_BUFFERED_AUTHENTICATED,
     TF5_PHASE_RRCSETUP_DEFERRED,
-    TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED,
     TF5_PHASE_RRCSETUP_COMPLETE
 } tf5_ue_phase_t;
 ```
@@ -212,15 +211,15 @@ typedef enum {
 ```mermaid
 stateDiagram-v2
     [*] --> INITIAL
+    INITIAL --> AUTHENTICATED : IBS signature verified
     INITIAL --> BUFFERED : Buffer SIB1
 
-    BUFFERED --> BUFFERED_AUTHENTICATED : MAC verified
+    BUFFERED --> AUTHENTICATED : MAC verified
     BUFFERED --> RRCSETUP_DEFERRED : RRCSetup arrives
 
-    RRCSETUP_DEFERRED --> RRCSETUP_DEFERRED_AUTHENTICATED : MAC verified
+    RRCSETUP_DEFERRED --> RRCSETUP_COMPLETE : MAC verified → send RRCSetupComplete
 
-    BUFFERED_AUTHENTICATED --> RRCSETUP_COMPLETE : RRCSetup arrives
-    RRCSETUP_DEFERRED_AUTHENTICATED --> RRCSETUP_COMPLETE : Send RRCSetupComplete
+    AUTHENTICATED --> RRCSETUP_COMPLETE : RRCSetup arrives
 
     RRCSETUP_COMPLETE --> INITIAL : Session reset
 ```

@@ -715,14 +715,17 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
 
     DevAssert(disclosed_interval > ue_state->trust_anchor_idx);
 
-    // Chain from disclosed_key_interval down to trust_anchor_idx
+    uint32_t steps = (uint32_t)(disclosed_interval - ue_state->trust_anchor_idx);
+    if (steps > 1) {
+        LOG_W(TF5, "Key recovery not supported (gap=%u, anchor=%d)\n",
+              steps, ue_state->trust_anchor_idx);
+        return false;
+    }
+
+    // Single-step chain verification: F(K_disclosed) == K_anchor
     uint8_t computed_key[TF5_TESLA_KEY_LEN];
     memcpy(computed_key, disclosed_key, TF5_TESLA_KEY_LEN);
-
-    uint32_t steps = (uint32_t)(disclosed_interval - ue_state->trust_anchor_idx);
-    for (uint32_t i = 0; i < steps; i++) {
-      tf5_chain_key_inplace(computed_key);
-    }
+    tf5_chain_key_inplace(computed_key);
 
     if (memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
       LOG_D(TF5,
@@ -751,101 +754,67 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
     }
     *rrc_trigger_verified = false;
 
-    // Step 1: Find the range of buffered intervals
-    uint32_t earliest_buffered = UINT32_MAX;
-    uint32_t latest_buffered = 0;
-    bool has_buffered_entries = false;
-
-    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
-        if (ue_state->buffer_queue[i].valid) {
-            has_buffered_entries = true;
-            uint32_t interval = ue_state->buffer_queue[i].rx_interval_index;
-            if (interval < earliest_buffered) {
-                earliest_buffered = interval;
-            }
-            if (interval > latest_buffered) {
-                latest_buffered = interval;
-            }
-        }
-    }
-
-    if (!has_buffered_entries) {
-        LOG_D(TF5, "No buffered entries for verification\n");
-        return TF5_ERR_NO_DATA;
-    }
-
-    // Step 2: Determine verification range
-    // Lower bound: don't re-verify already verified intervals
-    uint32_t verify_start = earliest_buffered;
-
-    // Upper bound: can't verify intervals newer than verified key
-    uint32_t verify_end = (latest_buffered < key_disclosure_interval) ?
-                           latest_buffered : key_disclosure_interval;
-
-    if (verify_start > verify_end) {
-        LOG_D(TF5, "No intervals in verifiable range [%u, %u]\n",
-              verify_start, verify_end);
-        return TF5_ERR_NO_DATA;
-    }
-
-    // Step 3: Derive keys incrementally and verify buffered entries
+    // Verify only entries matching key_disclosure_interval (no multi-step recovery)
+    bool has_match = false;
     bool mac_failed = false;
-    uint8_t current_key[TF5_TESLA_KEY_LEN];
-    memcpy(current_key, key_disclosure, TF5_TESLA_KEY_LEN);
 
-    for (uint32_t i = key_disclosure_interval; ; i--) {
-        // Check all buffered entries for this interval
-        for (int j = 0; j < TF5_TESLA_BUFFER_QUEUE_SIZE; j++) {
-            tf5_buffer_entry_t *entry = &ue_state->buffer_queue[j];
+    for (int j = 0; j < TF5_TESLA_BUFFER_QUEUE_SIZE; j++) {
+        tf5_buffer_entry_t *entry = &ue_state->buffer_queue[j];
 
-            if (!entry->valid || entry->rx_interval_index != i) {
-                continue;
-            }
+        if (!entry->valid) {
+            continue;
+        }
 
-            // Compute expected tag using current_key
-            uint8_t expected_tag[TF5_TESLA_TAG_LEN];
-            int rc = tf5_compute_tag(current_key,
-                                           entry->auth_input,
-                                           entry->auth_input_len,
-                                           expected_tag);
-            if (rc != 0) {
-                LOG_E(TF5, "Failed to compute tag for interval %u\n", i);
+        if (entry->rx_interval_index != key_disclosure_interval) {
+            // Drop entries from earlier intervals (cannot be verified without recovery)
+            if (entry->rx_interval_index < key_disclosure_interval) {
+                LOG_W(TF5, "Dropping unverifiable entry from interval %u (disclosed=%u)\n",
+                      entry->rx_interval_index, key_disclosure_interval);
                 entry->valid = false;
-                continue;
             }
-
-            // Compare tags
-            if (memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
-                LOG_I(TF5, "MAC verified for interval %u (rrc_trigger=%d)\n",
-                      i, entry->triggered_rrc_setup);
-
-                if (entry->triggered_rrc_setup) {
-                  *rrc_trigger_verified = true;
-                }
-
-                entry->valid = false;  // Release from buffer
-            } else {
-                LOG_E(TF5, "MAC verification FAILED for interval %u\n",
-                      i);
-              entry->valid = false;
-              mac_failed = true;
-              if (entry->triggered_rrc_setup) {
-                *rrc_trigger_verified = false;
-              }
-            }
+            continue;
         }
 
-        // Stop if we've reached verify_start
-        if (i == verify_start) {
-          break;
+        has_match = true;
+
+        // Compute expected tag using disclosed key directly
+        uint8_t expected_tag[TF5_TESLA_TAG_LEN];
+        int rc = tf5_compute_tag(key_disclosure,
+                                       entry->auth_input,
+                                       entry->auth_input_len,
+                                       expected_tag);
+        if (rc != 0) {
+            LOG_E(TF5, "Failed to compute tag for interval %u\n", key_disclosure_interval);
+            entry->valid = false;
+            continue;
         }
 
-        // Derive key for next (earlier) interval: K_{i-1} = F(K_i)
-        tf5_chain_key_inplace(current_key);
+        if (memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
+            LOG_I(TF5, "MAC verified for interval %u (rrc_trigger=%d)\n",
+                  key_disclosure_interval, entry->triggered_rrc_setup);
+
+            if (entry->triggered_rrc_setup) {
+              *rrc_trigger_verified = true;
+            }
+
+            entry->valid = false;
+        } else {
+            LOG_E(TF5, "MAC verification FAILED for interval %u\n",
+                  key_disclosure_interval);
+            entry->valid = false;
+            mac_failed = true;
+            if (entry->triggered_rrc_setup) {
+              *rrc_trigger_verified = false;
+            }
+        }
     }
 
-    // Step 4: Update queue count
     tf5_ue_recount_buffer(ue_state);
+
+    if (!has_match) {
+        LOG_D(TF5, "No buffered entries for interval %u\n", key_disclosure_interval);
+        return TF5_ERR_NO_DATA;
+    }
 
     return mac_failed ? TF5_ERR_VERIFY : TF5_OK;
 }

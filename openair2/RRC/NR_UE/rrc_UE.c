@@ -531,7 +531,7 @@ typedef enum {
 static void tf5_send_deferred_rrcsetupcomplete(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info)
 {
     tf5_ue_state_t *state = SI_info->tf5_state;
-    DevAssert(state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED);
+    DevAssert(state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED);
     LOG_I(TF5, "Auth complete - sending deferred RRCSetupComplete\n");
   state->curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
     rrc_ue_generate_RRCSetupComplete(rrc, state->rrcsetup_transaction_id);
@@ -663,7 +663,7 @@ static tf5_verify_result_t tf5_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     /* Success: Bootstrap the chain */
     memcpy(&state->tesla_params, &ext->tesla_params, sizeof(tf5_tesla_params_t));
     state->chain_bootstrapped = true;
-    state->curr_phase = TF5_PHASE_IBS_AUTHENTICATED;
+    state->curr_phase = TF5_PHASE_AUTHENTICATED;
 
     /* Accept disclosed key as trust anchor (signature authenticates it) */
     memcpy(state->trust_anchor_key, ext->key_disclosure, TF5_TESLA_KEY_LEN);
@@ -740,10 +740,9 @@ static tf5_verify_result_t tf5_verify_returning(NR_UE_RRC_INST_t *rrc,
       if (verify_rc == 0) {
         LOG_I(TF5, "Verified buffered SIB1 packets using K_%u\n", key_disclosure_interval);
         if (ue_state->curr_phase == TF5_PHASE_BUFFERED && rrc_trigger_verified) {
-          ue_state->curr_phase = TF5_PHASE_BUFFERED_AUTHENTICATED;
+          ue_state->curr_phase = TF5_PHASE_AUTHENTICATED;
         }
         if (ue_state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED && rrc_trigger_verified) {
-          ue_state->curr_phase = TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED;
           tf5_send_deferred_rrcsetupcomplete(rrc, SI_info);
         }
       }
@@ -774,9 +773,7 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
     }
 
   if (SI_info->tf5_state->curr_phase == TF5_PHASE_RRCSETUP_COMPLETE
-      || SI_info->tf5_state->curr_phase == TF5_PHASE_BUFFERED_AUTHENTICATED
-      || SI_info->tf5_state->curr_phase == TF5_PHASE_IBS_AUTHENTICATED
-      || SI_info->tf5_state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED)
+      || SI_info->tf5_state->curr_phase == TF5_PHASE_AUTHENTICATED)
     SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
 
     AssertFatal(sib1->lateNonCriticalExtension,
@@ -2351,8 +2348,8 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
 
     if (SI_info->tf5_state) {
       switch (SI_info->tf5_state->curr_phase) {
-        case TF5_PHASE_IBS_AUTHENTICATED:
-          /* First-time path: SIB1 already authenticated via IBS signature */
+        case TF5_PHASE_AUTHENTICATED:
+          /* Already authenticated (IBS or TESLA MAC) */
           SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
           break;  // proceed to send RRCSetupComplete
         case TF5_PHASE_BUFFERED:
@@ -2361,9 +2358,6 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
           SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
           SI_info->tf5_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
           return;
-        case TF5_PHASE_BUFFERED_AUTHENTICATED:
-          SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
-          break;  // proceed to send RRCSetupComplete
         default:
           DevAssert(false);
       }
