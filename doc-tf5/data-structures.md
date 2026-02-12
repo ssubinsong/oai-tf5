@@ -235,30 +235,8 @@ typedef struct {
 
 ---
 
-## OAI Integration Points
+## OAI Integration
 
-TESLA state is integrated into existing OAI structures:
-
-### gNB: NR_COMMON_channels_t
-
-**Source**: [nr_mac_gNB.h:334-340](../openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h#L334-L340)
-
-```c
-// In NR_COMMON_channels_t:
-#ifdef ENABLE_TF5
-  tf5_gnb_state_t *tf5_state;                     // TESLA state pointer
-  uint8_t sib1_original[NR_MAX_SIB_LENGTH / 8];   // Original SIB1 for signing
-  int sib1_original_length;
-#endif
-```
-
-### UE: NR_UE_RRC_SI_INFO
-
-**Source**: [rrc_defs.h:165-167](../openair2/RRC/NR_UE/rrc_defs.h#L165-L167)
-
-```c
-// In NR_UE_RRC_SI_INFO:
-#ifdef ENABLE_TF5
-  tf5_ue_state_t *tf5_state;                      // TESLA state pointer
-#endif
-```
+For how these structures are integrated into existing OAI types
+(`NR_COMMON_channels_t`, `NR_UE_RRC_SI_INFO`) and the full call flow,
+see [integration.md](integration.md).

@@ -33,21 +33,8 @@ cd cmake_targets
 ## Key Management (IBS)
 
 TF5 uses **Identity-Based Signatures (IBS)** where the 5G Core acts as a Private Key Generator (PKG).
-See [ibs-overview.md](ibs-overview.md) for the full cryptographic specification.
-
-### Key Hierarchy
-
-```
-Core PKG (openair3/SECU/core-pkg/)
-    │
-    └──> Master Keypair (one-time generation)
-         ├── msk.bin (32B) - Master Secret Key (SECURE!)
-         └── mpk.bin (96B) - Master Public Key (distribute to UEs)
-
-gNB-specific Keys (issued per Cell ID + validity)
-    │
-    └──> sk_gnb.bin (35B) - gNB Secret Key (32B) + validity (3B)
-```
+See [pkg-cryptography.md](pkg-cryptography.md) for the full cryptographic specification
+(key hierarchy, algorithms, domain separation tags, security analysis).
 
 ### Step 1: Build Core PKG Utilities
 

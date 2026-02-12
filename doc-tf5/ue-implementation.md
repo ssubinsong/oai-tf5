@@ -321,20 +321,16 @@ Verify:  K_temp == trust_anchor_key
 
 ## Safe Packet Test
 
-Per RFC 4082, the safe packet test prevents key disclosure attacks:
+Per RFC 4082, the safe packet test ensures the key for interval `i` has not yet
+been disclosed at reception time:
 
 ```
-x = floor((T + D - T_0) / T_int)    // Highest interval sender could be in
-Safe if: x < i + d                   // Key for interval i not yet disclosed
+x = floor((T + D - T_0) / T_int)
+Safe if: x < i + d
 ```
 
-Where:
-- `T` = Reception time (converted from SFN/slot)
-- `D` = Clock skew bound (default 1005 μs)
-- `T_0` = Interval 0 start time
-- `T_int` = Interval duration (20 ms)
-- `i` = Claimed interval in extension
-- `d` = Disclosure delay (1)
+For the full derivation (clock skew bound D, timing model),
+see [time-sync.md](time-sync.md).
 
 ---
 

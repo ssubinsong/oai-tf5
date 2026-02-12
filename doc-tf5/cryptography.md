@@ -21,41 +21,9 @@
 
 **Source**: [tf5_tesla_sig.c](../openair3/SECU/tf5_tesla_sig.c)
 
-For full IBS documentation, see [ibs-overview.md](ibs-overview.md).
-
-Uses the blst library (Supranational) with BLS12-381 curve in pk-in-G2 mode
-for Identity-Based Signatures:
-
-| Component | Size | Group |
-|-----------|------|-------|
-| Master secret (s) | 32 bytes | Scalar |
-| Master public key (MPK) | 96 bytes | G2 point (compressed) |
-| gNB secret key (sk_ID) | 32 bytes | Scalar |
-| Signature (Σ) | 48 bytes | G1 point (compressed) |
-
-### IBS Scheme
-
-```
-Sign:   Σ = sk_ID * H_m(message)
-Verify: e(Σ, Q) = e(H_m(message), pk_ID * MPK)
-```
-
-Where `pk_ID = H_s(Cell_ID || validity_end)` is the identity-derived scalar.
-
-**Identity IKM Construction:**
-```
-IKM = DST (35 bytes) || Cell_ID (5 bytes) || validity_end (3 bytes, big-endian)
-pk_ID = blst_keygen(IKM) mod r
-```
-
-The `validity_end` is encoded as minutes since 2024-01-01 00:00:00 UTC (epoch 1704067200).
-
-### Domain Separation Tags
-
-| Function | DST |
-|----------|-----|
-| H_s (identity to scalar) | `TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1` |
-| H_m (message to G1) | `BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_` |
+TF5 uses BLS12-381 IBS (pk-in-G2 variant) for authenticating the initial TESLA
+key disclosure. For the full cryptographic specification (algorithms, security
+analysis, domain separation tags), see [pkg-cryptography.md](pkg-cryptography.md).
 
 ### Key File Format
 
