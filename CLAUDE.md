@@ -43,6 +43,10 @@ cd cmake_targets/ran_build/build_test
 ctest -R tf5 -V
 ```
 
+## Known Issues
+
+`doc-tf5/known-issues.md` documents known limitations and design gaps in the TF5 state machine. Issues listed there are already acknowledged — do NOT report them as new bugs or attempt to fix them unless explicitly asked.
+
 ## Others
 
 - The base branch of the repository is `v2.4.0-branch`, and I'm currently working on `tf5` branch. To understand what changes have been made, you can compare the `tf5` branch with the `v2.4.0-branch` to see the differences in code and commits.

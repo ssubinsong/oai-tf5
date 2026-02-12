@@ -775,7 +775,8 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
 
   if (SI_info->tf5_state->curr_phase == TF5_PHASE_RRCSETUP_COMPLETE
       || SI_info->tf5_state->curr_phase == TF5_PHASE_BUFFERED_AUTHENTICATED
-      || SI_info->tf5_state->curr_phase == TF5_PHASE_IBS_AUTHENTICATED)
+      || SI_info->tf5_state->curr_phase == TF5_PHASE_IBS_AUTHENTICATED
+      || SI_info->tf5_state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED_AUTHENTICATED)
     SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
 
     AssertFatal(sib1->lateNonCriticalExtension,
