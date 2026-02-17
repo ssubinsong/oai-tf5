@@ -44,17 +44,17 @@ TESLA initialization occurs in `nr_mac_configure_sib1()` ([config.c:1185-1270](.
    uint16_t slots_per_frame = 10 * (1 << numerology);
    ```
 
-3. **BLS Library Initialization** (line 1200)
+3. **IBS Library Initialization** (line 1200)
    ```c
-   rc = tf5_bls_init();
+   rc = tf5_ibs_init();
    ```
-   Must be called once before any BLS signing operations.
+   Must be called once before any BLMQ IBS signing operations.
 
 4. **IBS Secret Key Loading** (line 1204)
    ```c
    rc = tf5_load_gnb_privkey(tf5_privkey_file, private_key, &key_validity_end);
    ```
-   - Reads 35-byte file: 32B sk_ID + 3B validity_end
+   - Reads 51-byte file: 48B sk_ID (G1 point) + 3B validity_end
    - File issued by Core PKG via `tf5_ibs_issue` tool
    - Validates key hasn't expired
 
@@ -128,7 +128,7 @@ Before each SIB1 transmission, `nr_mac_update_sib1_tf5()` is called ([nr_radio_c
    uint8_t ext_buf[256];
    int ext_len = tf5_pack_extension(&ext, ext_buf, sizeof(ext_buf));
    ```
-   Serializes extension to 102-byte binary format.
+   Serializes extension to 134-byte binary format.
 
 4. **Attach to SIB1** (lines 4419-4439)
    ```c
@@ -171,7 +171,7 @@ sequenceDiagram
     participant Core as tf5_tesla.c
 
     Note over Init: Startup
-    Init->>Core: tf5_bls_init()
+    Init->>Core: tf5_ibs_init()
     Init->>Core: tf5_load_gnb_privkey()
     Init->>Core: tf5_compute_t0_reference()
     Init->>Core: tf5_gnb_init()

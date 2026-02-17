@@ -113,7 +113,7 @@ typedef struct {
 The `validity_end` field enables key expiration:
 - **Format**: 24 bits (3 bytes), minutes since 2024-01-01 00:00:00 UTC
 - **Range**: 0 to 16,777,215 minutes (~31.9 years, covers until ~2056)
-- **Identity Hash**: pk_ID = H_s(Cell_ID || validity_end)
+- **Identity Hash**: H1(Cell_ID || validity_end)
 
 Conversion utilities:
 ```c

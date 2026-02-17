@@ -96,7 +96,7 @@ tf5_verify_result_t tf5_verify_sib1(rrc, SI_info, sib1, rx_frame, rx_slot)
 
 4. **IBS Signature Verification** (lines 651-661)
    ```c
-   int sig_rc = tf5_sig_verify(state->mpk,
+   int sig_rc = tf5_ibs_verify(state->mpk,
                                cell_id, ext->validity_end,
                                sig_auth_input, sig_auth_len,
                                ext->signature);
@@ -245,7 +245,7 @@ sequenceDiagram
     participant RRC as rrc_UE.c
     participant Verify as tf5_verify_sib1()
     participant First as tf5_verify_firsttime()
-    participant Sig as tf5_sig_verify()
+    participant Sig as tf5_ibs_verify()
 
     RRC->>Verify: SIB1 received
     Verify->>Verify: Unpack extension

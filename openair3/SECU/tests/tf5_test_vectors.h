@@ -6,7 +6,6 @@
  * - Key chain derivation (K_i = SHA256(0x00 || K_{i+1})[0:15])
  * - MAC key derivation (K'_i = SHA256(0x01 || K_i))
  * - Tag computation (HMAC-SHA256 truncated to 16 bytes)
- * - BLS signatures
  * - Extension serialization
  */
 
@@ -67,22 +66,6 @@ static const uint8_t TV_TAG_KEY[16] = {
 // Test message for tag computation
 static const char TV_TAG_MESSAGE[] = "Test SIB1 message for TESLA authentication";
 static const size_t TV_TAG_MESSAGE_LEN = sizeof(TV_TAG_MESSAGE) - 1;  // Exclude null terminator
-
-/* ==========================================================================
- * BLS Signature Test Vectors
- * ========================================================================== */
-
-// BLS secret key (32 bytes) - test key only, not for production use
-static const uint8_t TV_BLS_SECRET_KEY[32] = {
-    0x2c, 0x46, 0xbd, 0x76, 0xd6, 0xce, 0x3d, 0x7a,
-    0x7c, 0x3e, 0x00, 0x6d, 0x05, 0x9b, 0xb6, 0xfa,
-    0x1a, 0x8a, 0xd1, 0x9c, 0x0d, 0x36, 0x62, 0xf6,
-    0x57, 0xc0, 0x9e, 0x42, 0xcc, 0x5c, 0x2b, 0x00
-};
-
-// Test message for BLS signature
-static const char TV_BLS_MESSAGE[] = "Test message for BLS signature verification";
-static const size_t TV_BLS_MESSAGE_LEN = sizeof(TV_BLS_MESSAGE) - 1;
 
 /* ==========================================================================
  * IBS Test Vectors

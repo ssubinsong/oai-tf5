@@ -263,7 +263,7 @@ With the removal of `timesync_info` from the TESLA extension, explicit initial t
 ### 10.4 Graceful Degradation
 
 If authentication fails, the UE falls back to **signature-only mode**:
-- Each SIB1 is verified via BLS signature
+- Each SIB1 is verified via IBS signature
 - TESLA MAC verification is bypassed
 - This prevents availability attacks via deliberate clock manipulation
 

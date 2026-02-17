@@ -65,7 +65,7 @@ Located in `openair3/SECU/tests/`:
 | `test_tf5_tesla_gnb.cpp` | gNB functions |
 | `test_tf5_tesla_ue.cpp` | UE verification |
 | `test_tf5_tesla_e2e.cpp` | End-to-end flow |
-| `test_tf5_tesla_bls.cpp` | BLS signatures |
+| `test_tf5_tesla_bls.cpp` | BLMQ IBS signatures |
 | `test_tf5_tesla_serial.cpp` | Serialization |
 | `test_tf5_tesla_timing.cpp` | Timing/replay protection |
 | `test_tf5_tesla_fileio.cpp` | Key file I/O |

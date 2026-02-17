@@ -72,7 +72,7 @@ target_compile_definitions(test_tf5_tesla_serial PRIVATE ${TF5_TEST_COMPILE_DEFS
 add_test(NAME test_tf5_tesla_serial COMMAND test_tf5_tesla_serial)
 
 # -----------------------------------------------------------------------------
-# BLS signature tests
+# BLMQ IBS signature tests
 # -----------------------------------------------------------------------------
 add_executable(test_tf5_tesla_bls test_tf5_tesla_bls.cpp)
 add_dependencies(tests test_tf5_tesla_bls)

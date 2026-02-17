@@ -216,7 +216,7 @@ cd cmake_targets/ran_build/build
 ./test_tf5_tesla_gnb       # gNB functions
 ./test_tf5_tesla_ue        # UE functions
 ./test_tf5_tesla_serial    # Serialization (pack/unpack)
-./test_tf5_tesla_bls       # BLS signatures
+./test_tf5_tesla_bls       # BLMQ IBS signatures
 ./test_tf5_tesla_e2e       # End-to-end integration
 ```
 
@@ -258,7 +258,7 @@ openair3/SECU/tests/
 ├── test_tf5_tesla_gnb.cpp      # gNB function tests
 ├── test_tf5_tesla_ue.cpp       # UE function tests
 ├── test_tf5_tesla_serial.cpp   # Serialization tests
-├── test_tf5_tesla_bls.cpp      # BLS signature tests
+├── test_tf5_tesla_bls.cpp      # BLMQ IBS signature tests
 ├── test_tf5_tesla_e2e.cpp      # Integration tests
 ├── test_tf5_tesla_timing.cpp   # Timing and replay protection tests
 └── test_tf5_tesla_fileio.cpp   # Key file I/O tests

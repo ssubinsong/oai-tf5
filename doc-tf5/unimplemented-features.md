@@ -114,15 +114,15 @@ TESLA uses a finite key chain of length N. When the chain is exhausted, the gNB 
 
 ---
 
-## 4. BLS Signature Batch Verification
+## 4. IBS Signature Batch Verification
 
-**Description**: Amortize pairing costs across multiple BLS signatures during cell selection/reselection.
+**Description**: Amortize pairing costs across multiple BLMQ IBS signatures during cell selection/reselection.
 
 During cell selection and reselection, UEs detect and measure multiple candidate cells, ranking them by signal quality before selecting the best one (3GPP TS 38.304). This procedure inherently requires authenticating signatures from several gNBs.
 
-BLS supports efficient batch verification through aggregation: verifying n signatures requires only n+1 pairings rather than 2n, reducing computational overhead when authenticating multiple candidate cells simultaneously.
+BLMQ IBS verification uses a single pairing per signature (via multi-Miller loop). Batch verification could further reduce costs by sharing final exponentiation across multiple verifications.
 
-**Current Status**: Not implemented. The current implementation verifies one BLS signature at a time. Each signature verification performs 2 pairing operations independently.
+**Current Status**: Not implemented. The current implementation verifies one BLMQ IBS signature at a time via a single-pairing check.
 
 **Rationale for Deferral**:
 - Requires neighbor broadcast infrastructure (UE needs to receive SIB1 from multiple cells)
