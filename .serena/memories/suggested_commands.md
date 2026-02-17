@@ -40,7 +40,7 @@ ctest -R tf5 -V
 ./test_tf5_tesla_gnb       # gNB functions
 ./test_tf5_tesla_ue        # UE verification
 ./test_tf5_tesla_e2e       # End-to-end flow
-./test_tf5_tesla_bls       # BLS signatures
+./test_tf5_tesla_bls       # BLMQ IBS signatures
 ./test_tf5_tesla_serial    # Serialization
 ./test_tf5_tesla_timing    # Timing/replay protection
 ./test_tf5_tesla_fileio    # Key file I/O

@@ -37,8 +37,9 @@
 - Each test file has its own `main()` (no `gtest_main`)
 
 ## Error Handling
-- Functions return `int` (0 = success, negative = error)
-- Use `DevAssert()` / `AssertFatal()` from OAI for programming errors
+- `tf5_error_t` enum (defined in `tf5_ibs_defs.h`): All recoverable/expected failures (TF5_OK=0, TF5_ERR_*=negative)
+- `AssertFatal()`: Unrecoverable system failures (e.g., OpenSSL primitives that should never fail with valid inputs)
+- `bool` returns: Verification-only functions (safe packet test, key chain)
 - Input validation at function entry with early returns
 
 ## General Patterns
