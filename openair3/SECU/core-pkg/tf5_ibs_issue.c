@@ -1,8 +1,8 @@
 /*
- * TF5 IBS - gNB Secret Key Issuance Utility
+ * TF5 IBS - gNB Secret Key Issuance Utility (BLMQ IBS)
  *
  * Issues a gNB-specific secret key based on its NR Cell ID and validity period.
- * sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r
+ * sk_ID = [1/(H1(ID)+s)] * P ∈ G1  (48-byte compressed G1 point)
  *
  * Usage: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>
  *
@@ -56,16 +56,16 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
         return rc;
     }
 
-    /* Build combined key file: sk_id (32 bytes) + gnb_key_validity_end (3 bytes, big-endian) */
+    /* Build combined key file: sk_id (48 bytes, G1 point) + gnb_key_validity_end (3 bytes, big-endian) */
     uint8_t key_file_data[TF5_IBS_SK_FILE_SIZE];
     memcpy(key_file_data, sk_id, TF5_IBS_GNB_SK_LEN);
 
-    /* Encode validity as 3 bytes big-endian (24 bits) */
-    key_file_data[32] = (gnb_key_validity_end >> 16) & 0xFF;
-    key_file_data[33] = (gnb_key_validity_end >> 8) & 0xFF;
-    key_file_data[34] = gnb_key_validity_end & 0xFF;
+    /* Encode validity as 3 bytes big-endian (24 bits) at offset TF5_IBS_GNB_SK_LEN */
+    key_file_data[TF5_IBS_GNB_SK_LEN + 0] = (gnb_key_validity_end >> 16) & 0xFF;
+    key_file_data[TF5_IBS_GNB_SK_LEN + 1] = (gnb_key_validity_end >> 8) & 0xFF;
+    key_file_data[TF5_IBS_GNB_SK_LEN + 2] = gnb_key_validity_end & 0xFF;
 
-    /* Write combined key file (35 bytes) */
+    /* Write combined key file (51 bytes) */
     rc = write_key_file(sk_path, key_file_data, TF5_IBS_SK_FILE_SIZE, 0600);
 
     /* Clear key data from memory */
@@ -100,7 +100,7 @@ static void print_usage(const char *prog)
     fprintf(stderr, "  msk_path               Path to master secret key file\n");
     fprintf(stderr, "  cell_id_hex            NR Cell ID as 9-character hex string (36 bits)\n");
     fprintf(stderr, "  gnb_key_validity_end   Key expiration (minutes since 2024-01-01 00:00 UTC)\n");
-    fprintf(stderr, "  sk_path                Path to save gNB secret key (35 bytes: sk + validity)\n\n");
+    fprintf(stderr, "  sk_path                Path to save gNB secret key (51 bytes: sk + validity)\n\n");
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  # Key valid until 2026-01-01 (1051200 minutes from 2024-01-01)\n");
     fprintf(stderr, "  %s pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_001.bin\n\n", prog);
@@ -124,7 +124,7 @@ static void print_pk_id(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN], uint32_t gnb
     uint8_t pk_id_bytes[32];
     tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, pk_id_bytes);
 
-    printf("  pk_ID (H_s(cell_id || gnb_key_validity)): ");
+    printf("  H1(ID) (H1(cell_id || gnb_key_validity)): ");
     for (int i = 0; i < 32; i++) {
         printf("%02x", pk_id_bytes[i]);
     }
@@ -204,7 +204,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("gNB secret key issued successfully (35 bytes: sk + validity).\n");
+    printf("gNB secret key issued successfully (51 bytes: sk + validity).\n");
     printf("\n");
     printf("Next steps:\n");
     printf("  1. Securely transfer %s to the gNB\n", sk_path);

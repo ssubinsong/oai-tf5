@@ -13,6 +13,7 @@
 
 extern "C" {
 #include "openair3/SECU/tf5_tesla.h"
+#include "openair3/SECU/tf5_tesla_sig.h"
 #include "openair3/SECU/tf5_ibs_pkg.h"
 }
 
@@ -23,7 +24,7 @@ protected:
     // gNB state
     tf5_gnb_state_t gnb_state;
     uint8_t gnb_private_key[TF5_IBS_GNB_SK_LEN];
-    uint8_t gnb_public_key[TF5_IBS_GNB_PK_LEN];
+    uint8_t gnb_mpk[TF5_IBS_MPK_LEN];
 
     // UE state
     tf5_ue_state_t ue_state;
@@ -34,25 +35,44 @@ protected:
     // T_0 timing
     tf5_slot_time_t t0;
 
-    static bool bls_initialized;
+    // Temp dir for key files
+    std::string test_dir;
+
+    static bool ibs_initialized;
 
     void SetUp() override {
-        // Initialize BLS library once
-        if (!bls_initialized) {
-            tf5_bls_init();
-            bls_initialized = true;
+        // Initialize IBS library once
+        if (!ibs_initialized) {
+            tf5_ibs_init();
+            ibs_initialized = true;
         }
 
         // Clear states
         memset(&gnb_state, 0, sizeof(gnb_state));
         memset(&ue_state, 0, sizeof(ue_state));
 
-        // Generate gNB key pair
-        memcpy(gnb_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_IBS_GNB_SK_LEN);
-        tf5_bls_derive_pubkey(gnb_private_key, gnb_public_key);
-
         // Set cell ID
         memcpy(cell_id, tf5_test::TV_IBS_CELL_ID, TF5_IBS_CELL_ID_LEN);
+
+        // Generate PKG keys for the gNB
+        test_dir = "/tmp/tf5_e2e_test_" + std::to_string(getpid());
+        std::filesystem::create_directories(test_dir);
+        std::string msk_path = test_dir + "/msk.bin";
+        std::string mpk_path = test_dir + "/mpk.bin";
+        std::string sk_path = test_dir + "/sk.bin";
+
+        tf5_ibs_generate_master_keypair(msk_path.c_str(), mpk_path.c_str());
+        tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, tf5_test::TV_IBS_VALIDITY_END, sk_path.c_str());
+
+        // Load keys
+        tf5_load_core_mpk(mpk_path.c_str(), gnb_mpk);
+
+        // Load sk from file (first TF5_IBS_GNB_SK_LEN bytes)
+        FILE *f = fopen(sk_path.c_str(), "rb");
+        uint8_t sk_file[TF5_IBS_SK_FILE_SIZE];
+        fread(sk_file, 1, TF5_IBS_SK_FILE_SIZE, f);
+        fclose(f);
+        memcpy(gnb_private_key, sk_file, TF5_IBS_GNB_SK_LEN);
 
         // Set T_0
         t0 = tf5_slot_time_make(0, 0);
@@ -61,6 +81,9 @@ protected:
     void TearDown() override {
         tf5_gnb_free(&gnb_state);
         tf5_ue_free(&ue_state);
+        if (!test_dir.empty()) {
+            std::filesystem::remove_all(test_dir);
+        }
     }
 
     // Initialize gNB with test parameters
@@ -80,7 +103,7 @@ protected:
     int initUe() {
         return tf5_ue_init(
             &ue_state,
-            gnb_public_key,  // Use gNB's public key as MPK for testing
+            gnb_mpk,  // Core PKG's master public key
             tf5_test::TV_SLOTS_PER_FRAME,
             TF5_TESLA_DEFAULT_D_BOUND_US,
             TF5_RP_DEFAULT_TIME_WINDOW_MS
@@ -115,7 +138,7 @@ protected:
     }
 };
 
-bool TF5E2ETest::bls_initialized = false;
+bool TF5E2ETest::ibs_initialized = false;
 
 // ============================================================================
 // Basic End-to-End Flow Tests

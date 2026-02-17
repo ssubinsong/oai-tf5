@@ -1,10 +1,15 @@
 /**
  * @file tf5_ibs_defs.h
- * @brief IBS shared definitions for BLS curve constants and identity parameters
+ * @brief BLMQ IBS shared definitions for BLS curve constants and identity parameters
  *
  * Single source of truth for BLS curve constants, IBS identity constants,
  * DST strings, and file format sizes shared between the TESLA/RAN hierarchy
  * (tf5_tesla_sig.h / tf5_tesla.h) and the Core PKG hierarchy (tf5_ibs_pkg.h).
+ *
+ * IBS scheme: BLMQ (Barreto-Libert-McCullagh-Quisquater, ASIACRYPT 2005 Section 3)
+ *   Keygen: sk_ID = [1/(H1(ID)+s)] * P  (G1 point, 48 bytes)
+ *   Sign:   σ = (h, S) where h ∈ Z*p, S ∈ G1  (32+48 = 80 bytes)
+ *   Verify: single-pairing check via h == H2(M, e(S, H1(ID)·Q+Qpub)·g^{-h})
  *
  * NOTE: No ENABLE_TF5 guard - this header is also used by standalone PKG tools.
  */
@@ -63,12 +68,14 @@ typedef enum {
  * ========================================================================== */
 
 /*
- * All sizes derive from the BLS12-381 curve parameters above.
- * Minimal-signature-size variant: Signatures in G1, Public keys in G2.
+ * BLMQ IBS sizes derive from the BLS12-381 curve parameters above.
+ * sk_ID is a G1 point (48B), signature is (h, S) ∈ Z*p × G1 (32+48 = 80B).
  */
-#define TF5_IBS_GNB_SK_LEN      TF5_BLS_SCALAR_LEN          // sk_ID: scalar
-#define TF5_IBS_GNB_PK_LEN          TF5_BLS_G2_COMPRESSED_LEN   // Public key in G2
-#define TF5_IBS_SIG_LEN                 TF5_BLS_G1_COMPRESSED_LEN   // Signature in G1
+#define TF5_IBS_GNB_SK_LEN         TF5_BLS_G1_COMPRESSED_LEN   // sk_ID: G1 point [1/(H1(ID)+s)]*P
+#define TF5_IBS_GNB_PK_LEN         TF5_BLS_G2_COMPRESSED_LEN   // Public key in G2 (MPK)
+#define TF5_IBS_SIG_H_LEN          TF5_BLS_SCALAR_LEN           // h: scalar part of signature
+#define TF5_IBS_SIG_S_LEN          TF5_BLS_G1_COMPRESSED_LEN   // S: G1 part of signature
+#define TF5_IBS_SIG_LEN            (TF5_IBS_SIG_H_LEN + TF5_IBS_SIG_S_LEN) // σ = (h, S) = 80 bytes
 
 #define TF5_IBS_MASTER_SECRET_LEN   TF5_BLS_SCALAR_LEN          // s: master secret scalar
 #define TF5_IBS_MASTER_PUBLIC_LEN   TF5_BLS_G2_COMPRESSED_LEN   // MPK = s*Q in G2
@@ -82,26 +89,36 @@ typedef enum {
 #define TF5_IBS_VALIDITY_PERIOD_LEN 3    // Key validity period: 24 bits = 3 bytes (minutes since epoch)
 #define TF5_IBS_VALIDITY_EPOCH          1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
 
-// IKM size for H_s: DST (35) + Cell_ID (5) + gnb_key_validity_end (3) = 43 bytes
+// IKM size for H1: DST (40) + Cell_ID (5) + gnb_key_validity_end (3) = 48 bytes
 #define TF5_IBS_IKM_LEN  (TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)
 
 /* ==========================================================================
  * gNB Secret Key File Format
  * ========================================================================== */
 
-// File layout: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
-#define TF5_IBS_SK_FILE_SIZE        (TF5_IBS_GNB_SK_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)  // 35 bytes
+// File layout: sk_ID (48 bytes, G1 point) + gnb_key_validity_end (3 bytes, big-endian)
+#define TF5_IBS_SK_FILE_SIZE        (TF5_IBS_GNB_SK_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)  // 51 bytes
 
 /* ==========================================================================
  * Domain Separation Tag
  * ========================================================================== */
 
 /*
- * DST for H_s (identity-to-scalar hash).
+ * DST for H1 (identity-to-scalar hash).
  * Used by both PKG (key issuance) and RAN (signature verification) to derive
- * pk_ID = H_s(cell_id || gnb_key_validity_end).
+ * H1(ID) from (cell_id || gnb_key_validity_end).
  */
-#define TF5_IBS_DST_HS              "TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"
-#define TF5_IBS_DST_HS_LEN          35
+#define TF5_IBS_DST_HS              "TF5_IBS_BLMQ_BLS12381_XMD:SHA-256_H1_v1"
+#define TF5_IBS_DST_HS_LEN          40
+
+/*
+ * DST for H2 (message+GT to scalar hash).
+ * Used in BLMQ signing/verification: h = H2(M, r) where r ∈ GT.
+ */
+#define TF5_IBS_DST_H2              "TF5_IBS_BLMQ_BLS12381_XMD:SHA-256_H2_v1"
+#define TF5_IBS_DST_H2_LEN          40
+
+/* GT element serialized size (blst_fp12) */
+#define TF5_IBS_GT_SERIALIZED_LEN   576  /* sizeof(blst_fp12) for BLS12-381 */
 
 #endif /* TF5_IBS_DEFS_H */

@@ -371,7 +371,7 @@ TEST_F(TF5IbsPkgTest, GenerateMasterKeypair_NullInput) {
 // gNB Key Issuance Tests (tf5_ibs_issue_gnb_key)
 // ============================================================================
 
-TEST_F(TF5IbsPkgTest, IssueGnbKey_Creates35ByteFile) {
+TEST_F(TF5IbsPkgTest, IssueGnbKey_Creates51ByteFile) {
     // First generate a master keypair
     std::string msk_path = test_dir + "/msk.bin";
     std::string mpk_path = test_dir + "/mpk.bin";
@@ -385,9 +385,9 @@ TEST_F(TF5IbsPkgTest, IssueGnbKey_Creates35ByteFile) {
     int rc = tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, validity, sk_path.c_str());
     EXPECT_EQ(0, rc);
 
-    // Verify file size is 35 bytes (32 sk + 3 validity)
+    // Verify file size is 51 bytes (48 sk G1 point + 3 validity)
     EXPECT_EQ(TF5_IBS_SK_FILE_SIZE, std::filesystem::file_size(sk_path))
-        << "gNB key file should be 35 bytes";
+        << "gNB key file should be 51 bytes";
 }
 
 TEST_F(TF5IbsPkgTest, IssueGnbKey_ValidityEncoding) {
@@ -409,10 +409,10 @@ TEST_F(TF5IbsPkgTest, IssueGnbKey_ValidityEncoding) {
     file.read(reinterpret_cast<char*>(data), TF5_IBS_SK_FILE_SIZE);
     file.close();
 
-    // Last 3 bytes should be big-endian validity
-    EXPECT_EQ(0x12, data[32]) << "Validity byte 0 (MSB)";
-    EXPECT_EQ(0x34, data[33]) << "Validity byte 1";
-    EXPECT_EQ(0x56, data[34]) << "Validity byte 2 (LSB)";
+    // Last 3 bytes should be big-endian validity (at offset TF5_IBS_GNB_SK_LEN)
+    EXPECT_EQ(0x12, data[TF5_IBS_GNB_SK_LEN + 0]) << "Validity byte 0 (MSB)";
+    EXPECT_EQ(0x34, data[TF5_IBS_GNB_SK_LEN + 1]) << "Validity byte 1";
+    EXPECT_EQ(0x56, data[TF5_IBS_GNB_SK_LEN + 2]) << "Validity byte 2 (LSB)";
 }
 
 TEST_F(TF5IbsPkgTest, IssueGnbKey_DifferentCellIds) {
@@ -510,10 +510,10 @@ TEST_F(TF5IbsPkgTest, EndToEnd_KeypairAndIssuance) {
     file.read(reinterpret_cast<char*>(data), TF5_IBS_SK_FILE_SIZE);
     file.close();
 
-    // Verify validity encoding
-    uint32_t read_validity = ((uint32_t)data[32] << 16) |
-                             ((uint32_t)data[33] << 8) |
-                             (uint32_t)data[34];
+    // Verify validity encoding (at offset TF5_IBS_GNB_SK_LEN = 48)
+    uint32_t read_validity = ((uint32_t)data[TF5_IBS_GNB_SK_LEN] << 16) |
+                             ((uint32_t)data[TF5_IBS_GNB_SK_LEN + 1] << 8) |
+                             (uint32_t)data[TF5_IBS_GNB_SK_LEN + 2];
     EXPECT_EQ(validity, read_validity);
 
     // Verify sk_ID matches what we'd compute directly

@@ -20,7 +20,7 @@
 #include "tf5_tesla_sig.h"
 
 /* ── Protocol Version ──────────────────────────────────── */
-#define TF5_VERSION                 0x01
+#define TF5_VERSION                 0x02
 
 /* ── TESLA Chain & MAC Constants ───────────────────────── */
 #define TF5_TESLA_KEY_LEN           16      // 128-bit chain keys
@@ -30,7 +30,7 @@
 
 /* ── Buffer & Wire Format Sizes ────────────────────────── */
 #define TF5_MAX_AUTH_INPUT          372     // Max auth input buffer size
-#define TF5_EXTENSION_PACKED_SIZE   102     // Wire format size (tf5_extension_t)
+#define TF5_EXTENSION_PACKED_SIZE   134     // Wire format size (tf5_extension_t)
 
 /* ── Default Configuration ─────────────────────────────── */
 #define TF5_TESLA_DEFAULT_D_BOUND_US       1005    // D bound (microseconds)
@@ -115,7 +115,7 @@ typedef struct {
     uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                   validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                   timestamp_ms;                  // 3B (wire) - Unix epoch timestamp LSB (ms) for replay protection
-    uint8_t                    signature[TF5_IBS_SIG_LEN]; // 48B - BLS signature
+    uint8_t                    signature[TF5_IBS_SIG_LEN]; // 80B - BLMQ IBS signature (h[32] || S[48])
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_extension_t;
 
@@ -131,7 +131,7 @@ typedef struct {
     uint32_t key_chain_len;                         // Number of intervals N
 
     // IBS keys
-    uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 32B - sk_ID (issued by Core PKG)
+    uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 48B - sk_ID: G1 point (issued by Core PKG)
     uint32_t key_validity_end;                      // Key expiration (minutes since 2024-01-01)
 
     // Slots per frame (depends on numerology)
@@ -191,7 +191,7 @@ typedef struct {
  * @param t_int_ms      Interval duration in milliseconds (e.g., 20)
  * @param d             Key disclosure delay (e.g., 1)
  * @param chain_len     Number of intervals in key chain
- * @param private_key   BLS secret key (32 bytes)
+ * @param private_key   BLMQ IBS secret key (48 bytes, G1 point)
  * @param t0            T_0 timing (HFN/SFN/slot at interval 0 start)
  * @param slots_per_frame Number of slots per frame
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_ALLOC, TF5_ERR_CRYPTO
@@ -422,12 +422,12 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
  */
 
 /**
- * Load BLS secret key and validity period from key file
+ * Load BLMQ IBS secret key and validity period from key file
  *
- * File format: 35 bytes (sk_ID [32] + gnb_key_validity_end [3, big-endian])
+ * File format: 51 bytes (sk_ID [48, G1 point] + gnb_key_validity_end [3, big-endian])
  *
- * @param filepath      Path to binary key file (35 bytes)
- * @param privkey_out   Output: 32-byte raw secret key
+ * @param filepath      Path to binary key file (51 bytes)
+ * @param privkey_out   Output: 48-byte G1 point secret key
  * @param validity_out  Output: key validity (minutes since 2024-01-01 00:00 UTC)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_OPEN,
  *         TF5_ERR_FILE_IO, TF5_ERR_KEY_INVALID

@@ -2,7 +2,9 @@
 
 ## 1. Overview
 
-This document specifies the Identity-Based Signature (IBS) scheme used for authenticating 5G NR SIB1 messages. The scheme allows UEs to verify gNB signatures using only:
+This document specifies the BLMQ (Barreto-Libert-McCullagh-Quisquater) Identity-Based Signature scheme used for authenticating 5G NR SIB1 messages. The BLMQ scheme (ASIACRYPT 2005, Section 3) provides efficient single-pairing verification and EUF-CMA security under the q-SDH assumption.
+
+The scheme allows UEs to verify gNB signatures using only:
 - The Core's master public key (MPK), pre-provisioned in UE
 - The gNB's NR Cell ID, extracted from the received SIB1
 
@@ -11,9 +13,9 @@ This document specifies the Identity-Based Signature (IBS) scheme used for authe
 ### 2.1 Elliptic Curve
 
 - **Curve:** BLS12-381
-- **Variant:** Minimal signature size (pk-in-G2)
+- **Variant:** pk-in-G2 (public keys and verification keys in $G_2$)
 - **Groups:**
-  - $G_1$: 48-byte compressed points (signatures)
+  - $G_1$: 48-byte compressed points (secret keys, signatures)
   - $G_2$: 96-byte compressed points (public keys)
   - $G_T$: Target group for pairing
 - **Order:** $r \approx 2^{255}$ (prime)
@@ -28,17 +30,17 @@ Properties:
 
 ### 2.3 Hash Functions
 
-**$H_s: \text{Identity} \rightarrow \text{Scalar}\ (\mathbb{Z}_r)$**
-- Input: NR Cell ID (36 bits)
-- Output: Scalar in $\mathbb{Z}_r$
+**$H_1: \text{Identity} \rightarrow \text{Scalar}\ (\mathbb{Z}_r^*)$**
+- Input: NR Cell ID (36 bits) || validity_end (24 bits)
+- Output: Scalar in $\mathbb{Z}_r^*$
 - Implementation: IETF hash-to-field via `blst_keygen` with DST
-- DST: `"TF5_IBS_BLS12381_XMD:SHA-256_H_s_v1"`
+- DST: `"TF5_IBS_BLMQ_BLS12381_XMD:SHA-256_H1_v1"` (40 bytes)
 
-**$H_m: \text{Message} \rightarrow G_1$**
-- Input: Arbitrary-length message
-- Output: Point in $G_1$
-- Implementation: IETF hash-to-curve via `blst_hash_to_g1`
-- DST: `"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_"`
+**$H_2: \{0,1\}^* \times G_T \rightarrow \mathbb{Z}_r^*$**
+- Input: Message data || $G_T$ element (serialized as `blst_fp12`, 576 bytes)
+- Output: Scalar in $\mathbb{Z}_r^*$
+- Implementation: SHA-256(DST_H2 || data || fp12_bytes) → `blst_keygen` for mod $r$ reduction
+- DST: `"TF5_IBS_BLMQ_BLS12381_XMD:SHA-256_H2_v1"` (40 bytes)
 
 ## 3. Key Hierarchy
 
@@ -47,7 +49,8 @@ Properties:
                     │   Core PKG      │
                     │                 │
                     │  s (secret)     │
-                    │  MPK = s*Q      │
+                    │  Qpub = s*Q    │
+                    │  g = e(P, Q)   │
                     └────────┬────────┘
                              │
            ┌─────────────────┼─────────────────┐
@@ -57,7 +60,7 @@ Properties:
     │   gNB 1      │  │   gNB 2      │  │   gNB N      │
     │              │  │              │  │              │
     │ Cell ID: ID1 │  │ Cell ID: ID2 │  │ Cell ID: IDN │
-    │ sk_ID1       │  │ sk_ID2       │  │ sk_IDN       │
+    │ sk_ID1 ∈ G1  │  │ sk_ID2 ∈ G1  │  │ sk_IDN ∈ G1  │
     └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
@@ -67,93 +70,106 @@ Properties:
 
 **Input:** Security parameter $\lambda$ (implicit: BLS12-381)
 
-**Output:** Master secret $s$, Master public key $MPK$
+**Output:** Master secret $s$, Master public key $Q_{pub}$, precomputed $g$
 
 $$
 \begin{aligned}
-1. &\ s \leftarrow \text{random scalar in } \mathbb{Z}_r \\
-2. &\ MPK \leftarrow s \cdot Q, \text{ where } Q \text{ is the generator of } G_2 \\
-3. &\ \text{Return } (s, MPK)
+1. &\ s \leftarrow \text{random scalar in } \mathbb{Z}_r^* \\
+2. &\ Q_{pub} \leftarrow s \cdot Q, \text{ where } Q \text{ is the generator of } G_2 \\
+3. &\ P \leftarrow \psi(Q), \text{ where } P \text{ is the generator of } G_1 \\
+4. &\ g \leftarrow e(P, Q) \in G_T \\
+5. &\ \text{Return } (s, Q_{pub})
 \end{aligned}
 $$
 
 **File Output:**
 - `msk.bin`: 32 bytes, $s$ serialized big-endian
-- `mpk.bin`: 96 bytes, $MPK$ compressed
+- `mpk.bin`: 96 bytes, $Q_{pub}$ compressed
 
 ### 4.2 Key Issuance (Core PKG)
 
-**Input:** Master secret $s$, gNB identity $ID$ (NR Cell ID, 36 bits)
+**Input:** Master secret $s$, gNB identity $ID$ (NR Cell ID || validity_end)
 
-**Output:** gNB secret key $sk_{ID}$
+**Output:** gNB secret key $sk_{ID} \in G_1$
 
 $$
 \begin{aligned}
-1. &\ pk_{ID} \leftarrow H_s(ID) & \text{// Hash identity to scalar} \\
-2. &\ sk_{ID} \leftarrow s \cdot pk_{ID} \mod r & \text{// Scalar multiplication} \\
-3. &\ \text{Return } sk_{ID}
+1. &\ h_1 \leftarrow H_1(ID) & \text{// Hash identity to scalar} \\
+2. &\ \text{sum} \leftarrow h_1 + s \mod r & \text{// Add to master secret} \\
+3. &\ \text{inv} \leftarrow \text{sum}^{-1} \mod r & \text{// Scalar inverse} \\
+4. &\ sk_{ID} \leftarrow \text{inv} \cdot P & \text{// Scalar mult of } G_1 \text{ generator} \\
+5. &\ \text{Return } sk_{ID}
 \end{aligned}
 $$
 
 **Properties:**
-- $sk_{ID}$ is a 32-byte scalar
+- $sk_{ID}$ is a 48-byte compressed $G_1$ point
+- $sk_{ID} = \frac{1}{H_1(ID) + s} \cdot P$
 - Different Cell IDs produce different keys
 - Core can issue keys without gNB interaction
 
 ### 4.3 Sign (gNB)
 
-**Input:** gNB secret key $sk_{ID}$, message $m$
+**Input:** gNB secret key $sk_{ID} \in G_1$, message $m$
 
-**Output:** Signature $\Sigma$
+**Output:** Signature $\sigma = (h, S)$
 
 $$
 \begin{aligned}
-1. &\ h \leftarrow H_m(m) & \text{// Hash message to } G_1 \\
-2. &\ \Sigma \leftarrow sk_{ID} \cdot h & \text{// Scalar multiplication in } G_1 \\
-3. &\ \text{Return } \Sigma
+1. &\ x \leftarrow \text{random scalar in } \mathbb{Z}_r^* \\
+2. &\ r \leftarrow g^x = e(x \cdot P, Q) \in G_T \\
+3. &\ h \leftarrow H_2(m, r) \in \mathbb{Z}_r^* \\
+4. &\ S \leftarrow (x + h) \cdot sk_{ID} \in G_1 \\
+5. &\ \text{Return } \sigma = (h, S)
 \end{aligned}
 $$
 
 **Properties:**
-- $\Sigma$ is a 48-byte $G_1$ point (compressed)
-- Same algorithm as standard BLS signature
-- $sk_{ID}$ acts as the signing key
+- $h$ is a 32-byte scalar
+- $S$ is a 48-byte compressed $G_1$ point
+- $\sigma$ is 80 bytes total: $h[32] \| S[48]$
+- Signature is **randomized** (different each time due to random $x$)
 
 ### 4.4 Verify (UE)
 
-**Input:** Master public key $MPK$, identity $ID$, message $m$, signature $\Sigma$
+**Input:** Master public key $Q_{pub}$, identity $ID$, message $m$, signature $\sigma = (h, S)$
 
 **Output:** Accept or Reject
 
 $$
 \begin{aligned}
-1. &\ pk_{ID} \leftarrow H_s(ID) & \text{// Derive identity-based public key (scalar)} \\
-2. &\ PK \leftarrow pk_{ID} \cdot MPK & \text{// Compute verification key (} G_2 \text{ point)} \\
-3. &\ h \leftarrow H_m(m) & \text{// Hash message to } G_1 \\
-4. &\ \text{Accept iff } e(\Sigma, Q) = e(h, PK)
+1. &\ h_1 \leftarrow H_1(ID) & \text{// Hash identity to scalar} \\
+2. &\ Q_{ID} \leftarrow h_1 \cdot Q + Q_{pub} \in G_2 & \text{// Compute verification key} \\
+3. &\ r' \leftarrow e(S, Q_{ID}) \cdot e(-h \cdot P, Q) & \text{// Multi-Miller-loop + final exp} \\
+4. &\ h' \leftarrow H_2(m, r') \\
+5. &\ \text{Accept iff } h = h'
 \end{aligned}
 $$
 
 **Verification Equation Derivation:**
 
+If the signature is valid, then $S = (x + h) \cdot sk_{ID} = \frac{x + h}{H_1(ID) + s} \cdot P$.
+
 $$
 \begin{aligned}
-e(\Sigma, Q) &= e(sk_{ID} \cdot h, Q) \\
-             &= e(h, Q)^{sk_{ID}} \\
-             &= e(h, sk_{ID} \cdot Q)
+e(S, Q_{ID}) &= e\left(\frac{x + h}{H_1(ID) + s} \cdot P,\ (H_1(ID) + s) \cdot Q\right) \\
+             &= e(P, Q)^{x + h} \\
+             &= g^{x + h}
 \end{aligned}
 $$
 
 $$
-\begin{aligned}
-pk_{ID} \cdot MPK &= pk_{ID} \cdot (s \cdot Q) \\
-                  &= (pk_{ID} \cdot s) \cdot Q \\
-                  &= (s \cdot pk_{ID}) \cdot Q \\
-                  &= sk_{ID} \cdot Q
-\end{aligned}
+e(-h \cdot P, Q) = e(P, Q)^{-h} = g^{-h}
 $$
 
-$$\text{Therefore: } e(\Sigma, Q) = e(h, sk_{ID} \cdot Q) = e(h, pk_{ID} \cdot MPK) = e(h, PK)$$
+$$
+r' = g^{x+h} \cdot g^{-h} = g^x = r
+$$
+
+Therefore $H_2(m, r') = H_2(m, r) = h$, and verification succeeds.
+
+**Optimization:** The two pairings are computed via a single multi-Miller-loop call
+(`blst_miller_loop_n` with 2 pairs) followed by one final exponentiation.
 
 ## 5. Message Format
 
@@ -197,16 +213,19 @@ byte[4] = bits 3-0 (upper nibble), padding (lower nibble)
 
 ### 7.1 Security Model
 
-The scheme provides **existential unforgeability under chosen message attack (EUF-CMA)** in the random oracle model, assuming:
-- CDH (Computational Diffie-Hellman) is hard in $G_1$ and $G_2$
-- $H_s$ and $H_m$ are modeled as random oracles
+The BLMQ scheme provides **existential unforgeability under chosen message and identity attack (EUF-CMIA)** under:
+- The **q-SDH** (q-Strong Diffie-Hellman) assumption in bilinear groups
+- $H_1$ and $H_2$ are modeled as random oracles
+
+This is a stronger security result than CDH-based schemes, as q-SDH is a well-studied
+assumption in the pairing-based cryptography literature.
 
 ### 7.2 Security Properties
 
 | Property | Guarantee |
 |----------|-----------|
-| Signature Unforgeability | Cannot forge signature without $sk_{ID}$ |
-| Identity Binding | Signature valid only for correct Cell ID |
+| Signature Unforgeability | Cannot forge signature without $sk_{ID}$ (q-SDH) |
+| Identity Binding | Signature valid only for correct Cell ID + validity |
 | Key Isolation | Compromising one gNB key doesn't affect others |
 | Forward Secrecy | Not provided (would require key evolution) |
 
@@ -215,21 +234,21 @@ The scheme provides **existential unforgeability under chosen message attack (EU
 | Entity | Trusts | Holds |
 |--------|--------|-------|
 | Core PKG | — | Master secret ($s$) |
-| gNB | Core PKG | $sk_{ID}$ |
-| UE | Core PKG | $MPK$ |
+| gNB | Core PKG | $sk_{ID} \in G_1$ |
+| UE | Core PKG | $Q_{pub} \in G_2$ |
 
 ### 7.4 Attack Resistance
 
 **Key Extraction Attack:**
-- Attacker with $MPK$ and Cell ID cannot compute $sk_{ID}$
-- Requires solving CDH: given $Q$, $s \cdot Q$, compute $s \cdot pk_{ID} \cdot Q$
+- Attacker with $Q_{pub}$ and Cell ID cannot compute $sk_{ID}$
+- Requires solving q-SDH: given $(P, sP, s^2P, \ldots, s^qP)$, compute $(c, \frac{1}{s+c} \cdot P)$
 
 **Rogue Key Attack:**
 - Not applicable: gNB doesn't choose its own key
-- Key is deterministically derived from Cell ID
+- Key is deterministically derived from Cell ID and master secret
 
 **Identity Substitution:**
-- Cell ID is in signed content (indirectly via SIB1)
+- Cell ID and validity_end are in signed content (indirectly via SIB1)
 - Changing Cell ID breaks signature validity
 
 ## 8. Implementation Notes
@@ -237,37 +256,48 @@ The scheme provides **existential unforgeability under chosen message attack (EU
 ### 8.1 Library
 
 Uses **blst** (Supranational) for BLS12-381 operations:
-- `blst_keygen`: Secure scalar derivation from IKM
-- `blst_sk_mul_n_check`: Scalar multiplication with zero check
-- `blst_sk_to_pk_in_g2`: Compute public key from scalar
-- `blst_hash_to_g1`: Hash-to-curve for messages
-- `blst_sign_pk_in_g2`: BLS signing
-- `blst_core_verify_pk_in_g2`: BLS verification
-- `blst_p2_mult`: $G_2$ scalar multiplication (for $pk_{ID} \cdot MPK$)
+- `blst_keygen`: Secure scalar derivation from IKM (used for H1, H2)
+- `blst_sk_add_n_check`: Scalar addition with overflow check
+- `blst_sk_inverse`: Scalar modular inverse
+- `blst_sign_pk_in_g2`: $G_1$ scalar multiplication (signing)
+- `blst_p1_mult`: $G_1$ scalar multiplication
+- `blst_p2_mult`: $G_2$ scalar multiplication
+- `blst_p2_add_or_double`: $G_2$ point addition
+- `blst_p1_cneg`: $G_1$ point negation
+- `blst_miller_loop_n`: Multi-Miller-loop (batched pairing)
+- `blst_final_exp`: Final exponentiation
 
 ### 8.2 Performance
 
 | Operation | Approximate Time |
 |-----------|-----------------|
-| $H_s$ (hash to scalar) | ~50 μs |
-| Sign | ~500 μs |
-| Verify (IBS) | ~2 ms |
+| $H_1$ (hash to scalar) | ~50 μs |
+| Sign (BLMQ) | ~1 ms |
+| Verify (BLMQ, single pairing) | ~1.5 ms |
 
-Note: IBS verification includes one extra $G_2$ scalar multiplication compared to standard BLS.
+Note: BLMQ verification uses a single multi-Miller-loop with 2 pairs, which is
+faster than the previous scheme that required 2 separate pairings.
 
 ### 8.3 Key Sizes
 
 | Key | Size | Encoding |
 |-----|------|----------|
 | Master secret ($s$) | 32 bytes | Scalar, big-endian |
-| Master public ($MPK$) | 96 bytes | $G_2$ compressed |
-| gNB secret ($sk_{ID}$) | 32 bytes | Scalar, big-endian |
-| Signature ($\Sigma$) | 48 bytes | $G_1$ compressed |
+| Master public ($Q_{pub}$) | 96 bytes | $G_2$ compressed |
+| gNB secret ($sk_{ID}$) | 48 bytes | $G_1$ compressed |
+| Signature ($\sigma$) | 80 bytes | $h[32] \| S[48]$ ($\mathbb{Z}_r \times G_1$) |
+
+### 8.4 Precomputed Values
+
+The following values are computed once during `tf5_ibs_init()` and reused:
+- $g = e(P, Q) \in G_T$ — base for $g^x$ computation in signing
+- $Q$ affine ($G_2$ generator) — for Miller loops
+- $P$ affine ($G_1$ generator) — for $h \cdot P$ negation in verification
 
 ## 9. References
 
 1. RFC 4082 - TESLA Protocol
 2. IETF BLS Signatures (draft-irtf-cfrg-bls-signature)
 3. 3GPP TS 38.331 - NR RRC Protocol Specification
-4. Boneh, Lynn, Shacham - "Short Signatures from the Weil Pairing" (2004)
+4. Barreto, Libert, McCullagh, Quisquater - "Efficient and Provably-Secure Identity-Based Signatures and Signcryption from Bilinear Maps" (ASIACRYPT 2005, Section 3)
 5. Supranational blst library - https://github.com/supranational/blst

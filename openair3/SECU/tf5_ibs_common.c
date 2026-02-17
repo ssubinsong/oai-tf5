@@ -171,9 +171,14 @@ int tf5_ibs_load_master_secret(const char *filepath,
 }
 
 /*
- * Compute gNB secret key from master secret, Cell ID, and validity period
+ * Compute BLMQ IBS gNB secret key from master secret, Cell ID, and validity period
  *
- * sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r
+ * sk_ID = [1 / (H1(ID) + s)] * P ∈ G1  (48 bytes, compressed G1 point)
+ *
+ * Where:
+ *   - s is the master secret scalar
+ *   - H1(ID) = tf5_ibs_hash_to_scalar(cell_id || gnb_key_validity_end)
+ *   - P is the G1 generator
  */
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
@@ -184,9 +189,10 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
         return TF5_ERR_INVALID_PARAM;
     }
 
-    blst_scalar s, pk_id, sk_id;
+    blst_scalar s, h1, sum, inv;
+    blst_p1 sk_p1;
 
-    /* Deserialize master secret */
+    /* Deserialize master secret s from big-endian */
     blst_scalar_from_bendian(&s, msk);
 
     /* Validate master secret is in valid range */
@@ -195,30 +201,35 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
         return TF5_ERR_KEY_INVALID;
     }
 
-    /* Compute pk_ID = H_s(cell_id || gnb_key_validity_end) */
-    uint8_t pk_id_scalar[TF5_IBS_GNB_SK_LEN];
-    if (tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, pk_id_scalar) != 0) {
+    /* Compute H1(ID) = tf5_ibs_hash_to_scalar(cell_id || gnb_key_validity_end) */
+    uint8_t h1_bytes[TF5_BLS_SCALAR_LEN];
+    if (tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, h1_bytes) != 0) {
         OPENSSL_cleanse(&s, sizeof(s));
         return TF5_ERR_CRYPTO;
     }
-    blst_scalar_from_bendian(&pk_id, pk_id_scalar);
-    OPENSSL_cleanse(pk_id_scalar, sizeof(pk_id_scalar));
+    blst_scalar_from_bendian(&h1, h1_bytes);
+    OPENSSL_cleanse(h1_bytes, sizeof(h1_bytes));
 
-    /* Compute sk_ID = s * pk_ID mod r */
-    if (!blst_sk_mul_n_check(&sk_id, &s, &pk_id)) {
-        /* Multiplication failed (result is zero, which shouldn't happen) */
+    /* Compute sum = H1(ID) + s mod r */
+    if (!blst_sk_add_n_check(&sum, &h1, &s)) {
+        /* sum == 0 mod r — negligible probability but must handle */
         OPENSSL_cleanse(&s, sizeof(s));
-        OPENSSL_cleanse(&pk_id, sizeof(pk_id));
+        OPENSSL_cleanse(&h1, sizeof(h1));
         return TF5_ERR_CRYPTO;
     }
 
-    /* Serialize result */
-    blst_bendian_from_scalar(sk_out, &sk_id);
-
-    /* Clear sensitive data from memory */
+    /* Compute inv = 1 / (H1(ID) + s) mod r */
+    blst_sk_inverse(&inv, &sum);
     OPENSSL_cleanse(&s, sizeof(s));
-    OPENSSL_cleanse(&pk_id, sizeof(pk_id));
-    OPENSSL_cleanse(&sk_id, sizeof(sk_id));
+    OPENSSL_cleanse(&h1, sizeof(h1));
+    OPENSSL_cleanse(&sum, sizeof(sum));
+
+    /* Compute sk_ID = inv * P ∈ G1 */
+    blst_sign_pk_in_g2(&sk_p1, blst_p1_generator(), &inv);
+    OPENSSL_cleanse(&inv, sizeof(inv));
+
+    /* Serialize sk_ID as compressed G1 point (48 bytes) */
+    blst_p1_compress(sk_out, &sk_p1);
 
     return 0;
 }

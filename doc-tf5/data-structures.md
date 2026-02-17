@@ -91,19 +91,19 @@ T_0 is transmitted directly in the wire format and authenticated by the IBS sign
 
 ---
 
-## TESLA Extension (102 bytes)
+## TESLA Extension (134 bytes)
 
 Complete extension appended to SIB1 via `lateNonCriticalExtension`:
 
 ```c
 typedef struct {
-    uint8_t                     te_version;                    // 1B - Protocol version (0x01)
+    uint8_t                     te_version;                    // 1B - Protocol version (0x02)
     tf5_tesla_params_t          tesla_params;                  // 11B (wire) - includes T_0
     uint32_t                    i;                             // 4B - Current interval index
     uint8_t                     key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                    validity_end;                  // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                    timestamp_ms;                  // 3B - Unix epoch LSB (ms) for replay protection
-    uint8_t                     signature[TF5_IBS_SIG_LEN];  // 48B - BLS signature
+    uint8_t                     signature[TF5_IBS_SIG_LEN];  // 80B - BLMQ IBS: h[32] || S[48]
     uint8_t                     tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_extension_t;
 ```
@@ -131,7 +131,7 @@ uint64_t tf5_ibs_gnb_key_validity_to_unix(uint32_t validity_end);
 - **Signature**: SIB1 || te_version || tesla_params || validity_end || i || key_disclosure || timestamp_ms
 - **MAC**: SIB1 || validity_end
 
-**Binary Wire Format** (102 bytes, big-endian):
+**Binary Wire Format** (134 bytes, big-endian):
 
 ```
 Offset  Size  Field
@@ -146,10 +146,10 @@ Offset  Size  Field
 15      4     i (interval index)
 19      16    key_disclosure
 35      3     timestamp_ms
-38      48    signature (BLS)
-86      16    tesla_tag
+38      80    signature (BLMQ IBS: h[32] || S[48])
+118     16    tesla_tag
 ------
-102 bytes total (with BLS signatures)
+134 bytes total (with BLMQ IBS signatures)
 
 Note: T_0 now transmitted in tesla_params (authenticated by signature)
 Note: key_disclosure serves as trusted anchor (every SIB1 is signed)
@@ -170,7 +170,7 @@ typedef struct {
     uint32_t key_chain_len;         // Number of intervals N (array has N+1 entries)
 
     // IBS keys
-    uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 32B - sk_ID (issued by Core PKG)
+    uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 48B - sk_ID: G1 point [1/(H1(ID)+s)]·P
     uint32_t key_validity_end;      // Key expiration (minutes since 2024-01-01)
 
     // Timing
@@ -182,7 +182,7 @@ typedef struct {
 
 **Key constants**:
 - `TF5_TESLA_KEY_LEN` = 16 (128-bit TESLA chain keys)
-- `TF5_IBS_GNB_SK_LEN` = 32 (BLS secret key)
+- `TF5_IBS_GNB_SK_LEN` = 48 (BLMQ IBS secret key, G1 point)
 
 ---
 

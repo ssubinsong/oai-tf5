@@ -649,7 +649,7 @@ static tf5_verify_result_t tf5_verify_firsttime(NR_UE_RRC_INST_t *rrc,
     tf5_extract_cell_id_from_sib1(sib1, cell_id);
 
     /* Perform IBS signature verification */
-    int sig_rc = tf5_sig_verify(state->mpk,
+    int sig_rc = tf5_ibs_verify(state->mpk,
                                        cell_id,
                                        ext->validity_end,
                                        sig_auth_input, sig_auth_len,
@@ -1682,10 +1682,10 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
         free(ptr->SInfo.tf5_state);
         ptr->SInfo.tf5_state = NULL;
       } else {
-        // Initialize BLS library
-        int rc = tf5_bls_init();
+        // Initialize BLMQ IBS subsystem
+        int rc = tf5_ibs_init();
         if (rc != 0) {
-          LOG_E(TF5, "Failed to initialize BLS library (rc=%d)\n", rc);
+          LOG_E(TF5, "Failed to initialize BLMQ IBS subsystem (rc=%d)\n", rc);
           free(ptr->SInfo.tf5_state);
           ptr->SInfo.tf5_state = NULL;
         } else {

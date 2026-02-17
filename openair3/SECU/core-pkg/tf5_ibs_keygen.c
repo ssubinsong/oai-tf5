@@ -1,7 +1,8 @@
 /*
- * TF5 IBS - Master Keypair Generation Utility
+ * TF5 IBS - Master Keypair Generation Utility (BLMQ IBS)
  *
  * Generates the Core PKG master secret key (s) and master public key (MPK = s*Q).
+ * Master key format is unchanged between old and BLMQ IBS schemes.
  *
  * Usage: tf5_ibs_pkg_keygen <msk_path> <mpk_path>
  *

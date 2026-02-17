@@ -17,21 +17,22 @@ extern "C" {
 
 #include "tf5_test_vectors.h"
 
-class TF5GnbTest : public ::testing::Test {
+bool TF5IbsTestFixture::ibs_initialized = false;
+
+class TF5GnbTest : public TF5IbsTestFixture {
 protected:
     tf5_gnb_state_t gnb_state;
-    uint8_t test_private_key[TF5_IBS_GNB_SK_LEN];
     tf5_slot_time_t t0;
 
     void SetUp() override {
-        // Initialize BLS library
-        tf5_bls_init();
+        TF5IbsTestFixture::SetUp();
+
+        // Generate PKG keys for signing
+        setupTestDir("tf5_gnb_test");
+        generateAndLoadKeys();
 
         // Clear state
         memset(&gnb_state, 0, sizeof(gnb_state));
-
-        // Use test private key
-        memcpy(test_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_IBS_GNB_SK_LEN);
 
         // Set T_0 to SFN=0, slot=0
         t0 = tf5_slot_time_make(tf5_test::TV_T0_SFN, tf5_test::TV_T0_SLOT);
@@ -39,6 +40,7 @@ protected:
 
     void TearDown() override {
         tf5_gnb_free(&gnb_state);
+        TF5IbsTestFixture::TearDown();
     }
 
     // Helper to initialize gNB with default test parameters
@@ -48,7 +50,7 @@ protected:
             tf5_test::TV_EXT_T_INT_MS,   // t_int_ms = 20
             tf5_test::TV_EXT_D,          // d = 1
             chain_len,
-            test_private_key,
+            ibs_sk,                      // 48B G1 point sk_ID from PKG
             &t0,
             tf5_test::TV_SLOTS_PER_FRAME // slots_per_frame = 20
         );
@@ -79,7 +81,6 @@ TEST_F(TF5GnbTest, GnbInit_BootstrapKeyComputed) {
     EXPECT_EQ(0, ret);
 
     // Bootstrap key K_{-1} = F(K_0), stored at index 0
-    // K_0 is stored at index 1
     uint8_t computed_bootstrap[TF5_TESLA_KEY_LEN];
     tf5_chain_key(gnb_state.key_chain[tf5_key_interval_to_index(0)], computed_bootstrap);
 
@@ -91,8 +92,6 @@ TEST_F(TF5GnbTest, GnbInit_KeyChainValid) {
     int ret = initGnbDefault(10);
     EXPECT_EQ(0, ret);
 
-    // Verify key chain: K_i = F(K_{i+1}) for i = -1 to N-2
-    // Key chain now includes K_{-1} at index 0
     for (int32_t i = -1; i < (int32_t)gnb_state.key_chain_len - 1; i++) {
         uint8_t computed[TF5_TESLA_KEY_LEN];
         tf5_chain_key(gnb_state.key_chain[tf5_key_interval_to_index(i + 1)], computed);
@@ -118,7 +117,7 @@ TEST_F(TF5GnbTest, GnbInit_NullState_ReturnsError) {
         tf5_test::TV_EXT_T_INT_MS,
         tf5_test::TV_EXT_D,
         100,
-        test_private_key,
+        ibs_sk,
         &t0,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -146,7 +145,7 @@ TEST_F(TF5GnbTest, GnbInit_NullT0_ReturnsError) {
         tf5_test::TV_EXT_T_INT_MS,
         tf5_test::TV_EXT_D,
         100,
-        test_private_key,
+        ibs_sk,
         nullptr,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -159,8 +158,8 @@ TEST_F(TF5GnbTest, GnbInit_ZeroChainLen_ReturnsError) {
         &gnb_state,
         tf5_test::TV_EXT_T_INT_MS,
         tf5_test::TV_EXT_D,
-        0,  // Invalid chain length
-        test_private_key,
+        0,
+        ibs_sk,
         &t0,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -171,10 +170,10 @@ TEST_F(TF5GnbTest, GnbInit_ZeroChainLen_ReturnsError) {
 TEST_F(TF5GnbTest, GnbInit_ZeroInterval_ReturnsError) {
     int ret = tf5_gnb_init(
         &gnb_state,
-        0,  // Invalid interval duration
+        0,
         tf5_test::TV_EXT_D,
         100,
-        test_private_key,
+        ibs_sk,
         &t0,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -193,12 +192,8 @@ TEST_F(TF5GnbTest, PrepareExtension_Success) {
     const char sib1[] = "Test SIB1 content";
 
     int ret = tf5_gnb_prepare_extension(
-        &gnb_state,
-        5,   // SFN
-        10,  // slot
-        (const uint8_t*)sib1,
-        strlen(sib1),
-        &ext
+        &gnb_state, 5, 10,
+        (const uint8_t*)sib1, strlen(sib1), &ext
     );
 
     EXPECT_EQ(0, ret) << "prepare_extension should return 0 on success";
@@ -221,9 +216,6 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectInterval) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    // At SFN=5, slot=0, with 20 slots/frame:
-    // Total slots = 5*20 + 0 = 100 slots
-    // At 0.5ms/slot, this is 50ms = 2.5 intervals, floor = 2
     tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_EQ(2u, ext.i) << "Interval index should match calculation";
@@ -235,10 +227,8 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectKeyDisclosure_NormalInterval) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    // Force interval 5 (200 slots = SFN 10, slot 0)
     tf5_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
-    // At interval 5 with d=1, should disclose K_{5-1} = K_4
     EXPECT_EQ(0, memcmp(ext.key_disclosure, gnb_state.key_chain[tf5_key_interval_to_index(4)], TF5_TESLA_KEY_LEN))
         << "At interval 5 with d=1, should disclose K_4";
 }
@@ -249,7 +239,6 @@ TEST_F(TF5GnbTest, PrepareExtension_BootstrapInterval_DiscloseKMinus1) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    // At interval 0 (T_0), should disclose K_{-1} (bootstrap key)
     tf5_gnb_prepare_extension(&gnb_state, 0, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_EQ(0, memcmp(ext.key_disclosure, gnb_state.key_chain[tf5_key_interval_to_index(-1)], TF5_TESLA_KEY_LEN))
@@ -264,7 +253,6 @@ TEST_F(TF5GnbTest, PrepareExtension_TagComputed) {
 
     tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
-    // Tag should not be all zeros
     EXPECT_FALSE(is_all_zeros(ext.tesla_tag, TF5_TESLA_TAG_LEN))
         << "TESLA tag should be computed (not all zeros)";
 }
@@ -277,9 +265,8 @@ TEST_F(TF5GnbTest, PrepareExtension_SignatureComputed) {
 
     tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
-    // Signature should not be all zeros
     EXPECT_FALSE(is_all_zeros(ext.signature, TF5_IBS_SIG_LEN))
-        << "BLS signature should be computed (not all zeros)";
+        << "BLMQ IBS signature should be computed (not all zeros)";
 }
 
 TEST_F(TF5GnbTest, PrepareExtension_ParamsIncluded) {
@@ -296,17 +283,13 @@ TEST_F(TF5GnbTest, PrepareExtension_ParamsIncluded) {
 }
 
 TEST_F(TF5GnbTest, PrepareExtension_IntervalExceedsChain_ReturnsError) {
-    // Initialize with small chain
     ASSERT_EQ(0, initGnbDefault(10));
 
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    // Try to get extension for interval 15 (10 * 40 slots = SFN 20)
-    // which exceeds chain length of 10
     int ret = tf5_gnb_prepare_extension(
-        &gnb_state,
-        20, 0,  // Way beyond chain length
+        &gnb_state, 20, 0,
         (const uint8_t*)sib1, strlen(sib1), &ext
     );
 
@@ -349,14 +332,11 @@ TEST_F(TF5GnbTest, PrepareExtension_NullExt_ReturnsError) {
 }
 
 TEST_F(TF5GnbTest, PrepareExtension_ChainExhausted_ExactBoundary) {
-    // chain_len = 5, try interval == 5 (should fail: 0-4 are valid)
     ASSERT_EQ(0, initGnbDefault(5));
 
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    // interval = chain_len = 5: SFN = 5 * 20ms / (10ms/frame) * slots_per_frame / slots_per_frame
-    // 5 intervals * 20ms = 100ms = 10 frames = SFN 10 (at 20 slots/frame)
     int ret = tf5_gnb_prepare_extension(
         &gnb_state, 10, 0,
         (const uint8_t*)sib1, strlen(sib1), &ext
@@ -366,13 +346,11 @@ TEST_F(TF5GnbTest, PrepareExtension_ChainExhausted_ExactBoundary) {
 }
 
 TEST_F(TF5GnbTest, PrepareExtension_LastValidInterval) {
-    // chain_len = 5, interval == 4 (last valid)
     ASSERT_EQ(0, initGnbDefault(5));
 
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    // interval = 4: 4 * 20ms = 80ms = 8 frames = SFN 8
     int ret = tf5_gnb_prepare_extension(
         &gnb_state, 8, 0,
         (const uint8_t*)sib1, strlen(sib1), &ext
@@ -383,18 +361,14 @@ TEST_F(TF5GnbTest, PrepareExtension_LastValidInterval) {
 }
 
 TEST_F(TF5GnbTest, GnbInit_DoubleInit_Succeeds) {
-    // First init
     ASSERT_EQ(0, initGnbDefault(50));
     EXPECT_TRUE(gnb_state.initialized);
     EXPECT_NE(nullptr, gnb_state.key_chain);
 
-    // Second init with different params (reinit path)
     int ret = tf5_gnb_init(
         &gnb_state,
-        40,   // Different T_int
-        2,    // Different d
-        200,  // Different chain_len
-        test_private_key,
+        40, 2, 200,
+        ibs_sk,
         &t0,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -414,10 +388,6 @@ TEST_F(TF5GnbTest, GnbInit_MinimalChain) {
 }
 
 TEST_F(TF5GnbTest, PrepareExtension_TimestampZero_Handled) {
-    // This test verifies behavior when tf5_rp_get_wallclock_ms() returns 0.
-    // The implementation checks for timestamp == 0 and returns -7.
-    // We can't easily mock the wallclock, but we verify the function succeeds
-    // under normal conditions (wallclock is non-zero).
     ASSERT_EQ(0, initGnbDefault(100));
 
     tf5_extension_t ext;
@@ -428,9 +398,7 @@ TEST_F(TF5GnbTest, PrepareExtension_TimestampZero_Handled) {
         (const uint8_t*)sib1, strlen(sib1), &ext
     );
 
-    // Should succeed since wallclock is valid in test environment
     EXPECT_EQ(0, ret);
-    // Timestamp should be non-zero
     EXPECT_NE(0u, ext.timestamp_ms);
 }
 
@@ -449,7 +417,6 @@ TEST_F(TF5GnbTest, GnbFree_Success) {
 }
 
 TEST_F(TF5GnbTest, GnbFree_NullState_NoOp) {
-    // Should not crash
     tf5_gnb_free(nullptr);
     SUCCEED();
 }
@@ -458,7 +425,6 @@ TEST_F(TF5GnbTest, GnbFree_UninitializedState_NoOp) {
     tf5_gnb_state_t uninit_state;
     memset(&uninit_state, 0, sizeof(uninit_state));
 
-    // Should not crash
     tf5_gnb_free(&uninit_state);
     SUCCEED();
 }

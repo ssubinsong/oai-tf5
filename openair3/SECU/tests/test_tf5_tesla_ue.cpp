@@ -31,24 +31,43 @@ protected:
     tf5_gnb_state_t gnb_state;
     uint8_t test_private_key[TF5_IBS_GNB_SK_LEN];
 
+    // Temp dir for PKG-generated key files
+    std::string base_test_dir;
+
     void SetUp() override {
-        // Initialize BLS library
-        tf5_bls_init();
+        // Initialize IBS library
+        tf5_ibs_init();
 
         // Clear states
         memset(&ue_state, 0, sizeof(ue_state));
         memset(&gnb_state, 0, sizeof(gnb_state));
 
-        // Generate test MPK from test private key
-        memcpy(test_private_key, tf5_test::TV_BLS_SECRET_KEY, TF5_IBS_GNB_SK_LEN);
+        // Generate proper PKG keys for tests that call tf5_gnb_prepare_extension
+        base_test_dir = "/tmp/tf5_ue_base_test_" + std::to_string(getpid());
+        std::filesystem::create_directories(base_test_dir);
+        std::string msk_path = base_test_dir + "/msk.bin";
+        std::string mpk_path = base_test_dir + "/mpk.bin";
+        std::string sk_path = base_test_dir + "/sk.bin";
 
-        // For basic tests, use a dummy MPK (96 bytes)
-        memset(test_mpk, 0x42, TF5_IBS_MPK_LEN);
+        uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x00, 0x00, 0x00, 0x0e, 0x00};
+        tf5_ibs_generate_master_keypair(msk_path.c_str(), mpk_path.c_str());
+        tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, 1051200, sk_path.c_str());
+
+        tf5_load_core_mpk(mpk_path.c_str(), test_mpk);
+
+        FILE *f = fopen(sk_path.c_str(), "rb");
+        uint8_t sk_file[TF5_IBS_SK_FILE_SIZE];
+        fread(sk_file, 1, TF5_IBS_SK_FILE_SIZE, f);
+        fclose(f);
+        memcpy(test_private_key, sk_file, TF5_IBS_GNB_SK_LEN);
     }
 
     void TearDown() override {
         tf5_ue_free(&ue_state);
         tf5_gnb_free(&gnb_state);
+        if (!base_test_dir.empty()) {
+            std::filesystem::remove_all(base_test_dir);
+        }
     }
 
     // Helper to initialize UE with default test parameters
@@ -551,17 +570,17 @@ TEST_F(TF5UeTest, VerifyBuffered_EmptyBuffer_ReturnsNoData) {
 }
 
 // ============================================================================
-// IBS Signature Verification Tests (tf5_sig_verify)
+// IBS Signature Verification Tests (tf5_ibs_verify)
 // ============================================================================
 
 /**
- * Test fixture for IBS signature verification (tf5_sig_verify) that uses
+ * Test fixture for IBS signature verification (tf5_ibs_verify) that uses
  * Core PKG library to generate properly issued IBS keys.
  */
-bool TF5IbsTestFixture::bls_initialized = false;
+bool TF5IbsTestFixture::ibs_initialized = false;
 
 /**
- * Test fixture for IBS signature verification (tf5_sig_verify) that uses
+ * Test fixture for IBS signature verification (tf5_ibs_verify) that uses
  * Core PKG library to generate properly issued IBS keys.
  * Inherits UE state from TF5UeTest and IBS key management from TF5IbsTestFixture
  * (via composition, since C++ lacks multiple inheritance of test fixtures cleanly).
@@ -574,20 +593,20 @@ protected:
     std::string mpk_path;
     std::string sk_gnb_path;
 
-    uint8_t ibs_msk[TF5_IBS_GNB_SK_LEN];
+    uint8_t ibs_msk[TF5_IBS_MASTER_SECRET_LEN];
     uint8_t ibs_mpk[TF5_IBS_MPK_LEN];
     uint8_t ibs_sk[TF5_IBS_GNB_SK_LEN];
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     uint32_t validity_end;
 
-    static bool bls_initialized;
+    static bool ibs_initialized;
 
     void SetUp() override {
         TF5UeTest::SetUp();
 
-        if (!bls_initialized) {
-            tf5_bls_init();
-            bls_initialized = true;
+        if (!ibs_initialized) {
+            tf5_ibs_init();
+            ibs_initialized = true;
         }
 
         memset(cell_id, 0, TF5_IBS_CELL_ID_LEN);
@@ -645,12 +664,12 @@ protected:
 
     void createValidSignature(const uint8_t* auth_input, size_t auth_input_len,
                               uint8_t signature_out[TF5_IBS_SIG_LEN]) {
-        int rc = tf5_bls_sign(ibs_sk, auth_input, auth_input_len, signature_out);
+        int rc = tf5_ibs_sign(ibs_sk, auth_input, auth_input_len, signature_out);
         ASSERT_EQ(0, rc) << "Failed to create signature";
     }
 };
 
-bool TF5UeSignatureTest::bls_initialized = false;
+bool TF5UeSignatureTest::ibs_initialized = false;
 
 // IBS signature verification test using PKG-generated keys
 TEST_F(TF5UeSignatureTest, VerifySignature_ValidIBS_ReturnsZero) {
@@ -660,7 +679,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_ValidIBS_ReturnsZero) {
     // Create a valid IBS signature using the PKG-issued key
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
 
-    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_ibs_verify(ibs_mpk, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -677,7 +696,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_TamperedData_Fails) {
     // Verify with tampered data
     const char tampered_input[] = "tampered authentication input";
 
-    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_ibs_verify(ibs_mpk, cell_id, validity_end,
                                    (const uint8_t*)tampered_input, strlen(tampered_input),
                                    signature);
 
@@ -695,7 +714,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_TamperedSignature_Fails) {
     signature[0] ^= 0xFF;
     signature[10] ^= 0xFF;
 
-    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_ibs_verify(ibs_mpk, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -712,7 +731,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_WrongCellId_Fails) {
     // Use wrong cell ID
     uint8_t wrong_cell_id[TF5_IBS_CELL_ID_LEN] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
 
-    int ret = tf5_sig_verify(ibs_mpk, wrong_cell_id, validity_end,
+    int ret = tf5_ibs_verify(ibs_mpk, wrong_cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -729,7 +748,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_WrongValidity_Fails) {
     // Use wrong validity
     uint32_t wrong_validity = 999999;
 
-    int ret = tf5_sig_verify(ibs_mpk, cell_id, wrong_validity,
+    int ret = tf5_ibs_verify(ibs_mpk, cell_id, wrong_validity,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -748,7 +767,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_WrongMpk_Fails) {
     createValidSignature((const uint8_t*)auth_input, strlen(auth_input), signature);
 
     // Verify with wrong MPK - should fail
-    int ret = tf5_sig_verify(wrong_mpk, cell_id, validity_end,
+    int ret = tf5_ibs_verify(wrong_mpk, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -759,7 +778,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullMpk_ReturnsError) {
     const char auth_input[] = "test";
     uint8_t signature[TF5_IBS_SIG_LEN] = {0};
 
-    int ret = tf5_sig_verify(nullptr, cell_id, validity_end,
+    int ret = tf5_ibs_verify(nullptr, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -770,7 +789,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullCellId_ReturnsError) {
     const char auth_input[] = "test";
     uint8_t signature[TF5_IBS_SIG_LEN] = {0};
 
-    int ret = tf5_sig_verify(ibs_mpk, nullptr, validity_end,
+    int ret = tf5_ibs_verify(ibs_mpk, nullptr, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    signature);
 
@@ -780,7 +799,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullCellId_ReturnsError) {
 TEST_F(TF5UeSignatureTest, VerifySignature_NullAuthInput_ReturnsError) {
     uint8_t signature[TF5_IBS_SIG_LEN] = {0};
 
-    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_ibs_verify(ibs_mpk, cell_id, validity_end,
                                    nullptr, 10, signature);
 
     EXPECT_LT(ret, 0) << "Null auth_input should return error";
@@ -789,7 +808,7 @@ TEST_F(TF5UeSignatureTest, VerifySignature_NullAuthInput_ReturnsError) {
 TEST_F(TF5UeSignatureTest, VerifySignature_NullSignature_ReturnsError) {
     const char auth_input[] = "test";
 
-    int ret = tf5_sig_verify(ibs_mpk, cell_id, validity_end,
+    int ret = tf5_ibs_verify(ibs_mpk, cell_id, validity_end,
                                    (const uint8_t*)auth_input, strlen(auth_input),
                                    nullptr);
 

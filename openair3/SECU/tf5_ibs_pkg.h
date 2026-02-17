@@ -1,19 +1,20 @@
 /**
  * @file tf5_ibs_pkg.h
- * @brief Core PKG for TF5 Identity-Based Signature (IBS) scheme
+ * @brief Core PKG for TF5 BLMQ Identity-Based Signature (IBS) scheme
  *
- * This module implements the Core PKG for the TESLA IBS scheme.
+ * This module implements the Core PKG for the TESLA BLMQ IBS scheme
+ * (Barreto-Libert-McCullagh-Quisquater, ASIACRYPT 2005 Section 3).
  * The PKG generates master keys and issues gNB-specific secret keys
  * based on the gNB's NR Cell ID and key validity period.
  *
- * IBS Scheme (BLS-based):
+ * BLMQ IBS Scheme:
  *   - Master secret: s (scalar in Z_r)
  *   - Master public key: MPK = s*Q where Q is G2 generator
  *   - gNB identity: NR Cell ID (36 bits) || gnb_key_validity_end (24 bits)
- *   - gNB public key: pk_ID = H_s(Cell_ID || gnb_key_validity_end) (scalar)
- *   - gNB secret key: sk_ID = s * pk_ID mod r (scalar)
- *   - Signature: Sigma = sk_ID * H_m(m) (G1 point)
- *   - Verification: e(Sigma, Q) = e(H_m(m), pk_ID * MPK)
+ *   - H1(ID) = hash_to_scalar(Cell_ID || gnb_key_validity_end) (scalar)
+ *   - gNB secret key: sk_ID = [1/(H1(ID)+s)] * P (G1 point, 48 bytes)
+ *   - Signature: σ = (h, S) where h ∈ Z*p, S = (x+h)*sk_ID ∈ G1 (80 bytes)
+ *   - Verification: h == H2(M, e(S, H1(ID)*Q+Qpub) * g^{-h})
  */
 
 #ifndef TF5_IBS_PKG_H
@@ -47,12 +48,12 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path);
 /**
  * Issue gNB secret key from Cell ID and validity period
  *
- * Computes the gNB's secret key as sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r
+ * Computes the gNB's secret key as sk_ID = [1/(H1(ID)+s)] * P ∈ G1 (48 bytes)
  *
  * @param msk_path     Path to master secret key file
  * @param cell_id      NR Cell ID (5 bytes, 36 bits with 4 padding bits)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
- * @param sk_path      Path to save gNB secret key (32 bytes, binary)
+ * @param sk_path      Path to save gNB secret key (51 bytes: 48B G1 point + 3B validity)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_WRITE,
  *         or propagated error from tf5_ibs_load_master_secret / tf5_ibs_compute_gnb_secret
  */
@@ -121,14 +122,14 @@ int tf5_ibs_load_master_secret(const char *filepath,
                                 uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN]);
 
 /**
- * Compute gNB secret key from master secret, Cell ID, and validity period
+ * Compute BLMQ IBS gNB secret key from master secret, Cell ID, and validity period
  *
- * sk_ID = s * H_s(cell_id || gnb_key_validity_end) mod r
+ * sk_ID = [1/(H1(ID)+s)] * P ∈ G1  (48 bytes, compressed G1 point)
  *
  * @param msk          Master secret key (32 bytes)
  * @param cell_id      NR Cell ID (5 bytes)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
- * @param sk_out       Output gNB secret key (32 bytes)
+ * @param sk_out       Output gNB secret key (48 bytes, compressed G1 point)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_KEY_INVALID, TF5_ERR_CRYPTO
  */
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],

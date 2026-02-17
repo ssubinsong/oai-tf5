@@ -7,99 +7,29 @@
 #include <string.h>
 #include <stdio.h>
 #include <openssl/crypto.h>
+#include <openssl/rand.h>
+#include <openssl/sha.h>
 #include "blst.h"
 
-/* Domain Separation Tag for hash-to-curve (IETF BLS basic scheme) */
-static const uint8_t TF5_BLS_DST[] = "BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_";
-static const size_t TF5_BLS_DST_LEN = sizeof(TF5_BLS_DST) - 1;
+/* ==========================================================================
+ * Precomputed globals (set once in tf5_ibs_init)
+ * ========================================================================== */
 
-int tf5_bls_init(void)
-{
-    /* blst library requires no initialization - it is stateless */
-    LOG_I(TF5, "BLST library ready (BLS12-381, pk-in-G2 mode)\n");
-    return 0;
-}
+/* g = e(P, Q) ∈ GT — base for g^x in signing */
+static blst_fp12 s_g;
 
-int tf5_bls_derive_pubkey(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
-                                uint8_t public_key[TF5_IBS_GNB_PK_LEN])
-{
-    if (!secret_key || !public_key) {
-        return TF5_ERR_INVALID_PARAM;
-    }
+/* Q (G2 generator) in affine form — for Miller loops */
+static blst_p2_affine s_Q_affine;
 
-    blst_scalar sk;
-    blst_p2 pk_p2;
+/* P (G1 generator) in affine form — for g^{-h} computation */
+static blst_p1_affine s_P_affine;
 
-    /* Deserialize secret key (big-endian) */
-    blst_scalar_from_bendian(&sk, secret_key);
+static int s_initialized = 0;
 
-    /* Check secret key validity */
-    if (!blst_sk_check(&sk)) {
-        LOG_E(TF5, "Invalid secret key scalar\n");
-        return TF5_ERR_KEY_INVALID;
-    }
+/* ==========================================================================
+ * Thread-local MPK cache (avoids repeated deserialization on UE side)
+ * ========================================================================== */
 
-    /* Derive public key in G2 */
-    blst_sk_to_pk_in_g2(&pk_p2, &sk);
-
-    /* Serialize public key (compressed, 96 bytes) */
-    blst_p2_compress(public_key, &pk_p2);
-
-    /* Clear secret key from memory */
-    OPENSSL_cleanse(&sk, sizeof(sk));
-
-    return 0;
-}
-
-int tf5_bls_sign(const uint8_t secret_key[TF5_IBS_GNB_SK_LEN],
-                       const uint8_t *data,
-                       size_t data_len,
-                       uint8_t signature[TF5_IBS_SIG_LEN])
-{
-    if (!secret_key || !data || !signature || data_len == 0) {
-        return TF5_ERR_INVALID_PARAM;
-    }
-
-    blst_scalar sk;
-    blst_p1 hash_point;
-    blst_p1 sig_p1;
-
-    /* Deserialize secret key (big-endian) */
-    blst_scalar_from_bendian(&sk, secret_key);
-
-    /* Check secret key validity */
-    if (!blst_sk_check(&sk)) {
-        LOG_E(TF5, "Invalid secret key for signing\n");
-        OPENSSL_cleanse(&sk, sizeof(sk));
-        return TF5_ERR_KEY_INVALID;
-    }
-
-    /* Hash message to G1 */
-    blst_hash_to_g1(&hash_point, data, data_len, TF5_BLS_DST, TF5_BLS_DST_LEN, NULL, 0);
-
-    /* Sign: sig = sk * H(m) */
-    blst_sign_pk_in_g2(&sig_p1, &hash_point, &sk);
-
-    /* Serialize signature (compressed, 48 bytes) */
-    blst_p1_compress(signature, &sig_p1);
-
-    /* Clear secret key from memory */
-    OPENSSL_cleanse(&sk, sizeof(sk));
-
-    return 0;
-}
-
-/*
- * =============================================================================
- * IBS (Identity-Based Signature) Functions
- * =============================================================================
- */
-
-/*
- * Thread-local MPK cache for verification fast path.
- * Only MPK parsing/in-G2 checks are cached; per-message derived_pk and pairing
- * verification remain unchanged.
- */
 typedef struct {
     int valid;
     uint8_t mpk[TF5_IBS_GNB_PK_LEN];
@@ -108,35 +38,224 @@ typedef struct {
 
 static __thread tf5_mpk_cache_t s_mpk_cache = {0};
 
-int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
-                          const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                          uint32_t gnb_key_validity_end,
-                          const uint8_t *data,
-                          size_t data_len,
-                          const uint8_t signature[TF5_IBS_SIG_LEN])
+/* ==========================================================================
+ * H2: {0,1}* × GT → Z*p
+ *
+ * Implements H2(data, r) = blst_keygen(SHA-256(DST_H2 || data || r_bytes))
+ * where r_bytes is the serialized GT element.
+ * ========================================================================== */
+
+static int tf5_ibs_h2(const uint8_t *data,
+                       size_t data_len,
+                       const blst_fp12 *r,
+                       blst_scalar *h_out)
+{
+    /*
+     * Build IKM = SHA-256(DST_H2 || data || r_serialized)
+     * This reduces the variable-length input to a fixed 32-byte IKM,
+     * then blst_keygen performs HKDF + mod r reduction.
+     */
+    SHA256_CTX sha;
+    uint8_t digest[SHA256_DIGEST_LENGTH];
+
+    SHA256_Init(&sha);
+    SHA256_Update(&sha, TF5_IBS_DST_H2, TF5_IBS_DST_H2_LEN);
+    SHA256_Update(&sha, data, data_len);
+    SHA256_Update(&sha, (const uint8_t *)r, sizeof(blst_fp12));
+    SHA256_Final(digest, &sha);
+
+    /* Use blst_keygen for proper mod r reduction */
+    blst_keygen(h_out, digest, sizeof(digest), NULL, 0);
+    OPENSSL_cleanse(digest, sizeof(digest));
+
+    return 0;
+}
+
+/* ==========================================================================
+ * Public API
+ * ========================================================================== */
+
+int tf5_ibs_init(void)
+{
+    /* Compute g = e(P, Q) where P is G1 generator, Q is G2 generator */
+    const blst_p1_affine *P = blst_p1_affine_generator();
+    const blst_p2_affine *Q = blst_p2_affine_generator();
+
+    s_P_affine = *P;
+    s_Q_affine = *Q;
+
+    /* g = e(P, Q) via Miller loop + final exponentiation */
+    blst_miller_loop(&s_g, Q, P);
+    blst_final_exp(&s_g, &s_g);
+
+    s_initialized = 1;
+
+    LOG_I(TF5, "BLMQ IBS subsystem initialized (BLS12-381, single-pairing verification)\n");
+    return 0;
+}
+
+int tf5_ibs_validate_sk(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN])
+{
+    if (!sk_id) {
+        return TF5_ERR_INVALID_PARAM;
+    }
+
+    blst_p1_affine sk_affine;
+    BLST_ERROR err = blst_p1_uncompress(&sk_affine, sk_id);
+    if (err != BLST_SUCCESS) {
+        LOG_E(TF5, "Failed to decompress sk_ID: %d\n", err);
+        return TF5_ERR_KEY_INVALID;
+    }
+
+    if (!blst_p1_affine_in_g1(&sk_affine)) {
+        LOG_E(TF5, "sk_ID not in G1 subgroup\n");
+        return TF5_ERR_KEY_INVALID;
+    }
+
+    if (blst_p1_affine_is_inf(&sk_affine)) {
+        LOG_E(TF5, "sk_ID is identity (infinity)\n");
+        return TF5_ERR_KEY_INVALID;
+    }
+
+    return TF5_OK;
+}
+
+int tf5_ibs_sign(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
+                 const uint8_t *data,
+                 size_t data_len,
+                 uint8_t signature[TF5_IBS_SIG_LEN])
+{
+    if (!sk_id || !data || !signature || data_len == 0) {
+        return TF5_ERR_INVALID_PARAM;
+    }
+
+    if (!s_initialized) {
+        LOG_E(TF5, "BLMQ IBS not initialized (call tf5_ibs_init first)\n");
+        return TF5_ERR_SIGN;
+    }
+
+    blst_p1_affine sk_affine;
+    blst_p1 sk_p1;
+    blst_scalar x, h, xph;
+    blst_fp12 r;
+    blst_p1 S;
+
+    /* Step 1: Deserialize sk_ID from compressed G1 (48B) */
+    BLST_ERROR err = blst_p1_uncompress(&sk_affine, sk_id);
+    if (err != BLST_SUCCESS) {
+        LOG_E(TF5, "Failed to decompress sk_ID for signing: %d\n", err);
+        return TF5_ERR_KEY_INVALID;
+    }
+    blst_p1_from_affine(&sk_p1, &sk_affine);
+
+    /* Step 2: Generate random x via RAND_bytes + blst_keygen */
+    uint8_t rand_bytes[32];
+    if (RAND_bytes(rand_bytes, 32) != 1) {
+        LOG_E(TF5, "RNG failure in BLMQ signing\n");
+        return TF5_ERR_CRYPTO;
+    }
+    blst_keygen(&x, rand_bytes, 32, NULL, 0);
+    OPENSSL_cleanse(rand_bytes, 32);
+
+    /* Step 3: Compute r = g^x ∈ GT
+     * g^x = e(P, Q)^x = e(xP, Q)
+     * We compute xP first, then Miller loop with Q */
+    blst_p1 xP;
+    uint8_t x_le[32];
+    blst_lendian_from_scalar(x_le, &x);
+    blst_p1_mult(&xP, blst_p1_generator(), x_le, 256);
+    OPENSSL_cleanse(x_le, 32);
+
+    blst_p1_affine xP_affine;
+    blst_p1_to_affine(&xP_affine, &xP);
+    blst_miller_loop(&r, &s_Q_affine, &xP_affine);
+    blst_final_exp(&r, &r);
+
+    /* Step 4: Compute h = H2(data, r) */
+    tf5_ibs_h2(data, data_len, &r, &h);
+
+    /* Step 5: Compute (x + h) mod r */
+    if (!blst_sk_add_n_check(&xph, &x, &h)) {
+        LOG_E(TF5, "Scalar addition (x+h) failed\n");
+        OPENSSL_cleanse(&x, sizeof(x));
+        OPENSSL_cleanse(&h, sizeof(h));
+        return TF5_ERR_SIGN;
+    }
+    OPENSSL_cleanse(&x, sizeof(x));
+
+    /* Step 6: Compute S = (x+h) * sk_ID ∈ G1 */
+    uint8_t xph_le[32];
+    blst_lendian_from_scalar(xph_le, &xph);
+    blst_p1_mult(&S, &sk_p1, xph_le, 256);
+    OPENSSL_cleanse(xph_le, 32);
+    OPENSSL_cleanse(&xph, sizeof(xph));
+
+    /* Step 7: Output signature = h_bytes[32] || S_compressed[48] */
+    blst_bendian_from_scalar(signature, &h);
+    blst_p1_compress(signature + TF5_IBS_SIG_H_LEN, &S);
+    OPENSSL_cleanse(&h, sizeof(h));
+
+    return TF5_OK;
+}
+
+int tf5_ibs_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
+                   const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                   uint32_t gnb_key_validity_end,
+                   const uint8_t *data,
+                   size_t data_len,
+                   const uint8_t signature[TF5_IBS_SIG_LEN])
 {
     if (!mpk || !cell_id || !data || !signature || data_len == 0) {
         return TF5_ERR_INVALID_PARAM;
     }
 
-    blst_scalar pk_id;
-    blst_p2_affine mpk_affine;
-    blst_p2 derived_pk;
-    blst_p2_affine pk_final;
-    blst_p1_affine sig_affine;
-    uint8_t pk_id_bytes[32];
+    if (!s_initialized) {
+        LOG_E(TF5, "BLMQ IBS not initialized (call tf5_ibs_init first)\n");
+        return TF5_ERR_VERIFY;
+    }
+
     BLST_ERROR err;
 
-    /* Step 1: Compute pk_ID = H_s(cell_id || gnb_key_validity_end) */
-    uint8_t pk_id_scalar[TF5_IBS_GNB_SK_LEN];
-    if (tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, pk_id_scalar) != 0) {
-        LOG_E(TF5, "Failed to compute pk_ID hash\n");
+    /* Step 1: Parse signature → h[32] and S[48] */
+    blst_scalar h;
+    blst_scalar_from_bendian(&h, signature);
+    if (!blst_sk_check(&h)) {
+        /* h must be a valid non-zero scalar in [1, r-1] */
+        LOG_W(TF5, "Signature h is not a valid scalar\n");
+        return TF5_ERR_VERIFY;
+    }
+
+    blst_p1_affine S_affine;
+    err = blst_p1_uncompress(&S_affine, signature + TF5_IBS_SIG_H_LEN);
+    if (err != BLST_SUCCESS) {
+        LOG_W(TF5, "Failed to deserialize S from signature: %d\n", err);
+        return TF5_ERR_KEY_INVALID;
+    }
+    if (!blst_p1_affine_in_g1(&S_affine)) {
+        LOG_W(TF5, "Signature S not in G1\n");
+        return TF5_ERR_KEY_INVALID;
+    }
+
+    /* Step 2: Compute H1(ID) */
+    uint8_t h1_bytes[TF5_BLS_SCALAR_LEN];
+    if (tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN,
+                                gnb_key_validity_end, h1_bytes) != 0) {
+        LOG_E(TF5, "Failed to compute H1(ID)\n");
         return TF5_ERR_CRYPTO;
     }
-    blst_scalar_from_bendian(&pk_id, pk_id_scalar);
-    OPENSSL_cleanse(pk_id_scalar, sizeof(pk_id_scalar));
+    blst_scalar h1_scalar;
+    blst_scalar_from_bendian(&h1_scalar, h1_bytes);
+    OPENSSL_cleanse(h1_bytes, sizeof(h1_bytes));
 
-    /* Step 2: Deserialize/validate MPK once per thread and cache result */
+    /* Step 3: Compute QID = H1(ID)*Q + Qpub ∈ G2 */
+    blst_p2 h1Q;
+    uint8_t h1_le[32];
+    blst_lendian_from_scalar(h1_le, &h1_scalar);
+    blst_p2_mult(&h1Q, blst_p2_generator(), h1_le, 256);
+    OPENSSL_cleanse(h1_le, 32);
+
+    /* Deserialize/cache MPK (Qpub) */
+    blst_p2_affine mpk_affine;
     if (s_mpk_cache.valid &&
         memcmp(s_mpk_cache.mpk, mpk, TF5_IBS_GNB_PK_LEN) == 0) {
         mpk_affine = s_mpk_cache.mpk_affine;
@@ -144,65 +263,72 @@ int tf5_sig_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
         err = blst_p2_uncompress(&mpk_affine, mpk);
         if (err != BLST_SUCCESS) {
             LOG_E(TF5, "Failed to deserialize MPK: %d\n", err);
-            OPENSSL_cleanse(&pk_id, sizeof(pk_id));
             return TF5_ERR_KEY_INVALID;
         }
-
         memcpy(s_mpk_cache.mpk, mpk, TF5_IBS_GNB_PK_LEN);
         s_mpk_cache.mpk_affine = mpk_affine;
         s_mpk_cache.valid = 1;
     }
 
-    /* Step 3: Compute derived_pk = pk_ID * MPK */
-    blst_p2_from_affine(&derived_pk, &mpk_affine);
+    blst_p2 Qpub;
+    blst_p2_from_affine(&Qpub, &mpk_affine);
 
-    /* Serialize pk_id as little-endian bytes for scalar multiplication
-     * Note: blst_p2_mult expects scalar in little-endian format */
-    blst_lendian_from_scalar(pk_id_bytes, &pk_id);
+    /* QID = H1(ID)*Q + Qpub */
+    blst_p2 QID;
+    blst_p2_add_or_double(&QID, &h1Q, &Qpub);
 
-    /* Scalar multiplication: derived_pk = pk_ID * MPK */
-    blst_p2_mult(&derived_pk, &derived_pk, pk_id_bytes, 256);
+    blst_p2_affine QID_affine;
+    blst_p2_to_affine(&QID_affine, &QID);
 
-    /* Clear sensitive pk_id_bytes */
-    OPENSSL_cleanse(pk_id_bytes, sizeof(pk_id_bytes));
-    OPENSSL_cleanse(&pk_id, sizeof(pk_id));
-
-    /* Step 4: Convert to affine for verification */
-    blst_p2_to_affine(&pk_final, &derived_pk);
-
-    /* Check derived key is valid (not point at infinity) */
-    if (blst_p2_affine_is_inf(&pk_final)) {
-        LOG_E(TF5, "Derived public key is infinity\n");
+    if (blst_p2_affine_is_inf(&QID_affine)) {
+        LOG_E(TF5, "QID is infinity (H1(ID) + s = 0 mod r)\n");
         return TF5_ERR_KEY_INVALID;
     }
 
-    /* Step 5: Deserialize signature */
-    err = blst_p1_uncompress(&sig_affine, signature);
-    if (err != BLST_SUCCESS) {
-        LOG_E(TF5, "Failed to deserialize signature: %d\n", err);
-        return TF5_ERR_KEY_INVALID;
-    }
+    /* Step 4: Compute -hP ∈ G1 (for g^{-h} term) */
+    blst_p1 hP;
+    uint8_t h_le[32];
+    blst_lendian_from_scalar(h_le, &h);
+    blst_p1_mult(&hP, blst_p1_generator(), h_le, 256);
+    OPENSSL_cleanse(h_le, 32);
 
-    /* Validate signature is in G1 */
-    if (!blst_p1_affine_in_g1(&sig_affine)) {
-        LOG_E(TF5, "Signature not in G1\n");
-        return TF5_ERR_KEY_INVALID;
-    }
+    /* Negate: -hP */
+    blst_p1_cneg(&hP, 1);
 
-    /* Step 6: Verify e(Σ, Q) = e(H_m(m), pk_ID * MPK) */
-    err = blst_core_verify_pk_in_g2(&pk_final, &sig_affine,
-                                     1,  /* hash_or_encode = true */
-                                     data, data_len,
-                                     TF5_BLS_DST, TF5_BLS_DST_LEN,
-                                     NULL, 0);  /* No augmentation */
+    blst_p1_affine neg_hP_affine;
+    blst_p1_to_affine(&neg_hP_affine, &hP);
 
-    if (err != BLST_SUCCESS) {
-        LOG_W(TF5, "Signature verification failed: %d\n", err);
+    /* Step 5: Multi-Miller loop: ML(S, QID) * ML(-hP, Q) */
+    const blst_p1_affine *p1s[2] = { &S_affine, &neg_hP_affine };
+    const blst_p2_affine *p2s[2] = { &QID_affine, &s_Q_affine };
+
+    blst_fp12 r_prime;
+    blst_miller_loop_n(&r_prime, p2s, p1s, 2);
+
+    /* Step 6: Final exponentiation → r' */
+    blst_final_exp(&r_prime, &r_prime);
+
+    /* Step 7: Compute h' = H2(data, r') */
+    blst_scalar h_prime;
+    tf5_ibs_h2(data, data_len, &r_prime, &h_prime);
+
+    /* Step 8: Accept iff h == h' (constant-time comparison) */
+    uint8_t h_bytes[32], h_prime_bytes[32];
+    blst_bendian_from_scalar(h_bytes, &h);
+    blst_bendian_from_scalar(h_prime_bytes, &h_prime);
+
+    if (CRYPTO_memcmp(h_bytes, h_prime_bytes, 32) != 0) {
+        LOG_W(TF5, "BLMQ IBS signature verification failed: h != h'\n");
+        OPENSSL_cleanse(h_bytes, 32);
+        OPENSSL_cleanse(h_prime_bytes, 32);
         return TF5_ERR_VERIFY;
     }
 
-    LOG_D(TF5, "Signature verified successfully\n");
-    return 0;
+    OPENSSL_cleanse(h_bytes, 32);
+    OPENSSL_cleanse(h_prime_bytes, 32);
+
+    LOG_D(TF5, "BLMQ IBS signature verified successfully\n");
+    return TF5_OK;
 }
 
 #endif /* ENABLE_TF5 */

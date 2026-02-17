@@ -85,18 +85,18 @@ protected:
     std::string mpk_path;
     std::string sk_gnb_path;
 
-    uint8_t ibs_msk[TF5_IBS_GNB_SK_LEN];
+    uint8_t ibs_msk[TF5_IBS_MASTER_SECRET_LEN];
     uint8_t ibs_mpk[TF5_IBS_MPK_LEN];
-    uint8_t ibs_sk[TF5_IBS_GNB_SK_LEN];
+    uint8_t ibs_sk[TF5_IBS_GNB_SK_LEN];  // 48B G1 point for BLMQ
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     uint32_t validity_end;
 
-    static bool bls_initialized;
+    static bool ibs_initialized;
 
     void SetUp() override {
-        if (!bls_initialized) {
-            tf5_bls_init();
-            bls_initialized = true;
+        if (!ibs_initialized) {
+            tf5_ibs_init();
+            ibs_initialized = true;
         }
 
         memset(cell_id, 0, TF5_IBS_CELL_ID_LEN);
@@ -153,6 +153,6 @@ protected:
 
 // Static member definition - must be in exactly one translation unit
 // Each test file that uses TF5IbsTestFixture should define this:
-//   bool TF5IbsTestFixture::bls_initialized = false;
+//   bool TF5IbsTestFixture::ibs_initialized = false;
 
 #endif /* TF5_TEST_COMMON_H */

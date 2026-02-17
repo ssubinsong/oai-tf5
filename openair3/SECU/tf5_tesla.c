@@ -278,7 +278,7 @@ int tf5_pack_extension(const tf5_extension_t *ext,
     tf5_encode_u24_be(buf + offset, ext->timestamp_ms);
     offset += 3;
 
-    // Signature (48 bytes - BLS)
+    // Signature (80 bytes - BLMQ IBS: h[32] || S[48])
     memcpy(buf + offset, ext->signature, TF5_IBS_SIG_LEN);
     offset += TF5_IBS_SIG_LEN;
 
@@ -326,7 +326,7 @@ int tf5_unpack_extension(const uint8_t *buf,
     ext->timestamp_ms = tf5_decode_u24_be(buf + offset);
     offset += 3;
 
-    // Signature (48 bytes - BLS)
+    // Signature (80 bytes - BLMQ IBS: h[32] || S[48])
     memcpy(ext->signature, buf + offset, TF5_IBS_SIG_LEN);
     offset += TF5_IBS_SIG_LEN;
 
@@ -497,8 +497,8 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
         return rc;
     }
 
-    // Compute BLS signature over full content
-    rc = tf5_bls_sign(state->private_key,
+    // Compute BLMQ IBS signature over full content
+    rc = tf5_ibs_sign(state->private_key,
                             sig_auth_input, sig_auth_input_len,
                             ext->signature);
     if (rc != 0) {
@@ -839,7 +839,7 @@ int tf5_load_gnb_privkey(const char *filepath,
         return TF5_ERR_FILE_OPEN;
     }
 
-    // Read 35-byte key file: sk_ID (32 bytes) + gnb_key_validity_end (3 bytes, big-endian)
+    // Read 51-byte key file: sk_ID (48 bytes, G1 point) + gnb_key_validity_end (3 bytes, big-endian)
     uint8_t buffer[TF5_IBS_SK_FILE_SIZE];
     size_t n = fread(buffer, 1, TF5_IBS_SK_FILE_SIZE, fp);
     fclose(fp);
@@ -850,19 +850,18 @@ int tf5_load_gnb_privkey(const char *filepath,
         return TF5_ERR_FILE_IO;
     }
 
-    // Extract secret key (bytes 0-31)
+    // Extract secret key (bytes 0-47, G1 point)
     memcpy(privkey_out, buffer, TF5_IBS_GNB_SK_LEN);
 
-    // Extract validity from bytes 32-34 (big-endian)
-    *validity_out = tf5_decode_u24_be(&buffer[32]);
+    // Extract validity from bytes 48-50 (big-endian)
+    *validity_out = tf5_decode_u24_be(&buffer[TF5_IBS_GNB_SK_LEN]);
 
     // Clear buffer
     OPENSSL_cleanse(buffer, TF5_IBS_SK_FILE_SIZE);
 
-    // Validate by trying to derive public key (this checks the key is valid)
-    uint8_t pubkey_test[TF5_IBS_MPK_LEN];
-    if (tf5_bls_derive_pubkey(privkey_out, pubkey_test) != 0) {
-        LOG_E(TF5, "Invalid BLS secret key format\n");
+    // Validate sk_ID: decompress G1, check subgroup membership, not infinity
+    if (tf5_ibs_validate_sk(privkey_out) != 0) {
+        LOG_E(TF5, "Invalid BLMQ IBS secret key format\n");
         OPENSSL_cleanse(privkey_out, TF5_IBS_GNB_SK_LEN);
         return TF5_ERR_KEY_INVALID;
     }

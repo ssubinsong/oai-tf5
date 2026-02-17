@@ -103,13 +103,13 @@ tf5_ibs_issue <msk_path> <cell_id_hex> <validity_end> <sk_path>
 |----------|------|-------------|
 | Master secret (msk) | 32 bytes | Scalar (big-endian) |
 | Master public (mpk) | 96 bytes | G2 point (compressed) |
-| gNB secret (sk_ID) | 35 bytes | Scalar (32B) + validity (3B, big-endian) |
+| gNB secret (sk_ID) | 51 bytes | G1 point (48B) + validity (3B, big-endian) |
 
 Inspect generated keys with:
 ```bash
 xxd pkg_keys/msk.bin   # Should show 32 bytes
 xxd pkg_keys/mpk.bin   # Should show 96 bytes
-xxd gnb_keys/sk_gnb.bin  # Should show 35 bytes (32B sk + 3B validity)
+xxd gnb_keys/sk_gnb.bin  # Should show 51 bytes (48B sk_ID G1 point + 3B validity)
 ```
 
 ### Required Parameters
@@ -118,10 +118,10 @@ Key paths **must** be specified explicitly on the command line (no defaults):
 
 | Component | Parameter | Description |
 |-----------|-----------|-------------|
-| gNB | `--tf5-privkey` | Path to gNB's secret key file (35 bytes: sk_ID + validity) |
+| gNB | `--tf5-privkey` | Path to gNB's secret key file (51 bytes: sk_ID G1 point + validity) |
 | UE | `--tesla-core-mpk` | Path to Core's Master Public Key (MPK) |
 
-**Note**: The validity period is embedded in the 35-byte key file (bytes 32-34, big-endian).
+**Note**: The validity period is embedded in the 51-byte key file (bytes 48-50, big-endian).
 
 ### Running with TESLA
 
@@ -161,8 +161,8 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 - Mismatch causes signature verification failure
 
 **Validity binding:**
-- The validity period is embedded in the 35-byte key file (bytes 32-34, big-endian)
-- Both Cell ID and gnb_key_validity_end are hashed together: `pk_ID = H_s(Cell_ID || gnb_key_validity_end)`
+- The validity period is embedded in the 51-byte key file (bytes 48-50, big-endian)
+- Both Cell ID and gnb_key_validity_end are hashed together: `H1(Cell_ID || gnb_key_validity_end)`
 - UE extracts gnb_key_validity_end from the TESLA extension in SIB1
 - UE checks if the key has expired before attempting verification
 
@@ -173,7 +173,7 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 | Dependency | Purpose |
 |------------|---------|
 | OpenSSL | SHA-256 for key derivation, HMAC-SHA256 for MAC computation |
-| blst | BLS12-381 IBS signatures (pk-in-G2 mode) |
+| blst | BLS12-381 BLMQ IBS signatures |
 
 The blst library (Supranational) is included as a submodule at `cmake_targets/third_party/blst/`.
 
@@ -239,9 +239,9 @@ ctest -N
 |------------|------|----------|
 | `test_tf5_tesla_crypto` | `test_tf5_tesla_crypto.cpp` | SHA-256 (`tf5_sha256` from `tf5_crypto.h`), key chain (`tf5_chain_key`), MAC key derivation (`tf5_derive_mac_key`), tag computation (`tf5_compute_tag`), auth input builders (`tf5_build_mac_auth_input`, `tf5_build_sig_auth_input`) |
 | `test_tf5_tesla_gnb` | `test_tf5_tesla_gnb.cpp` | gNB init, interval calculation, extension preparation, resource cleanup |
-| `test_tf5_tesla_ue` | `test_tf5_tesla_ue.cpp` | UE init, safe packet test, SIB1 buffering, key chain verification, buffered verification, key recovery, IBS signature verification (`tf5_sig_verify`), buffered message verification (`tf5_tesla_ue_verify_buffered_msgs`) |
-| `test_tf5_tesla_serial` | `test_tf5_tesla_serial.cpp` | Extension pack/unpack (102-byte format), big-endian encoding helpers |
-| `test_tf5_tesla_bls` | `test_tf5_tesla_bls.cpp` | BLS keygen, sign, verify; IBS hash-to-scalar, IBS verification |
+| `test_tf5_tesla_ue` | `test_tf5_tesla_ue.cpp` | UE init, safe packet test, SIB1 buffering, key chain verification, buffered verification, key recovery, IBS signature verification (`tf5_ibs_verify`), buffered message verification (`tf5_tesla_ue_verify_buffered_msgs`) |
+| `test_tf5_tesla_serial` | `test_tf5_tesla_serial.cpp` | Extension pack/unpack (134-byte format), big-endian encoding helpers |
+| `test_tf5_tesla_bls` | `test_tf5_tesla_bls.cpp` | BLMQ IBS sign, verify; IBS hash-to-scalar, sk validation |
 | `test_tf5_tesla_e2e` | `test_tf5_tesla_e2e.cpp` | Full gNB→UE flow, tamper detection, key recovery scenarios |
 | `test_tf5_tesla_timing` | `test_tf5_tesla_timing.cpp` | Timing utilities (`tf5_tesla_slots_since_t0`, `tf5_tesla_get_interval_index`), replay protection (`tf5_rp_get_wallclock_ms`, `tf5_rp_validate_timestamp`) |
 | `test_tf5_tesla_fileio` | `test_tf5_tesla_fileio.cpp` | Key file I/O (`tf5_load_gnb_privkey`, `tf5_load_core_mpk`) |

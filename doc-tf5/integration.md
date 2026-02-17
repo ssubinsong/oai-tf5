@@ -20,8 +20,8 @@ Located in `openair3/SECU/`:
 |------|---------|
 | `tf5_tesla.c` | TESLA protocol implementation (key chains, MAC, verification) |
 | `tf5_tesla.h` | Data structures, API declarations, constants |
-| `tf5_tesla_sig.c` | BLS12-381 signature operations |
-| `tf5_tesla_sig.h` | BLS signature API declarations |
+| `tf5_tesla_sig.c` | BLMQ IBS signature operations (sign, verify, init) |
+| `tf5_tesla_sig.h` | BLMQ IBS API declarations |
 | `tf5_ibs_common.c` | IBS utilities shared between gNB and Core PKG |
 | `tf5_ibs_pkg.h` | IBS PKG API declarations |
 
@@ -159,7 +159,7 @@ main() [nr-softmodem]
   └── init_gNB()
         └── nr_mac_config_scc()
               └── nr_mac_configure_sib1()           [config.c:1166]
-                    ├── tf5_bls_init()              [tf5_tesla_sig.c]
+                    ├── tf5_ibs_init()              [tf5_tesla_sig.c]
                     ├── tf5_load_gnb_privkey()      [tf5_tesla.c]
                     ├── tf5_compute_t0_reference()
                     └── tf5_gnb_init()              [tf5_tesla.c]
@@ -173,7 +173,7 @@ gNB_scheduler()
         └── nr_mac_update_sib1_tf5()               [nr_radio_config.c:4381]
               ├── uper_encode_to_buffer()          (original SIB1)
               ├── tf5_gnb_prepare_extension()      [tf5_tesla.c]
-              │     ├── tf5_bls_sign()
+              │     ├── tf5_ibs_sign()
               │     └── tf5_compute_tag()
               ├── tf5_pack_extension()             [tf5_tesla.c]
               └── encode_SIB_NR()                  (SIB1 with extension)
@@ -192,7 +192,7 @@ nr_rrc_ue_process_masterCellGroup()
               │     └── tf5_verify_firsttime()     [rrc_UE.c:605]
               │           ├── tf5_rp_validate_timestamp()
               │           ├── tf5_build_sig_auth_input()
-              │           ├── tf5_sig_verify()     [tf5_tesla_sig.c]
+              │           ├── tf5_ibs_verify()     [tf5_tesla_sig.c]
               │           └── tf5_send_deferred_rrcsetupcomplete()
               │
               └── [Returning UE path]
@@ -230,7 +230,7 @@ nr_rrc_ue_process_rrcSetup()
 │  └───────────────────┘                                          │
 └─────────────────────────────────────────────────────────────────┘
               │                               │
-              │ sk_ID (35B file)              │ MPK (96B)
+              │ sk_ID (51B file)              │ MPK (96B)
               ▼                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                            gNB                                  │
@@ -249,7 +249,7 @@ nr_rrc_ue_process_rrcSetup()
 │  gNB_scheduler_bch.c: Call update before broadcast              │
 └─────────────────────────────────────────────────────────────────┘
               │
-              │ SIB1 + TESLA Extension (102B)
+              │ SIB1 + TESLA Extension (134B)
               │ (signature, tag, disclosed key, params)
               ▼
 ┌─────────────────────────────────────────────────────────────────┐
