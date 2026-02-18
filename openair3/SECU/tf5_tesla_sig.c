@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <openssl/crypto.h>
 #include <openssl/rand.h>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 #include "blst.h"
 
 /* ==========================================================================
@@ -55,14 +55,15 @@ static int tf5_ibs_h2(const uint8_t *data,
      * This reduces the variable-length input to a fixed 32-byte IKM,
      * then blst_keygen performs HKDF + mod r reduction.
      */
-    SHA256_CTX sha;
-    uint8_t digest[SHA256_DIGEST_LENGTH];
+    uint8_t digest[32];
+    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
 
-    SHA256_Init(&sha);
-    SHA256_Update(&sha, TF5_IBS_DST_H2, TF5_IBS_DST_H2_LEN);
-    SHA256_Update(&sha, data, data_len);
-    SHA256_Update(&sha, (const uint8_t *)r, sizeof(blst_fp12));
-    SHA256_Final(digest, &sha);
+    EVP_DigestInit_ex(md_ctx, EVP_sha256(), NULL);
+    EVP_DigestUpdate(md_ctx, TF5_IBS_DST_H2, TF5_IBS_DST_H2_LEN);
+    EVP_DigestUpdate(md_ctx, data, data_len);
+    EVP_DigestUpdate(md_ctx, (const uint8_t *)r, sizeof(blst_fp12));
+    EVP_DigestFinal_ex(md_ctx, digest, NULL);
+    EVP_MD_CTX_free(md_ctx);
 
     /* Use blst_keygen for proper mod r reduction */
     blst_keygen(h_out, digest, sizeof(digest), NULL, 0);

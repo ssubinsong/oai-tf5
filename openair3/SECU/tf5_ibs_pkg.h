@@ -77,7 +77,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
 int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
                             size_t cell_id_len,
                             uint32_t gnb_key_validity_end,
-                            uint8_t scalar_out[TF5_IBS_GNB_SK_LEN]);
+                            uint8_t scalar_out[TF5_BLS_SCALAR_LEN]);
 
 /**
  * Parse Cell ID from hex string
