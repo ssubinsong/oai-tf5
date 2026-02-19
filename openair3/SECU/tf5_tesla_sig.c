@@ -15,11 +15,19 @@
  * Precomputed globals (set once in tf5_ibs_init)
  * ========================================================================== */
 
-/* g = e(P, Q) ∈ GT — base for g^x in signing */
+/* g = e(P, Q) ∈ GT — precomputed base pairing.
+ * Not used in the signing/verification hot path: signing computes
+ * g^x = e(xP, Q) directly via a single Miller loop, which is cheaper
+ * than exponentiating in GT.  Retained for potential future use. */
 static blst_fp12 s_g;
 
 /* Q (G2 generator) in affine form — for Miller loops */
 static blst_p2_affine s_Q_affine;
+
+/* Precomputed Miller loop lines for Q (G2 generator).
+ * Since Q never changes, we precompute once and reuse via
+ * blst_miller_loop_lines(), avoiding repeated G2 line evaluation. */
+static blst_fp6 s_Q_lines[68];
 
 /* P (G1 generator) in affine form — for g^{-h} computation */
 static blst_p1_affine s_P_affine;
@@ -37,6 +45,22 @@ typedef struct {
 } tf5_mpk_cache_t;
 
 static __thread tf5_mpk_cache_t s_mpk_cache = {0};
+
+/* ==========================================================================
+ * sk_ID cache (avoids repeated decompression on gNB side)
+ *
+ * gNB signs with the same sk_ID for the entire key validity period,
+ * so we cache the deserialized affine + projective forms.
+ * ========================================================================== */
+
+typedef struct {
+    int valid;
+    uint8_t sk_compressed[TF5_IBS_GNB_SK_LEN];
+    blst_p1_affine sk_affine;
+    blst_p1 sk_p1;
+} tf5_sk_cache_t;
+
+static tf5_sk_cache_t s_sk_cache = {0};
 
 /* ==========================================================================
  * H2: {0,1}* × GT → Z*p
@@ -84,6 +108,7 @@ int tf5_ibs_init(void)
 
     s_P_affine = *P;
     s_Q_affine = *Q;
+    blst_precompute_lines(s_Q_lines, &s_Q_affine);
 
     /* g = e(P, Q) via Miller loop + final exponentiation */
     blst_miller_loop(&s_g, Q, P);
@@ -141,13 +166,23 @@ int tf5_ibs_sign(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
     blst_fp12 r;
     blst_p1 S;
 
-    /* Step 1: Deserialize sk_ID from compressed G1 (48B) */
-    BLST_ERROR err = blst_p1_uncompress(&sk_affine, sk_id);
-    if (err != BLST_SUCCESS) {
-        LOG_E(TF5, "Failed to decompress sk_ID for signing: %d\n", err);
-        return TF5_ERR_KEY_INVALID;
+    /* Step 1: Deserialize sk_ID from compressed G1 (48B), with cache */
+    if (s_sk_cache.valid &&
+        memcmp(s_sk_cache.sk_compressed, sk_id, TF5_IBS_GNB_SK_LEN) == 0) {
+        sk_affine = s_sk_cache.sk_affine;
+        sk_p1 = s_sk_cache.sk_p1;
+    } else {
+        BLST_ERROR err = blst_p1_uncompress(&sk_affine, sk_id);
+        if (err != BLST_SUCCESS) {
+            LOG_E(TF5, "Failed to decompress sk_ID for signing: %d\n", err);
+            return TF5_ERR_KEY_INVALID;
+        }
+        blst_p1_from_affine(&sk_p1, &sk_affine);
+        memcpy(s_sk_cache.sk_compressed, sk_id, TF5_IBS_GNB_SK_LEN);
+        s_sk_cache.sk_affine = sk_affine;
+        s_sk_cache.sk_p1 = sk_p1;
+        s_sk_cache.valid = 1;
     }
-    blst_p1_from_affine(&sk_p1, &sk_affine);
 
     /* Step 2: Generate random x via RAND_bytes + blst_keygen */
     uint8_t rand_bytes[32];
@@ -169,7 +204,7 @@ int tf5_ibs_sign(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
 
     blst_p1_affine xP_affine;
     blst_p1_to_affine(&xP_affine, &xP);
-    blst_miller_loop(&r, &s_Q_affine, &xP_affine);
+    blst_miller_loop_lines(&r, s_Q_lines, &xP_affine);
     blst_final_exp(&r, &r);
 
     /* Step 4: Compute h = H2(data, r) */
@@ -299,14 +334,13 @@ int tf5_ibs_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
     blst_p1_affine neg_hP_affine;
     blst_p1_to_affine(&neg_hP_affine, &hP);
 
-    /* Step 5: Multi-Miller loop: ML(S, QID) * ML(-hP, Q) */
+    /* Step 5: Fused multi-Miller loop + final exponentiation → r'
+     * blst_miller_loop_n shares doublings across both pairs. */
     const blst_p1_affine *p1s[2] = { &S_affine, &neg_hP_affine };
     const blst_p2_affine *p2s[2] = { &QID_affine, &s_Q_affine };
 
     blst_fp12 r_prime;
     blst_miller_loop_n(&r_prime, p2s, p1s, 2);
-
-    /* Step 6: Final exponentiation → r' */
     blst_final_exp(&r_prime, &r_prime);
 
     /* Step 7: Compute h' = H2(data, r') */
