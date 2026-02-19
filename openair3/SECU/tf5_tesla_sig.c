@@ -69,6 +69,9 @@ static tf5_sk_cache_t s_sk_cache = {0};
  * where r_bytes is the serialized GT element.
  * ========================================================================== */
 
+/* Thread-local EVP_MD_CTX for H2 — avoids heap alloc/free per call */
+static __thread EVP_MD_CTX *s_h2_md_ctx = NULL;
+
 static int tf5_ibs_h2(const uint8_t *data,
                        size_t data_len,
                        const blst_fp12 *r,
@@ -79,15 +82,17 @@ static int tf5_ibs_h2(const uint8_t *data,
      * This reduces the variable-length input to a fixed 32-byte IKM,
      * then blst_keygen performs HKDF + mod r reduction.
      */
-    uint8_t digest[32];
-    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
+    if (!s_h2_md_ctx) {
+        s_h2_md_ctx = EVP_MD_CTX_new();
+    }
 
-    EVP_DigestInit_ex(md_ctx, EVP_sha256(), NULL);
-    EVP_DigestUpdate(md_ctx, TF5_IBS_DST_H2, TF5_IBS_DST_H2_LEN);
-    EVP_DigestUpdate(md_ctx, data, data_len);
-    EVP_DigestUpdate(md_ctx, (const uint8_t *)r, sizeof(blst_fp12));
-    EVP_DigestFinal_ex(md_ctx, digest, NULL);
-    EVP_MD_CTX_free(md_ctx);
+    uint8_t digest[32];
+
+    EVP_DigestInit_ex(s_h2_md_ctx, EVP_sha256(), NULL);
+    EVP_DigestUpdate(s_h2_md_ctx, TF5_IBS_DST_H2, TF5_IBS_DST_H2_LEN);
+    EVP_DigestUpdate(s_h2_md_ctx, data, data_len);
+    EVP_DigestUpdate(s_h2_md_ctx, (const uint8_t *)r, sizeof(blst_fp12));
+    EVP_DigestFinal_ex(s_h2_md_ctx, digest, NULL);
 
     /* Use blst_keygen for proper mod r reduction */
     blst_keygen(h_out, digest, sizeof(digest), NULL, 0);
@@ -227,6 +232,106 @@ int tf5_ibs_sign(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
     OPENSSL_cleanse(&xph, sizeof(xph));
 
     /* Step 7: Output signature = h_bytes[32] || S_compressed[48] */
+    blst_bendian_from_scalar(signature, &h);
+    blst_p1_compress(signature + TF5_IBS_SIG_H_LEN, &S);
+    OPENSSL_cleanse(&h, sizeof(h));
+
+    return TF5_OK;
+}
+
+int tf5_ibs_sign_precomp(tf5_ibs_sign_precomp_t *precomp)
+{
+    if (!precomp) {
+        return TF5_ERR_INVALID_PARAM;
+    }
+
+    if (!s_initialized) {
+        LOG_E(TF5, "BLMQ IBS not initialized (call tf5_ibs_init first)\n");
+        return TF5_ERR_SIGN;
+    }
+
+    /* Generate random x via RAND_bytes + blst_keygen */
+    uint8_t rand_bytes[32];
+    if (RAND_bytes(rand_bytes, 32) != 1) {
+        LOG_E(TF5, "RNG failure in BLMQ sign precomp\n");
+        return TF5_ERR_CRYPTO;
+    }
+    blst_keygen(&precomp->x, rand_bytes, 32, NULL, 0);
+    OPENSSL_cleanse(rand_bytes, 32);
+
+    /* Compute r = g^x = e(xP, Q) */
+    blst_p1 xP;
+    uint8_t x_le[32];
+    blst_lendian_from_scalar(x_le, &precomp->x);
+    blst_p1_mult(&xP, blst_p1_generator(), x_le, 256);
+    OPENSSL_cleanse(x_le, 32);
+
+    blst_p1_affine xP_affine;
+    blst_p1_to_affine(&xP_affine, &xP);
+    blst_miller_loop_lines(&precomp->r, s_Q_lines, &xP_affine);
+    blst_final_exp(&precomp->r, &precomp->r);
+
+    return TF5_OK;
+}
+
+int tf5_ibs_sign_online(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
+                         const uint8_t *data,
+                         size_t data_len,
+                         tf5_ibs_sign_precomp_t *precomp,
+                         uint8_t signature[TF5_IBS_SIG_LEN])
+{
+    if (!sk_id || !data || !signature || !precomp || data_len == 0) {
+        return TF5_ERR_INVALID_PARAM;
+    }
+
+    if (!s_initialized) {
+        LOG_E(TF5, "BLMQ IBS not initialized (call tf5_ibs_init first)\n");
+        return TF5_ERR_SIGN;
+    }
+
+    blst_p1_affine sk_affine;
+    blst_p1 sk_p1;
+    blst_scalar h, xph;
+
+    /* Deserialize sk_ID from compressed G1, with cache */
+    if (s_sk_cache.valid &&
+        memcmp(s_sk_cache.sk_compressed, sk_id, TF5_IBS_GNB_SK_LEN) == 0) {
+        sk_affine = s_sk_cache.sk_affine;
+        sk_p1 = s_sk_cache.sk_p1;
+    } else {
+        BLST_ERROR err = blst_p1_uncompress(&sk_affine, sk_id);
+        if (err != BLST_SUCCESS) {
+            LOG_E(TF5, "Failed to decompress sk_ID for online signing: %d\n", err);
+            return TF5_ERR_KEY_INVALID;
+        }
+        blst_p1_from_affine(&sk_p1, &sk_affine);
+        memcpy(s_sk_cache.sk_compressed, sk_id, TF5_IBS_GNB_SK_LEN);
+        s_sk_cache.sk_affine = sk_affine;
+        s_sk_cache.sk_p1 = sk_p1;
+        s_sk_cache.valid = 1;
+    }
+
+    /* h = H2(data, r) */
+    tf5_ibs_h2(data, data_len, &precomp->r, &h);
+
+    /* (x + h) mod r */
+    if (!blst_sk_add_n_check(&xph, &precomp->x, &h)) {
+        LOG_E(TF5, "Scalar addition (x+h) failed in online signing\n");
+        OPENSSL_cleanse(&precomp->x, sizeof(precomp->x));
+        OPENSSL_cleanse(&h, sizeof(h));
+        return TF5_ERR_SIGN;
+    }
+    OPENSSL_cleanse(&precomp->x, sizeof(precomp->x));
+
+    /* S = (x+h) * sk_ID ∈ G1 */
+    blst_p1 S;
+    uint8_t xph_le[32];
+    blst_lendian_from_scalar(xph_le, &xph);
+    blst_p1_mult(&S, &sk_p1, xph_le, 256);
+    OPENSSL_cleanse(xph_le, 32);
+    OPENSSL_cleanse(&xph, sizeof(xph));
+
+    /* Output: h[32] || S_compressed[48] */
     blst_bendian_from_scalar(signature, &h);
     blst_p1_compress(signature + TF5_IBS_SIG_H_LEN, &S);
     OPENSSL_cleanse(&h, sizeof(h));

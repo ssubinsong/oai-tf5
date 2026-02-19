@@ -19,6 +19,15 @@
 #include <stddef.h>
 
 #include "tf5_ibs_defs.h"
+#include "blst.h"
+
+/* Precomputed offline state for online/offline signing split.
+ * The offline phase computes (x, r = g^x) which is message-independent,
+ * saving a G1 scalar mult + Miller loop + final exp from the online path. */
+typedef struct {
+    blst_scalar x;   /* random scalar (consumed and zeroed by sign_online) */
+    blst_fp12   r;   /* g^x ∈ GT */
+} tf5_ibs_sign_precomp_t;
 
 /**
  * Initialize BLMQ IBS subsystem
@@ -64,6 +73,44 @@ int tf5_ibs_sign(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
                  const uint8_t *data,
                  size_t data_len,
                  uint8_t signature[TF5_IBS_SIG_LEN]);
+
+/**
+ * Offline precomputation for BLMQ IBS signing
+ *
+ * Computes the message-independent part of BLMQ signing:
+ *   1. x ← random scalar
+ *   2. r = g^x ∈ GT  (via xP scalar mult + Miller loop + final exp)
+ *
+ * This removes the most expensive operations from the online signing path.
+ * The precomp state must be used exactly once by tf5_ibs_sign_online().
+ *
+ * @param precomp   Output: precomputed (x, r) pair
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_SIGN, TF5_ERR_CRYPTO
+ */
+int tf5_ibs_sign_precomp(tf5_ibs_sign_precomp_t *precomp);
+
+/**
+ * Online phase of BLMQ IBS signing (uses precomputed state)
+ *
+ * Completes the signing using precomputed (x, r):
+ *   1. h = H2(data, r)
+ *   2. S = (x + h) * sk_ID
+ *   3. σ = (h, S)
+ *
+ * The precomp->x scalar is consumed (zeroed) after use.
+ *
+ * @param sk_id       BLMQ secret key (48 bytes, G1 point)
+ * @param data        Data to sign
+ * @param data_len    Length of data
+ * @param precomp     Precomputed (x, r) from tf5_ibs_sign_precomp (consumed)
+ * @param signature   Output: BLMQ signature (80 bytes: h[32] || S[48])
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_KEY_INVALID, TF5_ERR_SIGN
+ */
+int tf5_ibs_sign_online(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
+                         const uint8_t *data,
+                         size_t data_len,
+                         tf5_ibs_sign_precomp_t *precomp,
+                         uint8_t signature[TF5_IBS_SIG_LEN]);
 
 /**
  * Verify BLMQ IBS signature
