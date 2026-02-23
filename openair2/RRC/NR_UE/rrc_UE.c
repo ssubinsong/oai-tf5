@@ -772,9 +772,10 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
         return TF5_VERIFY_SKIP_NO_STATE;
     }
 
-  if (SI_info->tf5_state->curr_phase == TF5_PHASE_RRCSETUP_COMPLETE
-      || SI_info->tf5_state->curr_phase == TF5_PHASE_AUTHENTICATED)
-    SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
+    if (SI_info->tf5_state->curr_phase == TF5_PHASE_RRCSETUP_COMPLETE
+        || SI_info->tf5_state->curr_phase == TF5_PHASE_AUTHENTICATED) {
+        SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
+    }
 
     AssertFatal(sib1->lateNonCriticalExtension,
                 "TF5: SIB1 missing lateNonCriticalExtension for TESLA verification\n");
