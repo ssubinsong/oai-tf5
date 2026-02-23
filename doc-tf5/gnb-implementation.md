@@ -48,13 +48,13 @@ TESLA initialization occurs in `nr_mac_configure_sib1()` ([config.c:1185-1270](.
    ```c
    rc = tf5_ibs_init();
    ```
-   Must be called once before any BLMQ IBS signing operations.
+   Must be called once before any GG09 Schnorr IBS signing operations.
 
 4. **IBS Secret Key Loading** (line 1204)
    ```c
    rc = tf5_load_gnb_privkey(tf5_privkey_file, private_key, &key_validity_end);
    ```
-   - Reads 51-byte file: 48B sk_ID (G1 point) + 3B validity_end
+   - Reads 67-byte file: 64B sk_ID (y[32] + pk[32]) + 3B validity_end
    - File issued by Core PKG via `tf5_ibs_issue` tool
    - Validates key hasn't expired
 
@@ -128,7 +128,7 @@ Before each SIB1 transmission, `nr_mac_update_sib1_tf5()` is called ([nr_radio_c
    uint8_t ext_buf[256];
    int ext_len = tf5_pack_extension(&ext, ext_buf, sizeof(ext_buf));
    ```
-   Serializes extension to 134-byte binary format.
+   Serializes extension to 150-byte binary format.
 
 4. **Attach to SIB1** (lines 4419-4439)
    ```c

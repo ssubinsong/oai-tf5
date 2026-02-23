@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This document specifies the BLMQ (Barreto-Libert-McCullagh-Quisquater) Identity-Based Signature scheme used for authenticating 5G NR SIB1 messages. The BLMQ scheme (ASIACRYPT 2005, Section 3) provides efficient single-pairing verification and EUF-CMA security under the q-SDH assumption.
+This document specifies the GG09 Schnorr Identity-Based Signature scheme (Galindo-Garcia, 2009; 1-level Schnorr IBS) used for authenticating 5G NR SIB1 messages. The scheme is instantiated over Ed25519 using libsodium and provides EUF-CMIA security under the DL assumption in the random oracle model.
 
 The scheme allows UEs to verify gNB signatures using only:
 - The Core's master public key (MPK), pre-provisioned in UE
@@ -12,35 +12,25 @@ The scheme allows UEs to verify gNB signatures using only:
 
 ### 2.1 Elliptic Curve
 
-- **Curve:** BLS12-381
-- **Variant:** pk-in-G2 (public keys and verification keys in $G_2$)
-- **Groups:**
-  - $G_1$: 48-byte compressed points (secret keys, signatures)
-  - $G_2$: 96-byte compressed points (public keys)
-  - $G_T$: Target group for pairing
-- **Order:** $r \approx 2^{255}$ (prime)
+- **Curve:** Ed25519 (Twisted Edwards curve over GF(2^255 - 19))
+- **Base point:** B (standard Ed25519 generator)
+- **Group order:** l ≈ 2^252 (prime)
+- **Scalar size:** 32 bytes (little-endian)
+- **Point size:** 32 bytes (compressed)
 
-### 2.2 Bilinear Pairing
+### 2.2 Hash Functions
 
-$$e: G_1 \times G_2 \rightarrow G_T$$
+**Identity hash: $H_{id}$**
+- Input: cell_id (5B) || validity_end_be (3B) || pk (32B) || mpk (32B)
+- Output: Scalar in $\mathbb{Z}_l$
+- Implementation: BLAKE2b-512 → `crypto_core_ed25519_scalar_reduce()`
+- Used in both key extraction and verification
 
-Properties:
-- Bilinearity: $e(aP, bQ) = e(P, Q)^{ab}$
-- Non-degeneracy: $e(G_1, G_2) \neq 1$
-
-### 2.3 Hash Functions
-
-**$H_1: \text{Identity} \rightarrow \text{Scalar}\ (\mathbb{Z}_r^*)$**
-- Input: NR Cell ID (36 bits) || validity_end (24 bits)
-- Output: Scalar in $\mathbb{Z}_r^*$
-- Implementation: IETF hash-to-field via `blst_keygen` with DST
-- DST: `"TF5_IBS_BLMQ_BLS12381_XMD:SHA-256_H1_v1"` (40 bytes)
-
-**$H_2: \{0,1\}^* \times G_T \rightarrow \mathbb{Z}_r^*$**
-- Input: Message data || $G_T$ element (serialized as `blst_fp12`, 576 bytes)
-- Output: Scalar in $\mathbb{Z}_r^*$
-- Implementation: SHA-256(DST_H2 || data || fp12_bytes) → `blst_keygen` for mod $r$ reduction
-- DST: `"TF5_IBS_BLMQ_BLS12381_XMD:SHA-256_H2_v1"` (40 bytes)
+**Message hash: $H_m$**
+- Input: data || R (32B point)
+- Output: Scalar in $\mathbb{Z}_l$
+- Implementation: BLAKE2b-512 → `crypto_core_ed25519_scalar_reduce()`
+- Used in signing and verification
 
 ## 3. Key Hierarchy
 
@@ -48,9 +38,8 @@ Properties:
                     ┌─────────────────┐
                     │   Core PKG      │
                     │                 │
-                    │  s (secret)     │
-                    │  Qpub = s*Q    │
-                    │  g = e(P, Q)   │
+                    │  z (secret)     │
+                    │  MPK = z·B     │
                     └────────┬────────┘
                              │
            ┌─────────────────┼─────────────────┐
@@ -60,7 +49,7 @@ Properties:
     │   gNB 1      │  │   gNB 2      │  │   gNB N      │
     │              │  │              │  │              │
     │ Cell ID: ID1 │  │ Cell ID: ID2 │  │ Cell ID: IDN │
-    │ sk_ID1 ∈ G1  │  │ sk_ID2 ∈ G1  │  │ sk_IDN ∈ G1  │
+    │ sk = (y, pk) │  │ sk = (y, pk) │  │ sk = (y, pk) │
     └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
@@ -68,108 +57,104 @@ Properties:
 
 ### 4.1 Setup (Core PKG)
 
-**Input:** Security parameter $\lambda$ (implicit: BLS12-381)
+**Input:** Security parameter λ (implicit: Ed25519)
 
-**Output:** Master secret $s$, Master public key $Q_{pub}$, precomputed $g$
+**Output:** Master secret z, Master public key MPK
 
 $$
 \begin{aligned}
-1. &\ s \leftarrow \text{random scalar in } \mathbb{Z}_r^* \\
-2. &\ Q_{pub} \leftarrow s \cdot Q, \text{ where } Q \text{ is the generator of } G_2 \\
-3. &\ P \leftarrow \psi(Q), \text{ where } P \text{ is the generator of } G_1 \\
-4. &\ g \leftarrow e(P, Q) \in G_T \\
-5. &\ \text{Return } (s, Q_{pub})
+1. &\ z \leftarrow \text{random scalar in } \mathbb{Z}_l \\
+2. &\ \text{MPK} \leftarrow z \cdot B \\
+3. &\ \text{Return } (z, \text{MPK})
 \end{aligned}
 $$
 
 **File Output:**
-- `msk.bin`: 32 bytes, $s$ serialized big-endian
-- `mpk.bin`: 96 bytes, $Q_{pub}$ compressed
+- `msk.bin`: 32 bytes, z serialized little-endian
+- `mpk.bin`: 32 bytes, MPK compressed
 
-### 4.2 Key Issuance (Core PKG)
+### 4.2 Key Extraction (Core PKG)
 
-**Input:** Master secret $s$, gNB identity $ID$ (NR Cell ID || validity_end)
+**Input:** Master secret z, MPK, gNB identity ID (NR Cell ID || validity_end)
 
-**Output:** gNB secret key $sk_{ID} \in G_1$
+**Output:** gNB secret key sk_ID = (y, pk)
 
 $$
 \begin{aligned}
-1. &\ h_1 \leftarrow H_1(ID) & \text{// Hash identity to scalar} \\
-2. &\ \text{sum} \leftarrow h_1 + s \mod r & \text{// Add to master secret} \\
-3. &\ \text{inv} \leftarrow \text{sum}^{-1} \mod r & \text{// Scalar inverse} \\
-4. &\ sk_{ID} \leftarrow \text{inv} \cdot P & \text{// Scalar mult of } G_1 \text{ generator} \\
-5. &\ \text{Return } sk_{ID}
+1. &\ b \leftarrow \text{random scalar in } \mathbb{Z}_l \\
+2. &\ pk \leftarrow b \cdot B & \text{// identity-derived public point} \\
+3. &\ cid \leftarrow H_{id}(\text{Cell\_ID} \| \text{validity\_end} \| pk \| \text{MPK}) & \text{// identity scalar} \\
+4. &\ y \leftarrow cid \cdot z + b \mod l & \text{// secret scalar} \\
+5. &\ \text{Return } sk_{ID} = (y, pk)
 \end{aligned}
 $$
 
 **Properties:**
-- $sk_{ID}$ is a 48-byte compressed $G_1$ point
-- $sk_{ID} = \frac{1}{H_1(ID) + s} \cdot P$
+- sk_ID is 64 bytes: y[32] scalar + pk[32] point
 - Different Cell IDs produce different keys
+- Key extraction is NOT deterministic (random b each time)
 - Core can issue keys without gNB interaction
 
 ### 4.3 Sign (gNB)
 
-**Input:** gNB secret key $sk_{ID} \in G_1$, message $m$
+**Input:** gNB secret key sk_ID = (y, pk), message m
 
-**Output:** Signature $\sigma = (h, S)$
+**Output:** Signature σ = (R, sigma, pk)
 
 $$
 \begin{aligned}
-1. &\ x \leftarrow \text{random scalar in } \mathbb{Z}_r^* \\
-2. &\ r \leftarrow g^x = e(x \cdot P, Q) \in G_T \\
-3. &\ h \leftarrow H_2(m, r) \in \mathbb{Z}_r^* \\
-4. &\ S \leftarrow (x + h) \cdot sk_{ID} \in G_1 \\
-5. &\ \text{Return } \sigma = (h, S)
+1. &\ r \leftarrow \text{random scalar in } \mathbb{Z}_l \\
+2. &\ R \leftarrow r \cdot B & \text{// commitment point} \\
+3. &\ h \leftarrow H_m(m \| R) & \text{// challenge scalar} \\
+4. &\ \sigma \leftarrow h \cdot y + r \mod l & \text{// response scalar} \\
+5. &\ \text{Return } (R, \sigma, pk)
 \end{aligned}
 $$
 
 **Properties:**
-- $h$ is a 32-byte scalar
-- $S$ is a 48-byte compressed $G_1$ point
-- $\sigma$ is 80 bytes total: $h[32] \| S[48]$
-- Signature is **randomized** (different each time due to random $x$)
+- R is a 32-byte Ed25519 point
+- σ is a 32-byte scalar
+- pk is a 32-byte Ed25519 point (from sk_ID)
+- Total signature: 96 bytes = R[32] || σ[32] || pk[32]
+- Signature is **randomized** (different each time due to random r)
+
+**Online/Offline Split:**
+- Offline: precompute (r, R = r·B) — message-independent
+- Online: compute h = H_m(m || R), σ = h·y + r — only scalar operations
 
 ### 4.4 Verify (UE)
 
-**Input:** Master public key $Q_{pub}$, identity $ID$, message $m$, signature $\sigma = (h, S)$
+**Input:** Master public key MPK, identity ID, message m, signature (R, σ, pk)
 
 **Output:** Accept or Reject
 
 $$
 \begin{aligned}
-1. &\ h_1 \leftarrow H_1(ID) & \text{// Hash identity to scalar} \\
-2. &\ Q_{ID} \leftarrow h_1 \cdot Q + Q_{pub} \in G_2 & \text{// Compute verification key} \\
-3. &\ r' \leftarrow e(S, Q_{ID}) \cdot e(-h \cdot P, Q) & \text{// Multi-Miller-loop + final exp} \\
-4. &\ h' \leftarrow H_2(m, r') \\
-5. &\ \text{Accept iff } h = h'
+1. &\ cid \leftarrow H_{id}(\text{Cell\_ID} \| \text{validity\_end} \| pk \| \text{MPK}) & \text{// identity scalar} \\
+2. &\ Q \leftarrow cid \cdot \text{MPK} + pk & \text{// identity-derived verification key} \\
+3. &\ h \leftarrow H_m(m \| R) & \text{// recompute challenge} \\
+4. &\ R' \leftarrow \sigma \cdot B - h \cdot Q & \text{// double scalar mult (Shamir's trick)} \\
+5. &\ \text{Accept iff } R = R'
 \end{aligned}
 $$
 
 **Verification Equation Derivation:**
 
-If the signature is valid, then $S = (x + h) \cdot sk_{ID} = \frac{x + h}{H_1(ID) + s} \cdot P$.
+If the signature is valid, then σ = h·y + r where y = cid·z + b.
 
 $$
 \begin{aligned}
-e(S, Q_{ID}) &= e\left(\frac{x + h}{H_1(ID) + s} \cdot P,\ (H_1(ID) + s) \cdot Q\right) \\
-             &= e(P, Q)^{x + h} \\
-             &= g^{x + h}
+\sigma \cdot B &= (h \cdot y + r) \cdot B \\
+               &= h \cdot (cid \cdot z + b) \cdot B + r \cdot B \\
+               &= h \cdot (cid \cdot z \cdot B + b \cdot B) + R \\
+               &= h \cdot (cid \cdot \text{MPK} + pk) + R \\
+               &= h \cdot Q + R
 \end{aligned}
 $$
 
-$$
-e(-h \cdot P, Q) = e(P, Q)^{-h} = g^{-h}
-$$
+Therefore $R' = \sigma \cdot B - h \cdot Q = R$, and verification succeeds.
 
-$$
-r' = g^{x+h} \cdot g^{-h} = g^x = r
-$$
-
-Therefore $H_2(m, r') = H_2(m, r) = h$, and verification succeeds.
-
-**Optimization:** The two pairings are computed via a single multi-Miller-loop call
-(`blst_miller_loop_n` with 2 pairs) followed by one final exponentiation.
+**Optimization:** Step 4 uses `ge25519_double_scalarmult_vartime` (Shamir's trick) for a single combined double-scalar multiplication, which is faster than two separate scalar multiplications.
 
 ## 5. Message Format
 
@@ -213,19 +198,18 @@ byte[4] = bits 3-0 (upper nibble), padding (lower nibble)
 
 ### 7.1 Security Model
 
-The BLMQ scheme provides **existential unforgeability under chosen message and identity attack (EUF-CMIA)** under:
-- The **q-SDH** (q-Strong Diffie-Hellman) assumption in bilinear groups
-- $H_1$ and $H_2$ are modeled as random oracles
+The GG09 Schnorr IBS scheme provides **existential unforgeability under chosen message and identity attack (EUF-CMIA)** under:
+- The **DL** (Discrete Logarithm) assumption on Ed25519
+- $H_{id}$ and $H_m$ are modeled as random oracles
 
-This is a stronger security result than CDH-based schemes, as q-SDH is a well-studied
-assumption in the pairing-based cryptography literature.
+This is a standard and well-studied assumption in elliptic curve cryptography.
 
 ### 7.2 Security Properties
 
 | Property | Guarantee |
 |----------|-----------|
-| Signature Unforgeability | Cannot forge signature without $sk_{ID}$ (q-SDH) |
-| Identity Binding | Signature valid only for correct Cell ID + validity |
+| Signature Unforgeability | Cannot forge signature without sk_ID (DL assumption) |
+| Identity Binding | Signature valid only for correct Cell ID + validity + pk |
 | Key Isolation | Compromising one gNB key doesn't affect others |
 | Forward Secrecy | Not provided (would require key evolution) |
 
@@ -233,71 +217,70 @@ assumption in the pairing-based cryptography literature.
 
 | Entity | Trusts | Holds |
 |--------|--------|-------|
-| Core PKG | — | Master secret ($s$) |
-| gNB | Core PKG | $sk_{ID} \in G_1$ |
-| UE | Core PKG | $Q_{pub} \in G_2$ |
+| Core PKG | — | Master secret (z) |
+| gNB | Core PKG | sk_ID = (y, pk) |
+| UE | Core PKG | MPK = z·B |
 
 ### 7.4 Attack Resistance
 
 **Key Extraction Attack:**
-- Attacker with $Q_{pub}$ and Cell ID cannot compute $sk_{ID}$
-- Requires solving q-SDH: given $(P, sP, s^2P, \ldots, s^qP)$, compute $(c, \frac{1}{s+c} \cdot P)$
+- Attacker with MPK and Cell ID cannot compute sk_ID
+- Requires solving DL: given B and z·B, compute z
 
 **Rogue Key Attack:**
 - Not applicable: gNB doesn't choose its own key
-- Key is deterministically derived from Cell ID and master secret
+- Key is derived by Core PKG from Cell ID and master secret
 
 **Identity Substitution:**
-- Cell ID and validity_end are in signed content (indirectly via SIB1)
+- Cell ID and validity_end are included in the identity hash
+- pk is bound to the identity via cid = H(id || pk || mpk)
 - Changing Cell ID breaks signature validity
 
 ## 8. Implementation Notes
 
 ### 8.1 Library
 
-Uses **blst** (Supranational) for BLS12-381 operations:
-- `blst_keygen`: Secure scalar derivation from IKM (used for H1, H2)
-- `blst_sk_add_n_check`: Scalar addition with overflow check
-- `blst_sk_inverse`: Scalar modular inverse
-- `blst_sign_pk_in_g2`: $G_1$ scalar multiplication (signing)
-- `blst_p1_mult`: $G_1$ scalar multiplication
-- `blst_p2_mult`: $G_2$ scalar multiplication
-- `blst_p2_add_or_double`: $G_2$ point addition
-- `blst_p1_cneg`: $G_1$ point negation
-- `blst_miller_loop_n`: Multi-Miller-loop (batched pairing)
-- `blst_final_exp`: Final exponentiation
+Uses **libsodium** for Ed25519 operations:
+- `crypto_core_ed25519_scalar_reduce`: Reduce 64-byte hash to scalar mod l
+- `crypto_core_ed25519_scalar_mul`: Scalar multiplication mod l
+- `crypto_core_ed25519_scalar_add`: Scalar addition mod l
+- `crypto_scalarmult_ed25519_base_noclamp`: Base-point scalar multiplication
+- `crypto_core_ed25519_is_valid_point`: Point validation (subgroup check)
+- `ge25519_double_scalarmult_vartime`: Shamir's trick (via ed25519_precomp.h)
+- `crypto_generichash_blake2b`: BLAKE2b hashing
+
+**Note:** `ed25519_precomp.h` contains local reimplementations of libsodium internal `ge25519_*` functions (they are `static` in libsodium source and not exported).
 
 ### 8.2 Performance
 
 | Operation | Approximate Time |
 |-----------|-----------------|
-| $H_1$ (hash to scalar) | ~50 μs |
-| Sign (BLMQ) | ~1 ms |
-| Verify (BLMQ, single pairing) | ~1.5 ms |
+| Sign (GG09 Schnorr) | ~50 μs |
+| Sign online (precomputed) | ~15 μs |
+| Verify (GG09 Schnorr) | ~80 μs |
 
-Note: BLMQ verification uses a single multi-Miller-loop with 2 pairs, which is
-faster than the previous scheme that required 2 separate pairings.
+Note: GG09 Schnorr verification uses Ed25519 point arithmetic only.
 
 ### 8.3 Key Sizes
 
 | Key | Size | Encoding |
 |-----|------|----------|
-| Master secret ($s$) | 32 bytes | Scalar, big-endian |
-| Master public ($Q_{pub}$) | 96 bytes | $G_2$ compressed |
-| gNB secret ($sk_{ID}$) | 48 bytes | $G_1$ compressed |
-| Signature ($\sigma$) | 80 bytes | $h[32] \| S[48]$ ($\mathbb{Z}_r \times G_1$) |
+| Master secret (z) | 32 bytes | Scalar, little-endian |
+| Master public (MPK) | 32 bytes | Ed25519 point, compressed |
+| gNB secret (sk_ID) | 64 bytes | y[32] scalar + pk[32] point |
+| Signature (σ) | 96 bytes | R[32] || σ[32] || pk[32] |
 
 ### 8.4 Precomputed Values
 
-The following values are computed once during `tf5_ibs_init()` and reused:
-- $g = e(P, Q) \in G_T$ — base for $g^x$ computation in signing
-- $Q$ affine ($G_2$ generator) — for Miller loops
-- $P$ affine ($G_1$ generator) — for $h \cdot P$ negation in verification
+The following optimizations are used:
+- **MPK precomp table**: 32×8 Duif table (~30KB, fits L1 cache) for fast `cid·MPK` computation during verification
+- **Shamir's trick**: `ge25519_double_scalarmult_vartime` combines σ·B and h·Q into a single operation
+- **Variable-time operations**: Verification inputs are public, so variable-time algorithms are safe
 
 ## 9. References
 
 1. RFC 4082 - TESLA Protocol
-2. IETF BLS Signatures (draft-irtf-cfrg-bls-signature)
+2. Galindo, Garcia - "Schnorr-like Identification Schemes from IBS" (2009)
 3. 3GPP TS 38.331 - NR RRC Protocol Specification
-4. Barreto, Libert, McCullagh, Quisquater - "Efficient and Provably-Secure Identity-Based Signatures and Signcryption from Bilinear Maps" (ASIACRYPT 2005, Section 3)
-5. Supranational blst library - https://github.com/supranational/blst
+4. Bernstein et al. - "High-speed high-security signatures" (Ed25519)
+5. libsodium library - https://doc.libsodium.org/

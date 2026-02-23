@@ -115,7 +115,7 @@ This maintains the security property from RFC 4082 Section 3.3: "One authenticat
 
 TF5 implements **two authentication mechanisms**:
 
-### 1. BLMQ IBS Signature (Immediate)
+### 1. GG09 Schnorr IBS Signature (Immediate)
 - gNB signs the authentication input with its IBS secret key (sk_ID)
 - UE verifies immediately using the pre-provisioned Core Master Public Key (MPK)
 - Provides strong authentication without waiting

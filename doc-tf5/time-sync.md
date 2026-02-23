@@ -273,7 +273,7 @@ If authentication fails, the UE falls back to **signature-only mode**:
 flowchart TD
     A[UE Power On] --> B[SSB Sync - PHY<br/>radio time align]
     B --> C[Receive SIB1<br/>record rx_frame, rx_slot]
-    C --> D[BLS Verify<br/>first-time UE]
+    C --> D[IBS Verify<br/>first-time UE]
     D --> E{IBS Signature OK?}
     E -->|Yes| F[chain_bootstrapped = true<br/>gNB authenticated, SSB timing trusted]
     E -->|No| G[auth_failed = true<br/>Abort RRC]

@@ -64,7 +64,7 @@ cd cmake_targets/ran_build/build
 
 **Output:**
 - `msk.bin` (32 bytes) - Master secret key. **KEEP SECURE!**
-- `mpk.bin` (96 bytes) - Master public key. Distribute to all UEs.
+- `mpk.bin` (32 bytes) - Master public key. Distribute to all UEs.
 
 ### Step 3: Issue gNB Secret Key
 
@@ -101,15 +101,15 @@ tf5_ibs_issue <msk_path> <cell_id_hex> <validity_end> <sk_path>
 
 | Key Type | Size | Description |
 |----------|------|-------------|
-| Master secret (msk) | 32 bytes | Scalar (big-endian) |
-| Master public (mpk) | 96 bytes | G2 point (compressed) |
-| gNB secret (sk_ID) | 51 bytes | G1 point (48B) + validity (3B, big-endian) |
+| Master secret (msk) | 32 bytes | Ed25519 scalar (little-endian) |
+| Master public (mpk) | 32 bytes | Ed25519 point (compressed) |
+| gNB secret (sk_ID) | 67 bytes | sk_ID (64B: y[32] + pk[32]) + validity (3B, big-endian) |
 
 Inspect generated keys with:
 ```bash
 xxd pkg_keys/msk.bin   # Should show 32 bytes
-xxd pkg_keys/mpk.bin   # Should show 96 bytes
-xxd gnb_keys/sk_gnb.bin  # Should show 51 bytes (48B sk_ID G1 point + 3B validity)
+xxd pkg_keys/mpk.bin   # Should show 32 bytes
+xxd gnb_keys/sk_gnb.bin  # Should show 67 bytes (64B sk_ID + 3B validity)
 ```
 
 ### Required Parameters
@@ -118,10 +118,10 @@ Key paths **must** be specified explicitly on the command line (no defaults):
 
 | Component | Parameter | Description |
 |-----------|-----------|-------------|
-| gNB | `--tf5-privkey` | Path to gNB's secret key file (51 bytes: sk_ID G1 point + validity) |
+| gNB | `--tf5-privkey` | Path to gNB's secret key file (67 bytes: sk_ID + validity) |
 | UE | `--tesla-core-mpk` | Path to Core's Master Public Key (MPK) |
 
-**Note**: The validity period is embedded in the 51-byte key file (bytes 48-50, big-endian).
+**Note**: The validity period is embedded in the 67-byte key file (bytes 64-66, big-endian).
 
 ### Running with TESLA
 
@@ -161,8 +161,8 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 - Mismatch causes signature verification failure
 
 **Validity binding:**
-- The validity period is embedded in the 51-byte key file (bytes 48-50, big-endian)
-- Both Cell ID and gnb_key_validity_end are hashed together: `H1(Cell_ID || gnb_key_validity_end)`
+- The validity period is embedded in the 67-byte key file (bytes 64-66, big-endian)
+- Both Cell ID and gnb_key_validity_end are hashed together: `H(Cell_ID || gnb_key_validity_end || mpk)`
 - UE extracts gnb_key_validity_end from the TESLA extension in SIB1
 - UE checks if the key has expired before attempting verification
 
@@ -173,9 +173,9 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 | Dependency | Purpose |
 |------------|---------|
 | OpenSSL | SHA-256 for key derivation, HMAC-SHA256 for MAC computation |
-| blst | BLS12-381 BLMQ IBS signatures |
+| libsodium | Ed25519 GG09 Schnorr IBS signatures |
 
-The blst library (Supranational) is included as a submodule at `cmake_targets/third_party/blst/`.
+The libsodium library is built via `ExternalProject_Add` in the root `CMakeLists.txt`.
 
 ---
 
@@ -216,7 +216,7 @@ cd cmake_targets/ran_build/build
 ./test_tf5_tesla_gnb       # gNB functions
 ./test_tf5_tesla_ue        # UE functions
 ./test_tf5_tesla_serial    # Serialization (pack/unpack)
-./test_tf5_tesla_bls       # BLMQ IBS signatures
+./test_tf5_tesla_ibs       # GG09 Schnorr IBS signatures
 ./test_tf5_tesla_e2e       # End-to-end integration
 ```
 
@@ -241,7 +241,7 @@ ctest -N
 | `test_tf5_tesla_gnb` | `test_tf5_tesla_gnb.cpp` | gNB init, interval calculation, extension preparation, resource cleanup |
 | `test_tf5_tesla_ue` | `test_tf5_tesla_ue.cpp` | UE init, safe packet test, SIB1 buffering, key chain verification, buffered verification, key recovery, IBS signature verification (`tf5_ibs_verify`), buffered message verification (`tf5_tesla_ue_verify_buffered_msgs`) |
 | `test_tf5_tesla_serial` | `test_tf5_tesla_serial.cpp` | Extension pack/unpack (134-byte format), big-endian encoding helpers |
-| `test_tf5_tesla_bls` | `test_tf5_tesla_bls.cpp` | BLMQ IBS sign, verify; IBS hash-to-scalar, sk validation |
+| `test_tf5_tesla_ibs` | `test_tf5_tesla_ibs.cpp` | GG09 Schnorr IBS sign, verify; key extraction, sk validation |
 | `test_tf5_tesla_e2e` | `test_tf5_tesla_e2e.cpp` | Full gNB→UE flow, tamper detection, key recovery scenarios |
 | `test_tf5_tesla_timing` | `test_tf5_tesla_timing.cpp` | Timing utilities (`tf5_tesla_slots_since_t0`, `tf5_tesla_get_interval_index`), replay protection (`tf5_rp_get_wallclock_ms`, `tf5_rp_validate_timestamp`) |
 | `test_tf5_tesla_fileio` | `test_tf5_tesla_fileio.cpp` | Key file I/O (`tf5_load_gnb_privkey`, `tf5_load_core_mpk`) |
@@ -258,7 +258,7 @@ openair3/SECU/tests/
 ├── test_tf5_tesla_gnb.cpp      # gNB function tests
 ├── test_tf5_tesla_ue.cpp       # UE function tests
 ├── test_tf5_tesla_serial.cpp   # Serialization tests
-├── test_tf5_tesla_bls.cpp      # BLMQ IBS signature tests
+├── test_tf5_tesla_ibs.cpp      # GG09 Schnorr IBS signature tests
 ├── test_tf5_tesla_e2e.cpp      # Integration tests
 ├── test_tf5_tesla_timing.cpp   # Timing and replay protection tests
 └── test_tf5_tesla_fileio.cpp   # Key file I/O tests

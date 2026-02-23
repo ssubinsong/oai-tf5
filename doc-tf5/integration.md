@@ -20,8 +20,8 @@ Located in `openair3/SECU/`:
 |------|---------|
 | `tf5_tesla.c` | TESLA protocol implementation (key chains, MAC, verification) |
 | `tf5_tesla.h` | Data structures, API declarations, constants |
-| `tf5_tesla_sig.c` | BLMQ IBS signature operations (sign, verify, init) |
-| `tf5_tesla_sig.h` | BLMQ IBS API declarations |
+| `tf5_tesla_sig.c` | GG09 Schnorr IBS signature operations (sign, verify, init) |
+| `tf5_tesla_sig.h` | GG09 Schnorr IBS API declarations |
 | `tf5_ibs_common.c` | IBS utilities shared between gNB and Core PKG |
 | `tf5_ibs_pkg.h` | IBS PKG API declarations |
 
@@ -65,7 +65,7 @@ Located in `openair3/SECU/tests/`:
 | `test_tf5_tesla_gnb.cpp` | gNB functions |
 | `test_tf5_tesla_ue.cpp` | UE verification |
 | `test_tf5_tesla_e2e.cpp` | End-to-end flow |
-| `test_tf5_tesla_bls.cpp` | BLMQ IBS signatures |
+| `test_tf5_tesla_ibs.cpp` | GG09 Schnorr IBS signatures |
 | `test_tf5_tesla_serial.cpp` | Serialization |
 | `test_tf5_tesla_timing.cpp` | Timing/replay protection |
 | `test_tf5_tesla_fileio.cpp` | Key file I/O |
@@ -139,7 +139,7 @@ add_boolean_option(ENABLE_TF5 OFF "Enable TESLA broadcast authentication for SIB
 
 if(ENABLE_TF5)
   add_definitions(-DENABLE_TF5)
-  # Link BLST library for BLS signatures
+  # Link libsodium for Ed25519 IBS signatures
 endif()
 ```
 
@@ -230,7 +230,7 @@ nr_rrc_ue_process_rrcSetup()
 │  └───────────────────┘                                          │
 └─────────────────────────────────────────────────────────────────┘
               │                               │
-              │ sk_ID (51B file)              │ MPK (96B)
+              │ sk_ID (67B file)              │ MPK (32B)
               ▼                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                            gNB                                  │
@@ -249,7 +249,7 @@ nr_rrc_ue_process_rrcSetup()
 │  gNB_scheduler_bch.c: Call update before broadcast              │
 └─────────────────────────────────────────────────────────────────┘
               │
-              │ SIB1 + TESLA Extension (134B)
+              │ SIB1 + TESLA Extension (150B)
               │ (signature, tag, disclosed key, params)
               ▼
 ┌─────────────────────────────────────────────────────────────────┐

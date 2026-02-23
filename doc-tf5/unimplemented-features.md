@@ -35,7 +35,7 @@ This extends replay protection from 10.24 seconds (one SFN cycle) to approximate
 
 **Description**: Complete neighbor broadcast mechanism for efficient handover without IBS re-verification.
 
-When a UE performs cell reselection, it normally must perform expensive IBS (BLS pairing) verification to trust the new cell's TESLA parameters. The neighbor broadcast mechanism enables UEs to skip IBS verification by using cached TESLA parameters from neighboring cells that have been attested by multiple serving cells.
+When a UE performs cell reselection, it normally must perform IBS verification to trust the new cell's TESLA parameters. The neighbor broadcast mechanism enables UEs to skip IBS verification by using cached TESLA parameters from neighboring cells that have been attested by multiple serving cells.
 
 **Current Status**: Not implemented.
 
@@ -116,13 +116,13 @@ TESLA uses a finite key chain of length N. When the chain is exhausted, the gNB 
 
 ## 4. IBS Signature Batch Verification
 
-**Description**: Amortize pairing costs across multiple BLMQ IBS signatures during cell selection/reselection.
+**Description**: Amortize verification costs across multiple GG09 Schnorr IBS signatures during cell selection/reselection.
 
 During cell selection and reselection, UEs detect and measure multiple candidate cells, ranking them by signal quality before selecting the best one (3GPP TS 38.304). This procedure inherently requires authenticating signatures from several gNBs.
 
-BLMQ IBS verification uses a single pairing per signature (via multi-Miller loop). Batch verification could further reduce costs by sharing final exponentiation across multiple verifications.
+GG09 Schnorr IBS verification uses Ed25519 point arithmetic per signature. Batch verification could reduce costs by combining multiple signature equations into a single multi-scalar multiplication with random coefficients.
 
-**Current Status**: Not implemented. The current implementation verifies one BLMQ IBS signature at a time via a single-pairing check.
+**Current Status**: Not implemented. The current implementation verifies one GG09 Schnorr IBS signature at a time.
 
 **Rationale for Deferral**:
 - Requires neighbor broadcast infrastructure (UE needs to receive SIB1 from multiple cells)
@@ -138,7 +138,7 @@ BLMQ IBS verification uses a single pairing per signature (via multi-Miller loop
 | HFN Tracking | Not implemented | None (independent) |
 | Neighbor TESLA Broadcast | Not implemented | Multi-cell testbed |
 | Chain Renewal Optimization | Not implemented | Neighbor broadcast (for optimal path) |
-| BLS Batch Verification | Not implemented | Multi-cell scenario |
+| Schnorr Batch Verification | Not implemented | Multi-cell scenario |
 
 ---
 

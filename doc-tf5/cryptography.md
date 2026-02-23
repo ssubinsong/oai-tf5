@@ -13,7 +13,7 @@
 | Key chain derivation | SHA-256(0x00 \|\| K) | 128 bits (truncated) |
 | MAC key derivation | SHA-256(0x01 \|\| K) | 256 bits |
 | TESLA tag | HMAC-SHA256(K', data) | 128 bits (truncated) |
-| Signature | BLMQ IBS (BLS12-381) | σ = (h, S): 32B scalar + 48B G1 = 80 bytes |
+| Signature | GG09 Schnorr IBS (Ed25519) | σ = R[32] \|\| σ[32] \|\| pk[32] = 96 bytes |
 
 ---
 
@@ -21,41 +21,41 @@
 
 **Source**: [tf5_tesla_sig.c](../openair3/SECU/tf5_tesla_sig.c)
 
-TF5 uses the BLMQ (Barreto-Libert-McCullagh-Quisquater) Identity-Based Signature
-scheme on BLS12-381 for authenticating the initial TESLA key disclosure. BLMQ
-requires only a single pairing for verification. For the full cryptographic
-specification (algorithms, security analysis, domain separation tags), see
-[pkg-cryptography.md](pkg-cryptography.md).
+TF5 uses the GG09 Schnorr Identity-Based Signature scheme on Ed25519 (via
+libsodium) for authenticating the initial TESLA key disclosure. GG09 Schnorr
+IBS provides efficient verification using only Ed25519 point arithmetic. For
+the full cryptographic specification (algorithms, security
+analysis, domain separation tags), see [pkg-cryptography.md](pkg-cryptography.md).
 
 ### Key File Format
 
 Keys are stored as raw binary files:
-- **Master secret key (msk)**: 32-byte scalar (big-endian)
-- **Master public key (mpk)**: 96-byte compressed G2 point
-- **gNB secret key (sk_ID)**: 48-byte compressed G1 point (`[1/(H1(ID)+s)]·P`)
+- **Master secret key (msk)**: 32-byte Ed25519 scalar (little-endian)
+- **Master public key (mpk)**: 32-byte Ed25519 point (compressed)
+- **gNB secret key (sk_ID)**: 64 bytes (y[32] scalar + pk[32] point)
 
 ### Sign Operation
 
 ```c
-int tf5_ibs_sign(const uint8_t secret_key[48],  // sk_ID (G1 point)
+int tf5_ibs_sign(const uint8_t sk_id[64],   // sk_ID: y[32] || pk[32]
                  const uint8_t *data,
                  size_t data_len,
-                 uint8_t signature[80]);          // h[32] || S[48]
+                 uint8_t signature[96]);      // R[32] || σ[32] || pk[32]
 ```
 
 ### IBS Verify Operation
 
 ```c
-int tf5_ibs_verify(const uint8_t mpk[96],           // Core's MPK
+int tf5_ibs_verify(const uint8_t mpk[32],           // Core's MPK (Ed25519 point)
                    const uint8_t cell_id[5],        // gNB's Cell ID
                    uint32_t validity_end,           // Key expiration (minutes since 2024-01-01)
                    const uint8_t *data,
                    size_t data_len,
-                   const uint8_t signature[80]);    // h[32] || S[48]
+                   const uint8_t signature[96]);    // R[32] || σ[32] || pk[32]
 ```
 
-Verification computes `QID = H1(ID)·Q + Qpub` and checks
-`h == H2(data, e(S, QID)·g^{-h})` via multi-Miller-loop.
+Verification computes `Q = cid·B + MPK` where `cid = H(id || pk || mpk)`,
+then checks `R' = σ·B − h·Q` where `h = H(R || Q || data)`, accepting iff `R' == R`.
 
 ---
 
@@ -136,7 +136,7 @@ sig_auth_input = original_SIB1 || te_version || tesla_params || validity_end || 
 
 Per RFC 4082, the MAC does NOT include interval index and key disclosure.
 Additionally, `tesla_params` is excluded as it is already authenticated by
-the BLMQ IBS signature during first-time UE verification:
+the GG09 Schnorr IBS signature during first-time UE verification:
 ```
 mac_auth_input = original_SIB1 || validity_end
 ```
