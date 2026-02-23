@@ -45,11 +45,10 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
         return rc;
     }
 
-    /* Derive MPK = msk·B (needed for extract: cid = H(id‖pk‖mpk)) */
-    if (crypto_scalarmult_ed25519_base_noclamp(mpk, msk) != 0) {
-        sodium_memzero(msk, TF5_IBS_MASTER_SECRET_LEN);
-        return TF5_ERR_CRYPTO;
-    }
+    /* Derive MPK from seed via Ed25519 key expansion */
+    uint8_t sk_tmp[crypto_sign_SECRETKEYBYTES];
+    crypto_sign_seed_keypair(mpk, sk_tmp, msk);
+    sodium_memzero(sk_tmp, sizeof(sk_tmp));
 
     /* Compute gNB secret key with validity period */
     rc = tf5_ibs_compute_gnb_secret(msk, cell_id, gnb_key_validity_end, mpk, sk_id);

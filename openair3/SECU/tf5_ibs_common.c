@@ -4,8 +4,8 @@
  * Shared code for PKG utilities: identity hash, key extraction, file I/O, hex parsing
  *
  * GG09 Schnorr IBS (Ed25519/libsodium):
- *   Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
- *   sk_id = (y[32], pk[32]) = 64 bytes
+ *   Extract via crypto_sign_detached: sign(msk, id_msg) → (R||S), sk_id = (S, R)
+ *   Identity hash: cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity) mod l
  */
 
 #include "tf5_ibs_pkg.h"
@@ -16,20 +16,15 @@
 #include <string.h>
 #include <ctype.h>
 
-/* Reduce a 32-byte value mod l (Ed25519 group order).
- * libsodium's crypto_core_ed25519_scalar_reduce requires 64-byte input. */
-static void scalar_reduce_32(uint8_t out[32], const uint8_t in[32])
-{
-    uint8_t tmp[64];
-    memcpy(tmp, in, 32);
-    memset(tmp + 32, 0, 32);
-    crypto_core_ed25519_scalar_reduce(out, tmp);
-}
-
 /*
  * Hash identity to scalar for GG09 Schnorr IBS
  *
- * Computes cid = BLAKE2b(cell_id ‖ validity_be[3] ‖ pk ‖ mpk) mod l
+ * Computes cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity_be[3]) mod l
+ *
+ * Input order follows Ed25519 convention: H(R ‖ A ‖ M) where
+ *   R = pk (identity-derived public point)
+ *   A = mpk (master public key)
+ *   M = cell_id ‖ validity (identity message)
  *
  * Used by both PKG (key extraction) and RAN (signature verification) to derive
  * the identity scalar from public parameters.
@@ -51,22 +46,23 @@ int tf5_ibs_hash_identity(const uint8_t *cell_id,
     validity_be[1] = (gnb_key_validity_end >> 8) & 0xFF;
     validity_be[2] = gnb_key_validity_end & 0xFF;
 
-    /* concat = cell_id ‖ validity_be[3] ‖ pk ‖ mpk */
-    const size_t concat_len = cell_id_len + TF5_IBS_VALIDITY_PERIOD_LEN
-                            + TF5_ED25519_POINT_LEN + TF5_IBS_MASTER_PUBLIC_LEN;
-    uint8_t concat[TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN
-                  + TF5_ED25519_POINT_LEN + TF5_IBS_MASTER_PUBLIC_LEN];
+    /* concat = pk ‖ mpk ‖ cell_id ‖ validity_be[3]
+     * (Ed25519 convention: R ‖ A ‖ M) */
+    const size_t concat_len = TF5_ED25519_POINT_LEN + TF5_IBS_MASTER_PUBLIC_LEN
+                            + cell_id_len + TF5_IBS_VALIDITY_PERIOD_LEN;
+    uint8_t concat[TF5_ED25519_POINT_LEN + TF5_IBS_MASTER_PUBLIC_LEN
+                  + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN];
 
     size_t off = 0;
-    memcpy(concat + off, cell_id, cell_id_len);                     off += cell_id_len;
-    memcpy(concat + off, validity_be, TF5_IBS_VALIDITY_PERIOD_LEN); off += TF5_IBS_VALIDITY_PERIOD_LEN;
     memcpy(concat + off, pk, TF5_ED25519_POINT_LEN);               off += TF5_ED25519_POINT_LEN;
-    memcpy(concat + off, mpk, TF5_IBS_MASTER_PUBLIC_LEN);
+    memcpy(concat + off, mpk, TF5_IBS_MASTER_PUBLIC_LEN);          off += TF5_IBS_MASTER_PUBLIC_LEN;
+    memcpy(concat + off, cell_id, cell_id_len);                     off += cell_id_len;
+    memcpy(concat + off, validity_be, TF5_IBS_VALIDITY_PERIOD_LEN);
 
-    /* Hash with BLAKE2b and reduce mod l */
-    uint8_t hash_buf[32];
-    crypto_generichash(hash_buf, 32, concat, concat_len, NULL, 0);
-    scalar_reduce_32(scalar_out, hash_buf);
+    /* Hash with SHA-512 (64 bytes) and reduce mod l */
+    uint8_t hash_buf[64];
+    crypto_hash_sha512(hash_buf, concat, concat_len);
+    crypto_core_ed25519_scalar_reduce(scalar_out, hash_buf);
 
     return TF5_OK;
 }
@@ -175,12 +171,17 @@ int tf5_ibs_load_master_secret(const char *filepath,
 }
 
 /*
- * Compute GG09 Schnorr IBS gNB secret key from master secret, Cell ID, and validity
+ * Compute GG09 Schnorr IBS gNB secret key via Ed25519 signing
  *
- * Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ * Uses crypto_sign_detached to sign the identity message (cell_id ‖ validity)
+ * with the master seed. The Ed25519 signature (R ‖ S) maps to:
+ *   pk = R (identity-derived public point)
+ *   y  = S (identity-derived secret scalar)
+ *
  * Output:  sk_out = y[32] || pk[32] = 64 bytes
  *
- * NOTE: This function is NOT deterministic — it generates a random b each call.
+ * This function is deterministic — same inputs always produce the same output
+ * (Ed25519 uses a deterministic nonce derived from the seed and message).
  */
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
@@ -192,49 +193,31 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
         return TF5_ERR_INVALID_PARAM;
     }
 
-    /* Reduce msk to ensure it's a valid scalar mod l */
-    uint8_t z[TF5_ED25519_SCALAR_LEN];
-    scalar_reduce_32(z, msk);
+    /* Expand seed to full Ed25519 signing key (64 bytes) */
+    uint8_t pk_derived[crypto_sign_PUBLICKEYBYTES];
+    uint8_t sk_full[crypto_sign_SECRETKEYBYTES];
+    crypto_sign_seed_keypair(pk_derived, sk_full, msk);
 
-    /* b ← random scalar in Z_l */
-    uint8_t b[TF5_ED25519_SCALAR_LEN];
-    randombytes_buf(b, TF5_ED25519_SCALAR_LEN);
-    scalar_reduce_32(b, b);
+    /* Build identity message: cell_id[5] ‖ validity_be[3] = 8 bytes */
+    uint8_t id_msg[TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN];
+    memcpy(id_msg, cell_id, TF5_IBS_CELL_ID_LEN);
+    id_msg[TF5_IBS_CELL_ID_LEN + 0] = (gnb_key_validity_end >> 16) & 0xFF;
+    id_msg[TF5_IBS_CELL_ID_LEN + 1] = (gnb_key_validity_end >> 8) & 0xFF;
+    id_msg[TF5_IBS_CELL_ID_LEN + 2] = gnb_key_validity_end & 0xFF;
 
-    /* pk = b·B */
-    uint8_t pk[TF5_ED25519_POINT_LEN];
-    if (crypto_scalarmult_ed25519_base_noclamp(pk, b) != 0) {
-        sodium_memzero(b, sizeof(b));
-        sodium_memzero(z, sizeof(z));
-        return TF5_ERR_CRYPTO;
+    /* Sign identity message: produces (R[32] ‖ S[32]) */
+    uint8_t sig[crypto_sign_BYTES];
+    if (crypto_sign_detached(sig, NULL, id_msg, sizeof(id_msg), sk_full) != 0) {
+        sodium_memzero(sk_full, sizeof(sk_full));
+        return TF5_ERR_SIGN;
     }
 
-    /* cid = H(cell_id ‖ validity ‖ pk ‖ mpk) mod l */
-    uint8_t cid[TF5_ED25519_SCALAR_LEN];
-    int rc = tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN,
-                                    gnb_key_validity_end, pk, mpk, cid);
-    if (rc != TF5_OK) {
-        sodium_memzero(b, sizeof(b));
-        sodium_memzero(z, sizeof(z));
-        return rc;
-    }
-
-    /* y = cid·z + b mod l */
-    uint8_t y[TF5_ED25519_SCALAR_LEN];
-    uint8_t cid_z[TF5_ED25519_SCALAR_LEN];
-    crypto_core_ed25519_scalar_mul(cid_z, cid, z);
-    crypto_core_ed25519_scalar_add(y, cid_z, b);
-
-    /* Output: sk_out = y[32] || pk[32] */
-    memcpy(sk_out, y, TF5_ED25519_SCALAR_LEN);
-    memcpy(sk_out + TF5_ED25519_SCALAR_LEN, pk, TF5_ED25519_POINT_LEN);
+    /* Output: sk_out = S[32] ‖ R[32] (y=S, pk=R) */
+    memcpy(sk_out, sig + TF5_ED25519_SCALAR_LEN, TF5_ED25519_SCALAR_LEN);
+    memcpy(sk_out + TF5_ED25519_SCALAR_LEN, sig, TF5_ED25519_POINT_LEN);
 
     /* Clear sensitive data */
-    sodium_memzero(b, sizeof(b));
-    sodium_memzero(z, sizeof(z));
-    sodium_memzero(y, sizeof(y));
-    sodium_memzero(cid, sizeof(cid));
-    sodium_memzero(cid_z, sizeof(cid_z));
+    sodium_memzero(sk_full, sizeof(sk_full));
 
     return TF5_OK;
 }

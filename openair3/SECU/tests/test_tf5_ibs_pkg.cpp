@@ -46,10 +46,12 @@ protected:
         file.close();
     }
 
-    // Helper to derive MPK from MSK for hash_identity tests
+    // Helper to derive MPK from MSK (Ed25519 seed) for hash_identity tests
     void DeriveMpk(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN]) {
-        crypto_scalarmult_ed25519_base_noclamp(mpk, msk);
+        uint8_t sk_tmp[crypto_sign_SECRETKEYBYTES];
+        crypto_sign_seed_keypair(mpk, sk_tmp, msk);
+        sodium_memzero(sk_tmp, sizeof(sk_tmp));
     }
 };
 
@@ -305,8 +307,8 @@ TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Success) {
         << "Output should not be all zeros";
 }
 
-TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Randomized) {
-    // GG09 extract uses random b each call, so same inputs produce different outputs
+TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Deterministic) {
+    // Ed25519-based extract uses deterministic nonce, so same inputs produce same output
     uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
     memset(msk, 0x42, TF5_IBS_MASTER_SECRET_LEN);
     msk[0] = 0x01;
@@ -323,8 +325,8 @@ TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Randomized) {
     tf5_ibs_compute_gnb_secret(msk, cell_id, validity, mpk, sk1);
     tf5_ibs_compute_gnb_secret(msk, cell_id, validity, mpk, sk2);
 
-    EXPECT_NE(0, memcmp(sk1, sk2, TF5_IBS_GNB_SK_LEN))
-        << "GG09 extract is randomized: same inputs should produce different outputs";
+    EXPECT_EQ(0, memcmp(sk1, sk2, TF5_IBS_GNB_SK_LEN))
+        << "Ed25519-based extract is deterministic: same inputs should produce same output";
 }
 
 TEST_F(TF5IbsPkgTest, ComputeGnbSecret_DifferentMsk) {
@@ -577,9 +579,7 @@ TEST_F(TF5IbsPkgTest, EndToEnd_KeypairAndIssuance) {
                              (uint32_t)data[TF5_IBS_GNB_SK_LEN + 2];
     EXPECT_EQ(validity, read_validity);
 
-    // NOTE: Cannot compare issued key with direct compute_gnb_secret result
-    // because GG09 extract is randomized (uses random b each call).
-    // Instead, verify the key is non-zero and has valid structure.
+    // Verify the key is non-zero and has valid structure
     EXPECT_FALSE(is_all_zeros(data, TF5_IBS_GNB_SK_LEN))
         << "Issued key should not be all zeros";
 }

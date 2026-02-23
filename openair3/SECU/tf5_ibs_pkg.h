@@ -7,14 +7,15 @@
  * The PKG generates master keys and issues gNB-specific secret keys
  * based on the gNB's NR Cell ID and key validity period.
  *
- * GG09 Schnorr-2IBS Scheme:
- *   - Master secret: z (scalar in Z_l)
- *   - Master public key: MPK = z·B where B is the Ed25519 base point
- *   - gNB identity: NR Cell ID (36 bits) || gnb_key_validity_end (24 bits)
- *   - Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ * GG09 Schnorr-2IBS Scheme (Ed25519/libsodium):
+ *   - Master secret: Ed25519 seed (32 bytes)
+ *   - Master public key: MPK = crypto_sign_seed_keypair(seed)
+ *   - gNB identity message: cell_id[5] ‖ validity_be[3] = 8 bytes
+ *   - Extract: (R‖S) = crypto_sign_detached(seed, id_msg), sk_id = (y=S, pk=R)
+ *   - Identity hash: cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity) mod l
  *   - gNB secret key: sk_id = (y[32], pk[32]) = 64 bytes
  *   - Signature: σ = R[32] || sigma[32] || pk[32] = 96 bytes
- *   - Verification: cid = H(id‖pk‖mpk), Q = cid·mpk + pk, check σ·B − h·Q == R
+ *   - Verification: cid = SHA-512(pk ‖ mpk ‖ id_msg) mod l, Q = cid·mpk + pk
  */
 
 #ifndef TF5_IBS_PKG_H
@@ -35,8 +36,8 @@
 /**
  * Generate Core PKG master keypair
  *
- * Generates a new master secret key (z) and corresponding master public key
- * (MPK = z·B) using cryptographically secure randomness.
+ * Generates a random Ed25519 seed (MSK) and derives the corresponding
+ * master public key (MPK) via crypto_sign_seed_keypair.
  *
  * @param msk_path  Path to save master secret key (32 bytes, binary)
  * @param mpk_path  Path to save master public key (32 bytes, binary)
@@ -48,9 +49,9 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path);
 /**
  * Issue gNB secret key from Cell ID and validity period
  *
- * Computes the gNB's secret key:
- *   b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
- *   sk_id = (y[32], pk[32]) = 64 bytes
+ * Signs the identity message (cell_id ‖ validity) with the master key
+ * using crypto_sign_detached. The Ed25519 signature (R‖S) maps to:
+ *   sk_id = (y=S[32], pk=R[32]) = 64 bytes
  *
  * @param msk_path     Path to master secret key file
  * @param cell_id      NR Cell ID (5 bytes, 36 bits with 4 padding bits)
@@ -67,7 +68,8 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
 /**
  * Hash identity to scalar for GG09 Schnorr IBS
  *
- * Computes cid = BLAKE2b(cell_id ‖ validity_be[3] ‖ pk ‖ mpk) mod l
+ * Computes cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity_be[3]) mod l
+ * (Ed25519 convention: H(R ‖ A ‖ M))
  *
  * Used by both PKG (key extraction) and RAN (signature verification) to derive
  * the identity scalar from public parameters.
@@ -130,14 +132,14 @@ int tf5_ibs_load_master_secret(const char *filepath,
                                 uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN]);
 
 /**
- * Compute GG09 Schnorr IBS gNB secret key from master secret, Cell ID, and validity
+ * Compute GG09 Schnorr IBS gNB secret key via Ed25519 signing
  *
- * Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
- * Output:  sk_out = y[32] || pk[32] = 64 bytes
+ * Signs id_msg = cell_id ‖ validity with the master seed using
+ * crypto_sign_detached. The signature (R‖S) maps to sk_id = (y=S, pk=R).
  *
- * NOTE: This function is NOT deterministic — it generates a random b each call.
+ * This function is deterministic — same inputs always produce the same output.
  *
- * @param msk          Master secret key (32 bytes, Ed25519 scalar)
+ * @param msk          Master secret key (32-byte Ed25519 seed)
  * @param cell_id      NR Cell ID (5 bytes)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
  * @param mpk          Master public key (32 bytes, Ed25519 point)

@@ -1,7 +1,9 @@
 /*
  * TF5 IBS - Master Keypair Generation Utility (GG09 Schnorr IBS)
  *
- * Generates the Core PKG master secret key (z) and master public key (MPK = z·B).
+ * Generates the Core PKG master keypair using Ed25519 seed-based key derivation:
+ *   MSK = random 32-byte seed
+ *   MPK = crypto_sign_seed_keypair(seed) → public key
  *
  * Usage: tf5_ibs_pkg_keygen <msk_path> <mpk_path>
  *
@@ -20,17 +22,11 @@
 
 #include "tf5_ibs_file_util.h"
 
-/* Reduce a 32-byte value mod l (Ed25519 group order) */
-static void scalar_reduce_32(uint8_t out[32], const uint8_t in[32])
-{
-    uint8_t tmp[64];
-    memcpy(tmp, in, 32);
-    memset(tmp + 32, 0, 32);
-    crypto_core_ed25519_scalar_reduce(out, tmp);
-}
-
 /*
  * Generate master keypair and save to files
+ *
+ * MSK = random 32-byte seed (used as Ed25519 seed)
+ * MPK = public key derived via crypto_sign_seed_keypair(seed)
  */
 int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
 {
@@ -38,35 +34,25 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path)
         return TF5_ERR_INVALID_PARAM;
     }
 
-    uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
+    uint8_t seed[TF5_IBS_MASTER_SECRET_LEN];
     uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN];
+    uint8_t sk_tmp[crypto_sign_SECRETKEYBYTES];
 
-    /* Generate random master secret z and reduce mod l */
-    randombytes_buf(msk, TF5_IBS_MASTER_SECRET_LEN);
-    scalar_reduce_32(msk, msk);
+    /* Generate random seed */
+    randombytes_buf(seed, TF5_IBS_MASTER_SECRET_LEN);
 
-    /* Validate: z must not be zero */
-    uint8_t zero[TF5_IBS_MASTER_SECRET_LEN] = {0};
-    if (sodium_memcmp(msk, zero, TF5_IBS_MASTER_SECRET_LEN) == 0) {
-        fprintf(stderr, "Generated zero secret key (probability ~2^-252)\n");
-        sodium_memzero(msk, TF5_IBS_MASTER_SECRET_LEN);
-        return TF5_ERR_KEY_INVALID;
-    }
-
-    /* Derive master public key: MPK = z · B (Ed25519 base point) */
-    if (crypto_scalarmult_ed25519_base_noclamp(mpk, msk) != 0) {
-        sodium_memzero(msk, TF5_IBS_MASTER_SECRET_LEN);
-        return TF5_ERR_CRYPTO;
-    }
+    /* Derive keypair: seed → (mpk, sk_tmp) via Ed25519 key expansion */
+    crypto_sign_seed_keypair(mpk, sk_tmp, seed);
+    sodium_memzero(sk_tmp, sizeof(sk_tmp));
 
     /* Write master secret key (restricted permissions: owner read/write only) */
-    if (write_key_file(msk_path, msk, TF5_IBS_MASTER_SECRET_LEN, 0600) != 0) {
-        sodium_memzero(msk, TF5_IBS_MASTER_SECRET_LEN);
+    if (write_key_file(msk_path, seed, TF5_IBS_MASTER_SECRET_LEN, 0600) != 0) {
+        sodium_memzero(seed, TF5_IBS_MASTER_SECRET_LEN);
         return TF5_ERR_FILE_WRITE;
     }
 
-    /* Clear msk from memory */
-    sodium_memzero(msk, TF5_IBS_MASTER_SECRET_LEN);
+    /* Clear seed from memory */
+    sodium_memzero(seed, TF5_IBS_MASTER_SECRET_LEN);
 
     /* Write master public key (public readable) */
     if (write_key_file(mpk_path, mpk, TF5_IBS_MASTER_PUBLIC_LEN, 0644) != 0) {

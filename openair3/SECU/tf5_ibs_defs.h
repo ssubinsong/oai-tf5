@@ -7,10 +7,12 @@
  * (tf5_tesla_sig.h / tf5_tesla.h) and the Core PKG hierarchy (tf5_ibs_pkg.h).
  *
  * IBS scheme: GG09 Schnorr-2IBS (Galindo-Garcia, 2009; 1-level Schnorr IBS)
- *   Setup:   msk = z ← Z_l,  mpk = z·B
- *   Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ *   Setup:   msk = Ed25519 seed,  mpk = crypto_sign_seed_keypair(seed)
+ *   Extract: (R‖S) = Ed25519_sign(msk, id_msg), sk_id = (y=S, pk=R)
+ *            identity hash: cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity) mod l
  *   Sign:    r ← Z_l, R = r·B, h = H(data‖R), σ = h·y + r
- *   Verify:  cid = H(id‖pk‖mpk), Q = cid·mpk + pk, R' = σ·B − h·Q, check h == H(data‖R')
+ *   Verify:  cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity) mod l,
+ *            Q = cid·mpk + pk, R' = σ·B − h·Q, check h == H(data‖R')
  *
  * NOTE: No ENABLE_TF5 guard - this header is also used by standalone PKG tools.
  */
@@ -76,7 +78,7 @@ typedef enum {
 #define TF5_IBS_GNB_PK_LEN         TF5_ED25519_POINT_LEN   // pk: identity-derived public point
 #define TF5_IBS_SIG_LEN            96   // σ = R[32] || sigma[32] || pk[32]
 
-#define TF5_IBS_MASTER_SECRET_LEN   TF5_ED25519_SCALAR_LEN  // z: master secret scalar
+#define TF5_IBS_MASTER_SECRET_LEN   TF5_ED25519_SCALAR_LEN  // Ed25519 seed (32 bytes)
 #define TF5_IBS_MASTER_PUBLIC_LEN   TF5_ED25519_POINT_LEN   // MPK = z·B (Ed25519 point)
 #define TF5_IBS_MPK_LEN             TF5_IBS_MASTER_PUBLIC_LEN  // Alias used by TESLA module
 
