@@ -1,20 +1,20 @@
 /**
  * @file tf5_ibs_pkg.h
- * @brief Core PKG for TF5 BLMQ Identity-Based Signature (IBS) scheme
+ * @brief Core PKG for TF5 GG09 Schnorr Identity-Based Signature (IBS) scheme
  *
- * This module implements the Core PKG for the TESLA BLMQ IBS scheme
- * (Barreto-Libert-McCullagh-Quisquater, ASIACRYPT 2005 Section 3).
+ * This module implements the Core PKG for the TESLA GG09 Schnorr IBS scheme
+ * (Galindo-Garcia, 2009; 1-level Schnorr IBS over Ed25519).
  * The PKG generates master keys and issues gNB-specific secret keys
  * based on the gNB's NR Cell ID and key validity period.
  *
- * BLMQ IBS Scheme:
- *   - Master secret: s (scalar in Z_r)
- *   - Master public key: MPK = s*Q where Q is G2 generator
+ * GG09 Schnorr-2IBS Scheme:
+ *   - Master secret: z (scalar in Z_l)
+ *   - Master public key: MPK = z·B where B is the Ed25519 base point
  *   - gNB identity: NR Cell ID (36 bits) || gnb_key_validity_end (24 bits)
- *   - H1(ID) = hash_to_scalar(Cell_ID || gnb_key_validity_end) (scalar)
- *   - gNB secret key: sk_ID = [1/(H1(ID)+s)] * P (G1 point, 48 bytes)
- *   - Signature: σ = (h, S) where h ∈ Z*p, S = (x+h)*sk_ID ∈ G1 (80 bytes)
- *   - Verification: h == H2(M, e(S, H1(ID)*Q+Qpub) * g^{-h})
+ *   - Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ *   - gNB secret key: sk_id = (y[32], pk[32]) = 64 bytes
+ *   - Signature: σ = R[32] || sigma[32] || pk[32] = 96 bytes
+ *   - Verification: cid = H(id‖pk‖mpk), Q = cid·mpk + pk, check σ·B − h·Q == R
  */
 
 #ifndef TF5_IBS_PKG_H
@@ -35,11 +35,11 @@
 /**
  * Generate Core PKG master keypair
  *
- * Generates a new master secret key (s) and corresponding master public key
- * (MPK = s*Q) using cryptographically secure randomness.
+ * Generates a new master secret key (z) and corresponding master public key
+ * (MPK = z·B) using cryptographically secure randomness.
  *
  * @param msk_path  Path to save master secret key (32 bytes, binary)
- * @param mpk_path  Path to save master public key (96 bytes, binary)
+ * @param mpk_path  Path to save master public key (32 bytes, binary)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_CRYPTO,
  *         TF5_ERR_KEY_INVALID, TF5_ERR_FILE_WRITE
  */
@@ -48,12 +48,14 @@ int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path);
 /**
  * Issue gNB secret key from Cell ID and validity period
  *
- * Computes the gNB's secret key as sk_ID = [1/(H1(ID)+s)] * P ∈ G1 (48 bytes)
+ * Computes the gNB's secret key:
+ *   b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ *   sk_id = (y[32], pk[32]) = 64 bytes
  *
  * @param msk_path     Path to master secret key file
  * @param cell_id      NR Cell ID (5 bytes, 36 bits with 4 padding bits)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
- * @param sk_path      Path to save gNB secret key (51 bytes: 48B G1 point + 3B validity)
+ * @param sk_path      Path to save gNB secret key (67 bytes: 64B sk_id + 3B validity)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_WRITE,
  *         or propagated error from tf5_ibs_load_master_secret / tf5_ibs_compute_gnb_secret
  */
@@ -63,21 +65,27 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
                            const char *sk_path);
 
 /**
- * Hash identity (Cell ID || gnb_key_validity_end) to scalar in Z_r
+ * Hash identity to scalar for GG09 Schnorr IBS
  *
- * Implements H_s: {0,1}* -> Z_r using IETF hash-to-field
- * IKM = DST || cell_id || gnb_key_validity_end (3 bytes, big-endian)
+ * Computes cid = BLAKE2b(cell_id ‖ validity_be[3] ‖ pk ‖ mpk) mod l
+ *
+ * Used by both PKG (key extraction) and RAN (signature verification) to derive
+ * the identity scalar from public parameters.
  *
  * @param cell_id      NR Cell ID (5 bytes)
  * @param cell_id_len  Length of cell_id (should be TF5_IBS_CELL_ID_LEN)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
- * @param scalar_out   Output buffer for scalar (32 bytes, big-endian)
+ * @param pk           Identity-derived public key (32 bytes, Ed25519 point)
+ * @param mpk          Master public key (32 bytes, Ed25519 point)
+ * @param scalar_out   Output buffer for scalar (32 bytes, little-endian)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM
  */
-int tf5_ibs_hash_to_scalar(const uint8_t *cell_id,
-                            size_t cell_id_len,
-                            uint32_t gnb_key_validity_end,
-                            uint8_t scalar_out[TF5_BLS_SCALAR_LEN]);
+int tf5_ibs_hash_identity(const uint8_t *cell_id,
+                           size_t cell_id_len,
+                           uint32_t gnb_key_validity_end,
+                           const uint8_t pk[TF5_ED25519_POINT_LEN],
+                           const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN],
+                           uint8_t scalar_out[TF5_ED25519_SCALAR_LEN]);
 
 /**
  * Parse Cell ID from hex string
@@ -122,19 +130,24 @@ int tf5_ibs_load_master_secret(const char *filepath,
                                 uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN]);
 
 /**
- * Compute BLMQ IBS gNB secret key from master secret, Cell ID, and validity period
+ * Compute GG09 Schnorr IBS gNB secret key from master secret, Cell ID, and validity
  *
- * sk_ID = [1/(H1(ID)+s)] * P ∈ G1  (48 bytes, compressed G1 point)
+ * Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ * Output:  sk_out = y[32] || pk[32] = 64 bytes
  *
- * @param msk          Master secret key (32 bytes)
+ * NOTE: This function is NOT deterministic — it generates a random b each call.
+ *
+ * @param msk          Master secret key (32 bytes, Ed25519 scalar)
  * @param cell_id      NR Cell ID (5 bytes)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
- * @param sk_out       Output gNB secret key (48 bytes, compressed G1 point)
+ * @param mpk          Master public key (32 bytes, Ed25519 point)
+ * @param sk_out       Output gNB secret key (64 bytes: y[32] + pk[32])
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_KEY_INVALID, TF5_ERR_CRYPTO
  */
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                 uint32_t gnb_key_validity_end,
+                                const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN],
                                 uint8_t sk_out[TF5_IBS_GNB_SK_LEN]);
 
 /*

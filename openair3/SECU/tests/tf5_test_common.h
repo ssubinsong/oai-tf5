@@ -87,7 +87,7 @@ protected:
 
     uint8_t ibs_msk[TF5_IBS_MASTER_SECRET_LEN];
     uint8_t ibs_mpk[TF5_IBS_MPK_LEN];
-    uint8_t ibs_sk[TF5_IBS_GNB_SK_LEN];  // 48B G1 point for BLMQ
+    uint8_t ibs_sk[TF5_IBS_GNB_SK_LEN];  // 64B: y[32] scalar + pk[32] point for GG09 Schnorr
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN];
     uint32_t validity_end;
 

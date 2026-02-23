@@ -1,8 +1,9 @@
 /*
- * TF5 IBS - gNB Secret Key Issuance Utility (BLMQ IBS)
+ * TF5 IBS - gNB Secret Key Issuance Utility (GG09 Schnorr IBS)
  *
  * Issues a gNB-specific secret key based on its NR Cell ID and validity period.
- * sk_ID = [1/(H1(ID)+s)] * P ∈ G1  (48-byte compressed G1 point)
+ *   Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ *   sk_id = (y[32], pk[32]) = 64 bytes
  *
  * Usage: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>
  *
@@ -11,15 +12,12 @@
  */
 
 #include "tf5_ibs_pkg.h"
-#include "blst.h"
 
+#include <sodium.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
-#include <openssl/crypto.h>
 #include <unistd.h>
-#include <sys/stat.h>
 #include <time.h>
 
 #include "tf5_ibs_file_util.h"
@@ -37,6 +35,7 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     }
 
     uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
+    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN];
     uint8_t sk_id[TF5_IBS_GNB_SK_LEN];
     int rc;
 
@@ -46,17 +45,23 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
         return rc;
     }
 
+    /* Derive MPK = msk·B (needed for extract: cid = H(id‖pk‖mpk)) */
+    if (crypto_scalarmult_ed25519_base_noclamp(mpk, msk) != 0) {
+        sodium_memzero(msk, TF5_IBS_MASTER_SECRET_LEN);
+        return TF5_ERR_CRYPTO;
+    }
+
     /* Compute gNB secret key with validity period */
-    rc = tf5_ibs_compute_gnb_secret(msk, cell_id, gnb_key_validity_end, sk_id);
+    rc = tf5_ibs_compute_gnb_secret(msk, cell_id, gnb_key_validity_end, mpk, sk_id);
 
     /* Clear master secret from memory */
-    OPENSSL_cleanse(msk, TF5_IBS_MASTER_SECRET_LEN);
+    sodium_memzero(msk, TF5_IBS_MASTER_SECRET_LEN);
 
     if (rc != 0) {
         return rc;
     }
 
-    /* Build combined key file: sk_id (48 bytes, G1 point) + gnb_key_validity_end (3 bytes, big-endian) */
+    /* Build combined key file: sk_id (64 bytes: y[32] + pk[32]) + gnb_key_validity_end (3 bytes, big-endian) */
     uint8_t key_file_data[TF5_IBS_SK_FILE_SIZE];
     memcpy(key_file_data, sk_id, TF5_IBS_GNB_SK_LEN);
 
@@ -65,18 +70,18 @@ int tf5_ibs_issue_gnb_key(const char *msk_path,
     key_file_data[TF5_IBS_GNB_SK_LEN + 1] = (gnb_key_validity_end >> 8) & 0xFF;
     key_file_data[TF5_IBS_GNB_SK_LEN + 2] = gnb_key_validity_end & 0xFF;
 
-    /* Write combined key file (51 bytes) */
+    /* Write combined key file (67 bytes: 64B sk_id + 3B validity) */
     rc = write_key_file(sk_path, key_file_data, TF5_IBS_SK_FILE_SIZE, 0600);
 
     /* Clear key data from memory */
-    OPENSSL_cleanse(key_file_data, TF5_IBS_SK_FILE_SIZE);
-    OPENSSL_cleanse(sk_id, TF5_IBS_GNB_SK_LEN);
+    sodium_memzero(key_file_data, TF5_IBS_SK_FILE_SIZE);
+    sodium_memzero(sk_id, TF5_IBS_GNB_SK_LEN);
 
     if (rc != 0) {
         return TF5_ERR_FILE_WRITE;
     }
 
-    return 0;
+    return TF5_OK;
 }
 
 /*
@@ -100,7 +105,7 @@ static void print_usage(const char *prog)
     fprintf(stderr, "  msk_path               Path to master secret key file\n");
     fprintf(stderr, "  cell_id_hex            NR Cell ID as 9-character hex string (36 bits)\n");
     fprintf(stderr, "  gnb_key_validity_end   Key expiration (minutes since 2024-01-01 00:00 UTC)\n");
-    fprintf(stderr, "  sk_path                Path to save gNB secret key (51 bytes: sk + validity)\n\n");
+    fprintf(stderr, "  sk_path                Path to save gNB secret key (67 bytes: sk + validity)\n\n");
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  # Key valid until 2026-01-01 (1051200 minutes from 2024-01-01)\n");
     fprintf(stderr, "  %s pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_001.bin\n\n", prog);
@@ -116,28 +121,16 @@ static void print_usage(const char *prog)
     fprintf(stderr, "  5256000  = 10 years (2034-01-01)\n");
 }
 
-/*
- * Print computed pk_ID for debugging/verification
- */
-static void print_pk_id(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN], uint32_t gnb_key_validity_end)
-{
-    uint8_t pk_id_bytes[32];
-    tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, gnb_key_validity_end, pk_id_bytes);
-
-    printf("  H1(ID) (H1(cell_id || gnb_key_validity)): ");
-    for (int i = 0; i < 32; i++) {
-        printf("%02x", pk_id_bytes[i]);
-    }
-    printf("\n");
-
-    OPENSSL_cleanse(pk_id_bytes, 32);
-}
-
 #ifndef TF5_IBS_NO_MAIN
 int main(int argc, char *argv[])
 {
     if (argc != 5) {
         print_usage(argv[0]);
+        return 1;
+    }
+
+    if (sodium_init() < 0) {
+        fprintf(stderr, "ERROR: sodium_init() failed\n");
         return 1;
     }
 
@@ -179,9 +172,6 @@ int main(int argc, char *argv[])
     printf("  Validity end: %u (%s)\n", gnb_key_validity_end, validity_time_str);
     printf("  Output: %s\n", sk_path);
 
-    /* Show pk_ID for verification */
-    print_pk_id(cell_id, gnb_key_validity_end);
-
     /* Issue the key */
     rc = tf5_ibs_issue_gnb_key(msk_path, cell_id, gnb_key_validity_end, sk_path);
     if (rc != 0) {
@@ -204,7 +194,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("gNB secret key issued successfully (51 bytes: sk + validity).\n");
+    printf("gNB secret key issued successfully (67 bytes: sk + validity).\n");
     printf("\n");
     printf("Next steps:\n");
     printf("  1. Securely transfer %s to the gNB\n", sk_path);

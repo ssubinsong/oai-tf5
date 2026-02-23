@@ -3,7 +3,7 @@
  * @brief Unit tests for TF5 TESLA serialization functions
  *
  * Tests for:
- * - tf5_tesla_pack_extension(): Serialize extension to binary (134 bytes)
+ * - tf5_tesla_pack_extension(): Serialize extension to binary (150 bytes)
  * - tf5_tesla_unpack_extension(): Deserialize extension from binary
  * - Big-endian encoding/decoding helpers
  */
@@ -49,7 +49,7 @@ TEST_F(TF5SerialTest, PackExtension_Success) {
     int ret = tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
     EXPECT_EQ(TF5_EXTENSION_PACKED_SIZE, ret)
-        << "Pack should return 134 bytes";
+        << "Pack should return 150 bytes";
 }
 
 TEST_F(TF5SerialTest, PackExtension_VersionAtOffset0) {
@@ -139,17 +139,17 @@ TEST_F(TF5SerialTest, PackExtension_TimestampAtOffset35) {
 TEST_F(TF5SerialTest, PackExtension_SignatureAtOffset38) {
     tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
-    // signature is 80 bytes at offset 38
+    // signature is 96 bytes at offset 38
     EXPECT_EQ(0, memcmp(&packed_buf[38], tf5_test::TV_EXT_SIGNATURE, TF5_IBS_SIG_LEN))
-        << "signature should be at offset 38-117";
+        << "signature should be at offset 38-133";
 }
 
-TEST_F(TF5SerialTest, PackExtension_TagAtOffset118) {
+TEST_F(TF5SerialTest, PackExtension_TagAtOffset134) {
     tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
-    // tesla_tag is 16 bytes at offset 118
-    EXPECT_EQ(0, memcmp(&packed_buf[118], tf5_test::TV_EXT_TAG, TF5_TESLA_TAG_LEN))
-        << "tesla_tag should be at offset 118-133";
+    // tesla_tag is 16 bytes at offset 134
+    EXPECT_EQ(0, memcmp(&packed_buf[134], tf5_test::TV_EXT_TAG, TF5_TESLA_TAG_LEN))
+        << "tesla_tag should be at offset 134-149";
 }
 
 TEST_F(TF5SerialTest, PackExtension_BufferTooSmall_ReturnsError) {

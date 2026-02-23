@@ -3,11 +3,11 @@
  * @brief Unit tests for TF5 IBS PKG (Private Key Generator)
  *
  * Tests for:
- * - tf5_ibs_hash_to_scalar(): Hash identity to scalar
+ * - tf5_ibs_hash_identity(): Hash identity to scalar (GG09 Schnorr)
  * - tf5_ibs_parse_cell_id_hex(): Parse hex Cell ID
  * - tf5_ibs_format_cell_id_hex(): Format Cell ID as hex
  * - tf5_ibs_load_master_secret(): Load MSK from file
- * - tf5_ibs_compute_gnb_secret(): Compute sk_ID
+ * - tf5_ibs_compute_gnb_secret(): Compute sk_id (y[32] + pk[32])
  * - tf5_ibs_generate_master_keypair(): Generate master keypair
  * - tf5_ibs_issue_gnb_key(): Issue gNB key to file
  * - Validity period conversion utilities
@@ -18,6 +18,7 @@
 
 extern "C" {
 #include "tf5_ibs_pkg.h"
+#include <sodium.h>
 }
 
 class TF5IbsPkgTest : public ::testing::Test {
@@ -45,65 +46,111 @@ protected:
         file.close();
     }
 
+    // Helper to derive MPK from MSK for hash_identity tests
+    void DeriveMpk(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
+                   uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN]) {
+        crypto_scalarmult_ed25519_base_noclamp(mpk, msk);
+    }
 };
 
 // ============================================================================
-// Hash to Scalar Tests (tf5_ibs_hash_to_scalar)
+// Hash Identity Tests (tf5_ibs_hash_identity)
 // ============================================================================
 
-TEST_F(TF5IbsPkgTest, HashToScalar_Deterministic) {
+TEST_F(TF5IbsPkgTest, HashIdentity_Deterministic) {
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x12, 0x34, 0x56, 0x78, 0x90};
     uint32_t validity = 525600;  // 1 year
 
-    uint8_t scalar1[TF5_IBS_GNB_SK_LEN];
-    uint8_t scalar2[TF5_IBS_GNB_SK_LEN];
+    // Need pk and mpk for hash_identity
+    uint8_t pk[TF5_ED25519_POINT_LEN] = {0};
+    pk[0] = 0x01;  // Dummy pk
+    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN] = {0};
+    mpk[0] = 0x02;  // Dummy mpk
 
-    int rc1 = tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, validity, scalar1);
-    int rc2 = tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, validity, scalar2);
+    uint8_t scalar1[TF5_ED25519_SCALAR_LEN];
+    uint8_t scalar2[TF5_ED25519_SCALAR_LEN];
+
+    int rc1 = tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN, validity, pk, mpk, scalar1);
+    int rc2 = tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN, validity, pk, mpk, scalar2);
 
     EXPECT_EQ(0, rc1);
     EXPECT_EQ(0, rc2);
-    EXPECT_EQ(0, memcmp(scalar1, scalar2, TF5_IBS_GNB_SK_LEN))
+    EXPECT_EQ(0, memcmp(scalar1, scalar2, TF5_ED25519_SCALAR_LEN))
         << "Same input should produce same output";
 }
 
-TEST_F(TF5IbsPkgTest, HashToScalar_DifferentCellIds) {
+TEST_F(TF5IbsPkgTest, HashIdentity_DifferentCellIds) {
     uint8_t cell_id1[TF5_IBS_CELL_ID_LEN] = {0x12, 0x34, 0x56, 0x78, 0x90};
     uint8_t cell_id2[TF5_IBS_CELL_ID_LEN] = {0x12, 0x34, 0x56, 0x78, 0xA0};
     uint32_t validity = 525600;
 
-    uint8_t scalar1[TF5_IBS_GNB_SK_LEN];
-    uint8_t scalar2[TF5_IBS_GNB_SK_LEN];
+    uint8_t pk[TF5_ED25519_POINT_LEN] = {0};
+    pk[0] = 0x01;
+    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN] = {0};
+    mpk[0] = 0x02;
 
-    tf5_ibs_hash_to_scalar(cell_id1, TF5_IBS_CELL_ID_LEN, validity, scalar1);
-    tf5_ibs_hash_to_scalar(cell_id2, TF5_IBS_CELL_ID_LEN, validity, scalar2);
+    uint8_t scalar1[TF5_ED25519_SCALAR_LEN];
+    uint8_t scalar2[TF5_ED25519_SCALAR_LEN];
 
-    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_IBS_GNB_SK_LEN))
+    tf5_ibs_hash_identity(cell_id1, TF5_IBS_CELL_ID_LEN, validity, pk, mpk, scalar1);
+    tf5_ibs_hash_identity(cell_id2, TF5_IBS_CELL_ID_LEN, validity, pk, mpk, scalar2);
+
+    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_ED25519_SCALAR_LEN))
         << "Different Cell IDs should produce different scalars";
 }
 
-TEST_F(TF5IbsPkgTest, HashToScalar_DifferentValidity) {
+TEST_F(TF5IbsPkgTest, HashIdentity_DifferentValidity) {
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x12, 0x34, 0x56, 0x78, 0x90};
     uint32_t validity1 = 525600;   // 1 year
     uint32_t validity2 = 1051200;  // 2 years
 
-    uint8_t scalar1[TF5_IBS_GNB_SK_LEN];
-    uint8_t scalar2[TF5_IBS_GNB_SK_LEN];
+    uint8_t pk[TF5_ED25519_POINT_LEN] = {0};
+    pk[0] = 0x01;
+    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN] = {0};
+    mpk[0] = 0x02;
 
-    tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, validity1, scalar1);
-    tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, validity2, scalar2);
+    uint8_t scalar1[TF5_ED25519_SCALAR_LEN];
+    uint8_t scalar2[TF5_ED25519_SCALAR_LEN];
 
-    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_IBS_GNB_SK_LEN))
+    tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN, validity1, pk, mpk, scalar1);
+    tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN, validity2, pk, mpk, scalar2);
+
+    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_ED25519_SCALAR_LEN))
         << "Different validity should produce different scalars";
 }
 
-TEST_F(TF5IbsPkgTest, HashToScalar_NullInput) {
-    uint8_t scalar[TF5_IBS_GNB_SK_LEN];
-    uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0};
+TEST_F(TF5IbsPkgTest, HashIdentity_DifferentPk) {
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x12, 0x34, 0x56, 0x78, 0x90};
+    uint32_t validity = 525600;
 
-    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_to_scalar(nullptr, TF5_IBS_CELL_ID_LEN, 0, scalar));
-    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_to_scalar(cell_id, TF5_IBS_CELL_ID_LEN, 0, nullptr));
-    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_to_scalar(cell_id, 0, 0, scalar));
+    uint8_t pk1[TF5_ED25519_POINT_LEN] = {0};
+    pk1[0] = 0x01;
+    uint8_t pk2[TF5_ED25519_POINT_LEN] = {0};
+    pk2[0] = 0x03;
+    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN] = {0};
+    mpk[0] = 0x02;
+
+    uint8_t scalar1[TF5_ED25519_SCALAR_LEN];
+    uint8_t scalar2[TF5_ED25519_SCALAR_LEN];
+
+    tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN, validity, pk1, mpk, scalar1);
+    tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN, validity, pk2, mpk, scalar2);
+
+    EXPECT_NE(0, memcmp(scalar1, scalar2, TF5_ED25519_SCALAR_LEN))
+        << "Different pk should produce different scalars";
+}
+
+TEST_F(TF5IbsPkgTest, HashIdentity_NullInput) {
+    uint8_t scalar[TF5_ED25519_SCALAR_LEN];
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0};
+    uint8_t pk[TF5_ED25519_POINT_LEN] = {0};
+    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN] = {0};
+
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_identity(nullptr, TF5_IBS_CELL_ID_LEN, 0, pk, mpk, scalar));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN, 0, pk, mpk, nullptr));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_identity(cell_id, 0, 0, pk, mpk, scalar));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN, 0, nullptr, mpk, scalar));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN, 0, pk, nullptr, scalar));
 }
 
 // ============================================================================
@@ -243,11 +290,14 @@ TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Success) {
     memset(msk, 0x42, TF5_IBS_MASTER_SECRET_LEN);
     msk[0] = 0x01;  // Ensure valid scalar
 
+    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN];
+    DeriveMpk(msk, mpk);
+
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x12, 0x34, 0x56, 0x78, 0x90};
     uint32_t validity = 525600;
 
     uint8_t sk_out[TF5_IBS_GNB_SK_LEN];
-    int rc = tf5_ibs_compute_gnb_secret(msk, cell_id, validity, sk_out);
+    int rc = tf5_ibs_compute_gnb_secret(msk, cell_id, validity, mpk, sk_out);
 
     EXPECT_EQ(0, rc);
     // Verify output is not all zeros
@@ -255,10 +305,14 @@ TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Success) {
         << "Output should not be all zeros";
 }
 
-TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Deterministic) {
+TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Randomized) {
+    // GG09 extract uses random b each call, so same inputs produce different outputs
     uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
     memset(msk, 0x42, TF5_IBS_MASTER_SECRET_LEN);
     msk[0] = 0x01;
+
+    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN];
+    DeriveMpk(msk, mpk);
 
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x12, 0x34, 0x56, 0x78, 0x90};
     uint32_t validity = 525600;
@@ -266,11 +320,11 @@ TEST_F(TF5IbsPkgTest, ComputeGnbSecret_Deterministic) {
     uint8_t sk1[TF5_IBS_GNB_SK_LEN];
     uint8_t sk2[TF5_IBS_GNB_SK_LEN];
 
-    tf5_ibs_compute_gnb_secret(msk, cell_id, validity, sk1);
-    tf5_ibs_compute_gnb_secret(msk, cell_id, validity, sk2);
+    tf5_ibs_compute_gnb_secret(msk, cell_id, validity, mpk, sk1);
+    tf5_ibs_compute_gnb_secret(msk, cell_id, validity, mpk, sk2);
 
-    EXPECT_EQ(0, memcmp(sk1, sk2, TF5_IBS_GNB_SK_LEN))
-        << "Same inputs should produce same output";
+    EXPECT_NE(0, memcmp(sk1, sk2, TF5_IBS_GNB_SK_LEN))
+        << "GG09 extract is randomized: same inputs should produce different outputs";
 }
 
 TEST_F(TF5IbsPkgTest, ComputeGnbSecret_DifferentMsk) {
@@ -281,27 +335,34 @@ TEST_F(TF5IbsPkgTest, ComputeGnbSecret_DifferentMsk) {
     msk1[0] = 0x01;
     msk2[0] = 0x01;
 
+    uint8_t mpk1[TF5_IBS_MASTER_PUBLIC_LEN];
+    uint8_t mpk2[TF5_IBS_MASTER_PUBLIC_LEN];
+    DeriveMpk(msk1, mpk1);
+    DeriveMpk(msk2, mpk2);
+
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x12, 0x34, 0x56, 0x78, 0x90};
     uint32_t validity = 525600;
 
     uint8_t sk1[TF5_IBS_GNB_SK_LEN];
     uint8_t sk2[TF5_IBS_GNB_SK_LEN];
 
-    tf5_ibs_compute_gnb_secret(msk1, cell_id, validity, sk1);
-    tf5_ibs_compute_gnb_secret(msk2, cell_id, validity, sk2);
+    tf5_ibs_compute_gnb_secret(msk1, cell_id, validity, mpk1, sk1);
+    tf5_ibs_compute_gnb_secret(msk2, cell_id, validity, mpk2, sk2);
 
     EXPECT_NE(0, memcmp(sk1, sk2, TF5_IBS_GNB_SK_LEN))
-        << "Different MSK should produce different sk_ID";
+        << "Different MSK should produce different sk_id";
 }
 
 TEST_F(TF5IbsPkgTest, ComputeGnbSecret_NullInput) {
     uint8_t msk[TF5_IBS_MASTER_SECRET_LEN] = {0};
+    uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN] = {0};
     uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0};
     uint8_t sk_out[TF5_IBS_GNB_SK_LEN];
 
-    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(nullptr, cell_id, 0, sk_out));
-    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(msk, nullptr, 0, sk_out));
-    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(msk, cell_id, 0, nullptr));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(nullptr, cell_id, 0, mpk, sk_out));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(msk, nullptr, 0, mpk, sk_out));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(msk, cell_id, 0, nullptr, sk_out));
+    EXPECT_EQ(TF5_ERR_INVALID_PARAM, tf5_ibs_compute_gnb_secret(msk, cell_id, 0, mpk, nullptr));
 }
 
 // ============================================================================
@@ -323,7 +384,7 @@ TEST_F(TF5IbsPkgTest, GenerateMasterKeypair_CreatesFiles) {
     EXPECT_EQ(TF5_IBS_MASTER_SECRET_LEN, std::filesystem::file_size(msk_path))
         << "MSK should be 32 bytes";
     EXPECT_EQ(TF5_IBS_MASTER_PUBLIC_LEN, std::filesystem::file_size(mpk_path))
-        << "MPK should be 96 bytes";
+        << "MPK should be 32 bytes";
 }
 
 TEST_F(TF5IbsPkgTest, GenerateMasterKeypair_CorrectPermissions) {
@@ -371,7 +432,7 @@ TEST_F(TF5IbsPkgTest, GenerateMasterKeypair_NullInput) {
 // gNB Key Issuance Tests (tf5_ibs_issue_gnb_key)
 // ============================================================================
 
-TEST_F(TF5IbsPkgTest, IssueGnbKey_Creates51ByteFile) {
+TEST_F(TF5IbsPkgTest, IssueGnbKey_Creates67ByteFile) {
     // First generate a master keypair
     std::string msk_path = test_dir + "/msk.bin";
     std::string mpk_path = test_dir + "/mpk.bin";
@@ -385,9 +446,9 @@ TEST_F(TF5IbsPkgTest, IssueGnbKey_Creates51ByteFile) {
     int rc = tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, validity, sk_path.c_str());
     EXPECT_EQ(0, rc);
 
-    // Verify file size is 51 bytes (48 sk G1 point + 3 validity)
+    // Verify file size is 67 bytes (64B sk_id: y[32] + pk[32], plus 3B validity)
     EXPECT_EQ(TF5_IBS_SK_FILE_SIZE, std::filesystem::file_size(sk_path))
-        << "gNB key file should be 51 bytes";
+        << "gNB key file should be 67 bytes";
 }
 
 TEST_F(TF5IbsPkgTest, IssueGnbKey_ValidityEncoding) {
@@ -510,21 +571,17 @@ TEST_F(TF5IbsPkgTest, EndToEnd_KeypairAndIssuance) {
     file.read(reinterpret_cast<char*>(data), TF5_IBS_SK_FILE_SIZE);
     file.close();
 
-    // Verify validity encoding (at offset TF5_IBS_GNB_SK_LEN = 48)
+    // Verify validity encoding (at offset TF5_IBS_GNB_SK_LEN = 64)
     uint32_t read_validity = ((uint32_t)data[TF5_IBS_GNB_SK_LEN] << 16) |
                              ((uint32_t)data[TF5_IBS_GNB_SK_LEN + 1] << 8) |
                              (uint32_t)data[TF5_IBS_GNB_SK_LEN + 2];
     EXPECT_EQ(validity, read_validity);
 
-    // Verify sk_ID matches what we'd compute directly
-    uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
-    ASSERT_EQ(0, tf5_ibs_load_master_secret(msk_path.c_str(), msk));
-
-    uint8_t expected_sk[TF5_IBS_GNB_SK_LEN];
-    ASSERT_EQ(0, tf5_ibs_compute_gnb_secret(msk, cell_id, validity, expected_sk));
-
-    EXPECT_EQ(0, memcmp(data, expected_sk, TF5_IBS_GNB_SK_LEN))
-        << "Issued key should match directly computed key";
+    // NOTE: Cannot compare issued key with direct compute_gnb_secret result
+    // because GG09 extract is randomized (uses random b each call).
+    // Instead, verify the key is non-zero and has valid structure.
+    EXPECT_FALSE(is_all_zeros(data, TF5_IBS_GNB_SK_LEN))
+        << "Issued key should not be all zeros";
 }
 
 // ============================================================================
@@ -532,6 +589,10 @@ TEST_F(TF5IbsPkgTest, EndToEnd_KeypairAndIssuance) {
 // ============================================================================
 
 int main(int argc, char **argv) {
+    if (sodium_init() < 0) {
+        fprintf(stderr, "ERROR: sodium_init() failed\n");
+        return 1;
+    }
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

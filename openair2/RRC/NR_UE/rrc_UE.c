@@ -1682,10 +1682,10 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
         free(ptr->SInfo.tf5_state);
         ptr->SInfo.tf5_state = NULL;
       } else {
-        // Initialize BLMQ IBS subsystem
+        // Initialize GG09 Schnorr IBS subsystem
         int rc = tf5_ibs_init();
         if (rc != 0) {
-          LOG_E(TF5, "Failed to initialize BLMQ IBS subsystem (rc=%d)\n", rc);
+          LOG_E(TF5, "Failed to initialize GG09 Schnorr IBS subsystem (rc=%d)\n", rc);
           free(ptr->SInfo.tf5_state);
           ptr->SInfo.tf5_state = NULL;
         } else {

@@ -30,7 +30,7 @@
 
 /* ── Buffer & Wire Format Sizes ────────────────────────── */
 #define TF5_MAX_AUTH_INPUT          372     // Max auth input buffer size
-#define TF5_EXTENSION_PACKED_SIZE   134     // Wire format size (tf5_extension_t)
+#define TF5_EXTENSION_PACKED_SIZE   150     // Wire format size (tf5_extension_t)
 
 /* ── Default Configuration ─────────────────────────────── */
 #define TF5_TESLA_DEFAULT_D_BOUND_US       1005    // D bound (microseconds)
@@ -115,7 +115,7 @@ typedef struct {
     uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                   validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
     uint32_t                   timestamp_ms;                  // 3B (wire) - Unix epoch timestamp LSB (ms) for replay protection
-    uint8_t                    signature[TF5_IBS_SIG_LEN]; // 80B - BLMQ IBS signature (h[32] || S[48])
+    uint8_t                    signature[TF5_IBS_SIG_LEN]; // 96B - GG09 Schnorr IBS signature (R[32] || sigma[32] || pk[32])
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_extension_t;
 
@@ -131,7 +131,7 @@ typedef struct {
     uint32_t key_chain_len;                         // Number of intervals N
 
     // IBS keys
-    uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 48B - sk_ID: G1 point (issued by Core PKG)
+    uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 64B - sk_id: y[32] + pk[32] (issued by Core PKG)
     uint32_t key_validity_end;                      // Key expiration (minutes since 2024-01-01)
 
     // Slots per frame (depends on numerology)
@@ -157,7 +157,7 @@ typedef struct {
     uint32_t d_offset_slots;          // D bound for safe packet test (in slots, pre-computed)
 
     // Pre-provisioned Core Master Public Key
-    uint8_t  mpk[TF5_IBS_MPK_LEN];  // 96B - Core's MPK = s*Q (G2 point)
+    uint8_t  mpk[TF5_IBS_MPK_LEN];  // 32B - Core's MPK = z·B (Ed25519 point)
 
     // Verification state (trust anchor for key chain verification)
     int32_t  trust_anchor_idx;        // Interval index of the trust anchor key (-1 for K_{-1})
@@ -191,7 +191,7 @@ typedef struct {
  * @param t_int_ms      Interval duration in milliseconds (e.g., 20)
  * @param d             Key disclosure delay (e.g., 1)
  * @param chain_len     Number of intervals in key chain
- * @param private_key   BLMQ IBS secret key (48 bytes, G1 point)
+ * @param private_key   GG09 Schnorr IBS secret key (64 bytes: y[32] + pk[32])
  * @param t0            T_0 timing (HFN/SFN/slot at interval 0 start)
  * @param slots_per_frame Number of slots per frame
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_ALLOC, TF5_ERR_CRYPTO
@@ -305,7 +305,7 @@ int tf5_pack_extension(const tf5_extension_t *ext,
  * Initialize TESLA state on UE (IBS mode)
  *
  * @param state         Pointer to UE TESLA state structure
- * @param mpk           Pre-provisioned Core Master Public Key (96 bytes)
+ * @param mpk           Pre-provisioned Core Master Public Key (32 bytes)
  * @param slots_per_frame Number of slots per frame
  * @param d_bound_us    D bound for safe packet test (microseconds)
  * @param rp_timestamp_window_ms Timestamp window for signature replay protection (ms)
@@ -422,12 +422,12 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
  */
 
 /**
- * Load BLMQ IBS secret key and validity period from key file
+ * Load GG09 Schnorr IBS secret key and validity period from key file
  *
- * File format: 51 bytes (sk_ID [48, G1 point] + gnb_key_validity_end [3, big-endian])
+ * File format: 67 bytes (sk_id [64, y[32]+pk[32]] + gnb_key_validity_end [3, big-endian])
  *
- * @param filepath      Path to binary key file (51 bytes)
- * @param privkey_out   Output: 48-byte G1 point secret key
+ * @param filepath      Path to binary key file (67 bytes)
+ * @param privkey_out   Output: 64-byte secret key (y[32] + pk[32])
  * @param validity_out  Output: key validity (minutes since 2024-01-01 00:00 UTC)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_OPEN,
  *         TF5_ERR_FILE_IO, TF5_ERR_KEY_INVALID
@@ -439,8 +439,8 @@ int tf5_load_gnb_privkey(const char *filepath,
 /**
  * Load Core's Master Public Key (MPK) from raw binary file
  *
- * @param filepath  Path to binary file containing MPK (96-byte BLS12-381 G2 point)
- * @param mpk_out   Output: 96-byte raw MPK
+ * @param filepath  Path to binary file containing MPK (32-byte Ed25519 point)
+ * @param mpk_out   Output: 32-byte raw MPK
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_OPEN, TF5_ERR_FILE_IO
  */
 int tf5_load_core_mpk(const char *filepath,

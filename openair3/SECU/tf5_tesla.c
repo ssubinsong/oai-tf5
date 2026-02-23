@@ -278,7 +278,7 @@ int tf5_pack_extension(const tf5_extension_t *ext,
     tf5_encode_u24_be(buf + offset, ext->timestamp_ms);
     offset += 3;
 
-    // Signature (80 bytes - BLMQ IBS: h[32] || S[48])
+    // Signature (96 bytes - GG09 Schnorr IBS: R[32] || sigma[32] || pk[32])
     memcpy(buf + offset, ext->signature, TF5_IBS_SIG_LEN);
     offset += TF5_IBS_SIG_LEN;
 
@@ -326,7 +326,7 @@ int tf5_unpack_extension(const uint8_t *buf,
     ext->timestamp_ms = tf5_decode_u24_be(buf + offset);
     offset += 3;
 
-    // Signature (80 bytes - BLMQ IBS: h[32] || S[48])
+    // Signature (96 bytes - GG09 Schnorr IBS: R[32] || sigma[32] || pk[32])
     memcpy(ext->signature, buf + offset, TF5_IBS_SIG_LEN);
     offset += TF5_IBS_SIG_LEN;
 
@@ -497,7 +497,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
         return rc;
     }
 
-    // Compute BLMQ IBS signature over full content
+    // Compute GG09 Schnorr IBS signature over full content
     rc = tf5_ibs_sign(state->private_key,
                             sig_auth_input, sig_auth_input_len,
                             ext->signature);
@@ -839,7 +839,7 @@ int tf5_load_gnb_privkey(const char *filepath,
         return TF5_ERR_FILE_OPEN;
     }
 
-    // Read 51-byte key file: sk_ID (48 bytes, G1 point) + gnb_key_validity_end (3 bytes, big-endian)
+    // Read key file: sk_id (64 bytes: y[32] + pk[32]) + gnb_key_validity_end (3 bytes, big-endian)
     uint8_t buffer[TF5_IBS_SK_FILE_SIZE];
     size_t n = fread(buffer, 1, TF5_IBS_SK_FILE_SIZE, fp);
     fclose(fp);
@@ -850,18 +850,18 @@ int tf5_load_gnb_privkey(const char *filepath,
         return TF5_ERR_FILE_IO;
     }
 
-    // Extract secret key (bytes 0-47, G1 point)
+    // Extract secret key (bytes 0-63: y[32] scalar + pk[32] point)
     memcpy(privkey_out, buffer, TF5_IBS_GNB_SK_LEN);
 
-    // Extract validity from bytes 48-50 (big-endian)
+    // Extract validity from bytes 64-66 (big-endian)
     *validity_out = tf5_decode_u24_be(&buffer[TF5_IBS_GNB_SK_LEN]);
 
     // Clear buffer
     OPENSSL_cleanse(buffer, TF5_IBS_SK_FILE_SIZE);
 
-    // Validate sk_ID: decompress G1, check subgroup membership, not infinity
+    // Validate sk_id: decompress pk as Ed25519 point, check not identity
     if (tf5_ibs_validate_sk(privkey_out) != 0) {
-        LOG_E(TF5, "Invalid BLMQ IBS secret key format\n");
+        LOG_E(TF5, "Invalid GG09 Schnorr IBS secret key format\n");
         OPENSSL_cleanse(privkey_out, TF5_IBS_GNB_SK_LEN);
         return TF5_ERR_KEY_INVALID;
     }
@@ -882,11 +882,23 @@ int tf5_load_core_mpk(const char *filepath,
         return TF5_ERR_FILE_OPEN;
     }
 
+    /* Check exact file size */
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    if (file_size != TF5_IBS_MPK_LEN) {
+        LOG_E(TF5, "MPK file has wrong size: %ld (expected %d)\n",
+              file_size, TF5_IBS_MPK_LEN);
+        fclose(fp);
+        return TF5_ERR_FILE_IO;
+    }
+
     size_t n = fread(mpk_out, 1, TF5_IBS_MPK_LEN, fp);
     fclose(fp);
 
     if (n != TF5_IBS_MPK_LEN) {
-        LOG_E(TF5, "MPK file has wrong size: %zu (expected %d)\n",
+        LOG_E(TF5, "MPK file read error: %zu bytes (expected %d)\n",
               n, TF5_IBS_MPK_LEN);
         return TF5_ERR_FILE_IO;
     }

@@ -665,17 +665,45 @@ if(ENABLE_TF5)
     ${OPENAIR3_DIR}/SECU/tf5_crypto.c
   )
 
-  # Build blst library for BLS signatures
-  set(BLST_DIR ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/blst)
-  enable_language(ASM)
-  add_library(blst STATIC
-    ${BLST_DIR}/src/server.c
-    ${BLST_DIR}/build/assembly.S
+  # Build libsodium (static) for Ed25519 IBS
+  include(ExternalProject)
+  set(SODIUM_DIR ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/libsodium)
+  set(SODIUM_BUILD_DIR ${CMAKE_BINARY_DIR}/libsodium-build)
+  set(SODIUM_LIB ${SODIUM_BUILD_DIR}/src/libsodium/.libs/libsodium.a)
+  # Run autogen.sh at configure time if configure script doesn't exist
+  if(NOT EXISTS ${SODIUM_DIR}/configure)
+    execute_process(
+      COMMAND ${SODIUM_DIR}/autogen.sh -s
+      WORKING_DIRECTORY ${SODIUM_DIR}
+      RESULT_VARIABLE AUTOGEN_RESULT
+    )
+    if(NOT AUTOGEN_RESULT EQUAL 0)
+      message(FATAL_ERROR "libsodium autogen.sh failed (exit ${AUTOGEN_RESULT})")
+    endif()
+  endif()
+  ExternalProject_Add(libsodium_ext
+    SOURCE_DIR ${SODIUM_DIR}
+    BINARY_DIR ${SODIUM_BUILD_DIR}
+    BUILD_IN_SOURCE 0
+    CONFIGURE_COMMAND ${SODIUM_DIR}/configure
+      --prefix=${SODIUM_BUILD_DIR}/install
+      --disable-shared --enable-static
+      --with-pic
+      "CFLAGS=-O2 -march=native -flax-vector-conversions"
+    BUILD_COMMAND make -j$ENV{NPROC}
+    INSTALL_COMMAND ""
+    BUILD_BYPRODUCTS ${SODIUM_LIB}
   )
-  target_include_directories(blst PUBLIC ${BLST_DIR}/bindings)
-  # Use __BLST_PORTABLE__ to enable both mulx and mulq variants for compatibility
-  target_compile_definitions(blst PRIVATE __BLST_PORTABLE__)
-  target_compile_options(blst PRIVATE -O2 -fno-builtin -fPIC -mno-avx)
+  add_library(sodium STATIC IMPORTED GLOBAL)
+  set_target_properties(sodium PROPERTIES IMPORTED_LOCATION ${SODIUM_LIB})
+  add_dependencies(sodium libsodium_ext)
+  # Create include directory at configure time so CMake doesn't fail the existence check
+  # (ExternalProject creates it at build time, but INTERFACE_INCLUDE_DIRECTORIES is validated early)
+  file(MAKE_DIRECTORY ${SODIUM_BUILD_DIR}/src/libsodium/include)
+  # Public header: <sodium.h>
+  target_include_directories(sodium INTERFACE ${SODIUM_BUILD_DIR}/src/libsodium/include)
+  # Private header: <private/ed25519_ref10.h> (for precomp table operations)
+  target_include_directories(sodium INTERFACE ${SODIUM_DIR}/src/libsodium/include/sodium)
 endif()
 
 pkg_check_modules(OpenSSL openssl REQUIRED)
@@ -683,10 +711,9 @@ add_library(SECURITY ${SECURITY_SRC} $<TARGET_OBJECTS:ds>)
 target_include_directories(SECURITY PRIVATE ${OPENAIR_DIR}/common/utils/ds/)
 target_link_libraries(SECURITY PRIVATE ${OpenSSL_LIBRARIES})
 
-# Add blst library includes and link when TESLA is enabled
+# Add libsodium includes and link when TESLA is enabled
 if(ENABLE_TF5)
-  target_include_directories(SECURITY PRIVATE ${BLST_DIR}/bindings)
-  target_link_libraries(SECURITY PRIVATE blst)
+  target_link_libraries(SECURITY PUBLIC sodium)
 
   # TF5 IBS PKG utilities (keygen and issue executables)
   add_subdirectory(${OPENAIR3_DIR}/SECU/core-pkg ${CMAKE_CURRENT_BINARY_DIR}/openair3/SECU/core-pkg)

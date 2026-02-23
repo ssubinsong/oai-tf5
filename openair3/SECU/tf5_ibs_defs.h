@@ -1,15 +1,16 @@
 /**
  * @file tf5_ibs_defs.h
- * @brief BLMQ IBS shared definitions for BLS curve constants and identity parameters
+ * @brief GG09 Schnorr IBS shared definitions for Ed25519 constants and identity parameters
  *
- * Single source of truth for BLS curve constants, IBS identity constants,
- * DST strings, and file format sizes shared between the TESLA/RAN hierarchy
+ * Single source of truth for Ed25519 curve constants, IBS identity constants,
+ * and file format sizes shared between the TESLA/RAN hierarchy
  * (tf5_tesla_sig.h / tf5_tesla.h) and the Core PKG hierarchy (tf5_ibs_pkg.h).
  *
- * IBS scheme: BLMQ (Barreto-Libert-McCullagh-Quisquater, ASIACRYPT 2005 Section 3)
- *   Keygen: sk_ID = [1/(H1(ID)+s)] * P  (G1 point, 48 bytes)
- *   Sign:   σ = (h, S) where h ∈ Z*p, S ∈ G1  (32+48 = 80 bytes)
- *   Verify: single-pairing check via h == H2(M, e(S, H1(ID)·Q+Qpub)·g^{-h})
+ * IBS scheme: GG09 Schnorr-2IBS (Galindo-Garcia, 2009; 1-level Schnorr IBS)
+ *   Setup:   msk = z ← Z_l,  mpk = z·B
+ *   Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ *   Sign:    r ← Z_l, R = r·B, h = H(data‖R), σ = h·y + r
+ *   Verify:  cid = H(id‖pk‖mpk), Q = cid·mpk + pk, R' = σ·B − h·Q, check h == H(data‖R')
  *
  * NOTE: No ENABLE_TF5 guard - this header is also used by standalone PKG tools.
  */
@@ -25,8 +26,8 @@
  *
  * Error handling policy:
  *   - tf5_error_t:  All recoverable/expected failure conditions
- *   - AssertFatal:  Unrecoverable system failures (e.g. OpenSSL primitives
- *                   in tf5_crypto.c that should never fail with valid inputs)
+ *   - AssertFatal:  Unrecoverable system failures (e.g. crypto primitives
+ *                   that should never fail with valid inputs)
  *   - bool returns: Verification-only functions (safe packet test, key chain)
  * ========================================================================== */
 
@@ -56,30 +57,28 @@ typedef enum {
 } tf5_error_t;
 
 /* ==========================================================================
- * BLS12-381 Curve Base Constants
+ * Ed25519 Curve Base Constants
  * ========================================================================== */
 
-#define TF5_BLS_SCALAR_LEN          32   // Fr element (big-endian)
-#define TF5_BLS_G1_COMPRESSED_LEN   48   // G1 point (compressed)
-#define TF5_BLS_G2_COMPRESSED_LEN   96   // G2 point (compressed)
+#define TF5_ED25519_SCALAR_LEN      32   // Ed25519 scalar (mod l, little-endian)
+#define TF5_ED25519_POINT_LEN       32   // Ed25519 compressed point
 
 /* ==========================================================================
  * Semantic Aliases
  * ========================================================================== */
 
 /*
- * BLMQ IBS sizes derive from the BLS12-381 curve parameters above.
- * sk_ID is a G1 point (48B), signature is (h, S) ∈ Z*p × G1 (32+48 = 80B).
+ * GG09 Schnorr-2IBS sizes derive from Ed25519 curve parameters above.
+ * sk_id is (y[32] scalar, pk[32] point) = 64B.
+ * Signature is R[32] || sigma[32] || pk[32] = 96B.
  */
-#define TF5_IBS_GNB_SK_LEN         TF5_BLS_G1_COMPRESSED_LEN   // sk_ID: G1 point [1/(H1(ID)+s)]*P
-#define TF5_IBS_GNB_PK_LEN         TF5_BLS_G2_COMPRESSED_LEN   // Public key in G2 (MPK)
-#define TF5_IBS_SIG_H_LEN          TF5_BLS_SCALAR_LEN           // h: scalar part of signature
-#define TF5_IBS_SIG_S_LEN          TF5_BLS_G1_COMPRESSED_LEN   // S: G1 part of signature
-#define TF5_IBS_SIG_LEN            (TF5_IBS_SIG_H_LEN + TF5_IBS_SIG_S_LEN) // σ = (h, S) = 80 bytes
+#define TF5_IBS_GNB_SK_LEN         64   // sk_id: (y[32] scalar, pk[32] point)
+#define TF5_IBS_GNB_PK_LEN         TF5_ED25519_POINT_LEN   // pk: identity-derived public point
+#define TF5_IBS_SIG_LEN            96   // σ = R[32] || sigma[32] || pk[32]
 
-#define TF5_IBS_MASTER_SECRET_LEN   TF5_BLS_SCALAR_LEN          // s: master secret scalar
-#define TF5_IBS_MASTER_PUBLIC_LEN   TF5_BLS_G2_COMPRESSED_LEN   // MPK = s*Q in G2
-#define TF5_IBS_MPK_LEN             TF5_IBS_MASTER_PUBLIC_LEN   // Alias used by TESLA module
+#define TF5_IBS_MASTER_SECRET_LEN   TF5_ED25519_SCALAR_LEN  // z: master secret scalar
+#define TF5_IBS_MASTER_PUBLIC_LEN   TF5_ED25519_POINT_LEN   // MPK = z·B (Ed25519 point)
+#define TF5_IBS_MPK_LEN             TF5_IBS_MASTER_PUBLIC_LEN  // Alias used by TESLA module
 
 /* ==========================================================================
  * IBS Identity Constants
@@ -89,36 +88,11 @@ typedef enum {
 #define TF5_IBS_VALIDITY_PERIOD_LEN 3    // Key validity period: 24 bits = 3 bytes (minutes since epoch)
 #define TF5_IBS_VALIDITY_EPOCH          1704067200UL  // 2024-01-01 00:00:00 UTC (Unix seconds)
 
-// IKM size for H1: DST (40) + Cell_ID (5) + gnb_key_validity_end (3) = 48 bytes
-#define TF5_IBS_IKM_LEN  (TF5_IBS_DST_HS_LEN + TF5_IBS_CELL_ID_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)
-
 /* ==========================================================================
  * gNB Secret Key File Format
  * ========================================================================== */
 
-// File layout: sk_ID (48 bytes, G1 point) + gnb_key_validity_end (3 bytes, big-endian)
-#define TF5_IBS_SK_FILE_SIZE        (TF5_IBS_GNB_SK_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)  // 51 bytes
-
-/* ==========================================================================
- * Domain Separation Tag
- * ========================================================================== */
-
-/*
- * DST for H1 (identity-to-scalar hash).
- * Used by both PKG (key issuance) and RAN (signature verification) to derive
- * H1(ID) from (cell_id || gnb_key_validity_end).
- */
-#define TF5_IBS_DST_HS              "TF5_IBS_BLMQ_BLS12381_XMD:SHA-256_H1_v1"
-#define TF5_IBS_DST_HS_LEN          40
-
-/*
- * DST for H2 (message+GT to scalar hash).
- * Used in BLMQ signing/verification: h = H2(M, r) where r ∈ GT.
- */
-#define TF5_IBS_DST_H2              "TF5_IBS_BLMQ_BLS12381_XMD:SHA-256_H2_v1"
-#define TF5_IBS_DST_H2_LEN          40
-
-/* GT element serialized size (blst_fp12) */
-#define TF5_IBS_GT_SERIALIZED_LEN   576  /* sizeof(blst_fp12) for BLS12-381 */
+// File layout: sk_id (64 bytes: y[32] + pk[32]) + gnb_key_validity_end (3 bytes, big-endian)
+#define TF5_IBS_SK_FILE_SIZE        (TF5_IBS_GNB_SK_LEN + TF5_IBS_VALIDITY_PERIOD_LEN)  // 67 bytes
 
 #endif /* TF5_IBS_DEFS_H */

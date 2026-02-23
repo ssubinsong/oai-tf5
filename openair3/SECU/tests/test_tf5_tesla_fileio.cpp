@@ -257,8 +257,8 @@ TEST_F(TF5FileIOTest, LoadPubkey_FileNotFound) {
 TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooSmall) {
     std::string small_file = test_dir + "/small_pk.bin";
     std::ofstream file(small_file, std::ios::binary);
-    uint8_t data[64] = {0};  // 64 bytes instead of 96
-    file.write(reinterpret_cast<char*>(data), 64);
+    uint8_t data[20] = {0};  // 20 bytes instead of 32
+    file.write(reinterpret_cast<char*>(data), 20);
     file.close();
 
     uint8_t pubkey_out[TF5_IBS_MPK_LEN];
@@ -271,17 +271,16 @@ TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooSmall) {
 TEST_F(TF5FileIOTest, LoadPubkey_WrongSize_TooLarge) {
     std::string large_file = test_dir + "/large_pk.bin";
     std::ofstream file(large_file, std::ios::binary);
-    uint8_t data[128] = {0};  // 128 bytes instead of 96
-    file.write(reinterpret_cast<char*>(data), 128);
+    uint8_t data[64] = {0};  // 64 bytes instead of 32
+    file.write(reinterpret_cast<char*>(data), 64);
     file.close();
 
     uint8_t pubkey_out[TF5_IBS_MPK_LEN];
 
     int result = tf5_load_core_mpk(large_file.c_str(), pubkey_out);
 
-    // Function reads exactly 96 bytes, so larger file should work
-    EXPECT_TRUE(result == TF5_OK || result == TF5_ERR_FILE_IO)
-        << "Larger file handling depends on implementation";
+    // Exact file size check rejects larger files
+    EXPECT_EQ(TF5_ERR_FILE_IO, result) << "Larger file should be rejected";
 }
 
 TEST_F(TF5FileIOTest, LoadPubkey_NullPath) {

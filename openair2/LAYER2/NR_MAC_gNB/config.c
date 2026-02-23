@@ -1206,11 +1206,11 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
                 "TF5: Generate with: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>\n");
   }
 
-  // Initialize BLMQ IBS subsystem
+  // Initialize GG09 Schnorr IBS subsystem
   rc = tf5_ibs_init();
-  AssertFatal(rc == 0, "TF5: Failed to initialize BLMQ IBS subsystem (rc=%d)\n", rc);
+  AssertFatal(rc == 0, "TF5: Failed to initialize GG09 Schnorr IBS subsystem (rc=%d)\n", rc);
 
-  // Load IBS secret key and embedded validity period (51-byte file: sk + validity)
+  // Load IBS secret key and embedded validity period (67-byte file: sk + validity)
   rc = tf5_load_gnb_privkey(tf5_privkey_file, private_key, &key_validity_end);
   AssertFatal(rc == 0,
               "TF5: Failed to load sk_ID from %s (rc=%d)\n"

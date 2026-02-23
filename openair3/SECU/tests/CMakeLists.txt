@@ -19,8 +19,8 @@ set(TF5_TEST_COMPILE_DEFS ENABLE_TF5)
 # - LOG: OAI logging (provides g_log, logRecord_mt)
 # - minimal_lib: Provides T tracer stubs (T_stdout, T_active, T_cache, etc.)
 # - GTest::gtest: Google Test framework (we use custom main(), not gtest_main)
-# - blst: BLS12-381 cryptography library
-set(TF5_TEST_LIBS SECURITY LOG minimal_lib GTest::gtest blst)
+# - sodium: Ed25519 cryptography library (libsodium)
+set(TF5_TEST_LIBS SECURITY LOG minimal_lib GTest::gtest sodium)
 
 # Common include directories for TF5 tests
 set(TF5_TEST_INCLUDE_DIRS ${OPENAIR_DIR}/common/utils/ds)
@@ -72,15 +72,15 @@ target_compile_definitions(test_tf5_tesla_serial PRIVATE ${TF5_TEST_COMPILE_DEFS
 add_test(NAME test_tf5_tesla_serial COMMAND test_tf5_tesla_serial)
 
 # -----------------------------------------------------------------------------
-# BLMQ IBS signature tests
+# GG09 Schnorr IBS signature tests
 # -----------------------------------------------------------------------------
-add_executable(test_tf5_tesla_bls test_tf5_tesla_bls.cpp)
-add_dependencies(tests test_tf5_tesla_bls)
-add_dependencies(tf5_tests test_tf5_tesla_bls)
-target_include_directories(test_tf5_tesla_bls PRIVATE ${OPENAIR3_DIR}/SECU)
-target_link_libraries(test_tf5_tesla_bls PRIVATE tf5_ibs_pkg ${TF5_TEST_LIBS})
-target_compile_definitions(test_tf5_tesla_bls PRIVATE ${TF5_TEST_COMPILE_DEFS})
-add_test(NAME test_tf5_tesla_bls COMMAND test_tf5_tesla_bls)
+add_executable(test_tf5_tesla_ibs test_tf5_tesla_ibs.cpp)
+add_dependencies(tests test_tf5_tesla_ibs)
+add_dependencies(tf5_tests test_tf5_tesla_ibs)
+target_include_directories(test_tf5_tesla_ibs PRIVATE ${OPENAIR3_DIR}/SECU)
+target_link_libraries(test_tf5_tesla_ibs PRIVATE tf5_ibs_pkg ${TF5_TEST_LIBS})
+target_compile_definitions(test_tf5_tesla_ibs PRIVATE ${TF5_TEST_COMPILE_DEFS})
+add_test(NAME test_tf5_tesla_ibs COMMAND test_tf5_tesla_ibs)
 
 # -----------------------------------------------------------------------------
 # End-to-end integration tests
@@ -121,9 +121,8 @@ add_dependencies(tests test_tf5_ibs_pkg)
 add_dependencies(tf5_tests test_tf5_ibs_pkg)
 target_include_directories(test_tf5_ibs_pkg PRIVATE
     ${OPENAIR3_DIR}/SECU
-    ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/blst/bindings
 )
-target_link_libraries(test_tf5_ibs_pkg PRIVATE tf5_ibs_pkg SECURITY blst GTest::gtest)
+target_link_libraries(test_tf5_ibs_pkg PRIVATE tf5_ibs_pkg SECURITY sodium GTest::gtest)
 target_compile_definitions(test_tf5_ibs_pkg PRIVATE ${TF5_TEST_COMPILE_DEFS})
 add_test(NAME test_tf5_ibs_pkg COMMAND test_tf5_ibs_pkg)
 

@@ -1,12 +1,12 @@
 /**
- * @file test_tf5_tesla_bls.cpp
- * @brief Unit tests for TF5 BLMQ IBS signature operations
+ * @file test_tf5_tesla_ibs.cpp
+ * @brief Unit tests for TF5 GG09 Schnorr IBS signature operations
  *
  * Tests for:
- * - tf5_ibs_init(): BLMQ IBS subsystem initialization
+ * - tf5_ibs_init(): GG09 Schnorr IBS subsystem initialization
  * - tf5_ibs_validate_sk(): Secret key validation
- * - tf5_ibs_sign(): BLMQ IBS signing
- * - tf5_ibs_verify(): BLMQ IBS verification
+ * - tf5_ibs_sign(): GG09 Schnorr IBS signing
+ * - tf5_ibs_verify(): GG09 Schnorr IBS verification
  */
 
 #define TF5_TEST_NEEDS_OAI_STUBS
@@ -53,7 +53,7 @@ TEST_F(TF5IbsInitTest, IbsValidateSk_NullInput_ReturnsError) {
 
 TEST_F(TF5IbsInitTest, IbsValidateSk_ZeroKey_ReturnsError) {
     uint8_t zero_key[TF5_IBS_GNB_SK_LEN] = {0};
-    // G1 identity (all zeros compressed) should be rejected as infinity
+    // Ed25519 identity (all zeros) should be rejected
     int ret = tf5_ibs_validate_sk(zero_key);
     EXPECT_NE(0, ret) << "All-zero key (identity point) should be rejected";
 }
@@ -62,7 +62,7 @@ TEST_F(TF5IbsInitTest, IbsValidateSk_GarbageKey_ReturnsError) {
     uint8_t garbage[TF5_IBS_GNB_SK_LEN];
     memset(garbage, 0xFF, sizeof(garbage));
     int ret = tf5_ibs_validate_sk(garbage);
-    EXPECT_NE(0, ret) << "Garbage bytes should fail G1 decompression";
+    EXPECT_NE(0, ret) << "Garbage bytes should fail Ed25519 decompression";
 }
 
 // ============================================================================
@@ -157,16 +157,16 @@ protected:
 
 TEST_F(TF5IbsE2ETest, IbsValidateSk_ValidKey_Success) {
     int ret = tf5_ibs_validate_sk(sk_gnb);
-    EXPECT_EQ(0, ret) << "PKG-issued sk_ID should validate successfully";
+    EXPECT_EQ(0, ret) << "PKG-issued sk_id should validate successfully";
 }
 
 TEST_F(TF5IbsE2ETest, IbsSignVerify_ValidSignature_Success) {
-    const char message[] = "Test message for BLMQ IBS signature verification";
+    const char message[] = "Test message for GG09 Schnorr IBS signature verification";
     uint8_t signature[TF5_IBS_SIG_LEN];
 
     int sign_ret = tf5_ibs_sign(sk_gnb, (const uint8_t*)message,
                                        strlen(message), signature);
-    ASSERT_EQ(0, sign_ret) << "BLMQ IBS signing should succeed";
+    ASSERT_EQ(0, sign_ret) << "GG09 Schnorr IBS signing should succeed";
 
     // Verify signature is not all zeros
     EXPECT_FALSE(is_all_zeros(signature, TF5_IBS_SIG_LEN))
@@ -176,20 +176,20 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_ValidSignature_Success) {
                                            (const uint8_t*)message,
                                            strlen(message), signature);
 
-    EXPECT_EQ(0, verify_ret) << "Valid BLMQ IBS signature should verify successfully";
+    EXPECT_EQ(0, verify_ret) << "Valid GG09 Schnorr IBS signature should verify successfully";
 }
 
 TEST_F(TF5IbsE2ETest, IbsSign_Randomized) {
-    // BLMQ IBS signing is randomized (unlike deterministic BLS)
+    // GG09 Schnorr IBS signing is randomized (random nonce r)
     const char message[] = "Same message";
     uint8_t sig1[TF5_IBS_SIG_LEN], sig2[TF5_IBS_SIG_LEN];
 
     tf5_ibs_sign(sk_gnb, (const uint8_t*)message, strlen(message), sig1);
     tf5_ibs_sign(sk_gnb, (const uint8_t*)message, strlen(message), sig2);
 
-    // Signatures should differ due to random nonce x
+    // Signatures should differ due to random nonce r
     EXPECT_NE(0, memcmp(sig1, sig2, TF5_IBS_SIG_LEN))
-        << "BLMQ IBS signatures should be randomized";
+        << "GG09 Schnorr IBS signatures should be randomized";
 
     // But both should verify correctly
     EXPECT_EQ(0, tf5_ibs_verify(mpk, cell_id, validity_end,
@@ -246,7 +246,7 @@ TEST_F(TF5IbsE2ETest, IbsSignVerify_TamperedSignature_Fails) {
 
     tf5_ibs_sign(sk_gnb, (const uint8_t*)message, strlen(message), signature);
 
-    // Tamper with the h part (first 32 bytes)
+    // Tamper with the R part (first 32 bytes)
     signature[0] ^= 0xFF;
 
     int verify_ret = tf5_ibs_verify(mpk, cell_id, validity_end,

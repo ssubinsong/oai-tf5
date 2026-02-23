@@ -50,7 +50,7 @@ protected:
             tf5_test::TV_EXT_T_INT_MS,   // t_int_ms = 20
             tf5_test::TV_EXT_D,          // d = 1
             chain_len,
-            ibs_sk,                      // 48B G1 point sk_ID from PKG
+            ibs_sk,                      // 64B sk_id: y[32] + pk[32] from PKG
             &t0,
             tf5_test::TV_SLOTS_PER_FRAME // slots_per_frame = 20
         );
@@ -266,7 +266,7 @@ TEST_F(TF5GnbTest, PrepareExtension_SignatureComputed) {
     tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_FALSE(is_all_zeros(ext.signature, TF5_IBS_SIG_LEN))
-        << "BLMQ IBS signature should be computed (not all zeros)";
+        << "GG09 Schnorr IBS signature should be computed (not all zeros)";
 }
 
 TEST_F(TF5GnbTest, PrepareExtension_ParamsIncluded) {
