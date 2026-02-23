@@ -49,4 +49,18 @@ ctest -R tf5 -V
 
 ## Others
 
-- The base branch of the repository is `v2.4.0-branch`, and I'm currently working on `tf5` branch. To understand what changes have been made, you can compare the `tf5` branch with the `v2.4.0-branch` to see the differences in code and commits.
+- The base branch of the repository is `v2.4.0-branch`, and I'm currently working on `tf5` branch (feature branches like `schnorr-ibs` may also exist). To understand what changes have been made, you can compare the `tf5` branch with the `v2.4.0-branch` to see the differences in code and commits.
+
+## IBS Scheme
+
+TF5 uses **GG09 Schnorr IBS** (Ed25519/libsodium) for SIB1 broadcast authentication.
+- Algorithm: Extract(cid=H(id‖pk‖mpk), y=cid·z+b), Sign(σ=h·y+r), Verify(R'=σ·B−h·Q)
+- Key sizes: mpk=32B, sk_id=64B(y[32]+pk[32]), sig=96B(R[32]+σ[32]+pk[32])
+- Reference implementation: `../tf5-evaluation/comp-overhead/baselines/bench_schnorr_2ibs.c`
+- `openair3/SECU/ed25519_precomp.h` contains local reimplementations of libsodium internal `ge25519_*` functions (they are `static` in libsodium source and not exported)
+
+## libsodium Build Notes
+
+- libsodium is built via `ExternalProject_Add` in root `CMakeLists.txt` (~line 668)
+- `autogen.sh -s` is required to generate the `configure` script (without `-s` it just prints instructions)
+- CMake presets (`cmake --preset tests`) may fail with CMake ≥4.2 because it scans git submodules for `CMakePresets.json`. Workaround: use direct cmake commands: `cmake -G Ninja -B cmake_targets/ran_build/build_test -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_TF5=ON -DENABLE_TESTS=ON`
