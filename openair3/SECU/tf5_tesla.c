@@ -63,7 +63,7 @@ int tf5_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
     // Truncate to 16 bytes
     memcpy(tag_out, full_tag, TF5_TESLA_TAG_LEN);
 
-    return 0;
+    return TF5_OK;
 }
 
 /* Internal helper - compute slots since T_0 */
@@ -187,7 +187,7 @@ int tf5_build_mac_auth_input(uint8_t *out,
     offset += TF5_IBS_VALIDITY_PERIOD_LEN;
 
     *out_len = offset;
-    return 0;
+    return TF5_OK;
 }
 
 int tf5_build_sig_auth_input(uint8_t *out,
@@ -238,7 +238,7 @@ int tf5_build_sig_auth_input(uint8_t *out,
     offset += 3;
 
     *out_len = offset;
-    return 0;
+    return TF5_OK;
 }
 
 int tf5_pack_extension(const tf5_extension_t *ext,
@@ -334,7 +334,7 @@ int tf5_unpack_extension(const uint8_t *buf,
     memcpy(ext->tesla_tag, buf + offset, TF5_TESLA_TAG_LEN);
     offset += TF5_TESLA_TAG_LEN;
 
-    return 0;
+    return TF5_OK;
 }
 
 /*
@@ -428,7 +428,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
     LOG_I(TF5, "gNB initialized - T_int=%ums, d=%u, T_0=SFN%u.%u\n",
           t_int_ms, d, t0->sfn, t0->slot);
 
-    return 0;
+    return TF5_OK;
 }
 
 void tf5_gnb_free(tf5_gnb_state_t *state)
@@ -573,7 +573,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
     LOG_D(TF5, "Prepared extension for interval %u (SFN%u.%u)\n",
           interval, sfn, slot);
 
-    return 0;
+    return TF5_OK;
 }
 
 /*
@@ -620,7 +620,7 @@ int tf5_ue_init(tf5_ue_state_t *state,
 
     LOG_I(TF5, "UE initialized (D=%u slots, first-time UE)\n", state->d_offset_slots);
 
-    return 0;
+    return TF5_OK;
 }
 
 void tf5_ue_free(tf5_ue_state_t *state)
@@ -742,7 +742,7 @@ int tf5_ue_buffer_msg(tf5_ue_state_t *state,
     LOG_D(TF5, "Buffered SIB1 for interval %u (slot %d, queue count %u, rrc_trigger=%d)\n",
           interval_index, target_slot, state->buffer_queue_count, triggered_rrc_setup);
 
-    return 0;
+    return TF5_OK;
 }
 
 bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
@@ -916,7 +916,7 @@ int tf5_load_gnb_privkey(const char *filepath,
         return TF5_ERR_KEY_INVALID;
     }
 
-    return 0;
+    return TF5_OK;
 }
 
 int tf5_load_core_mpk(const char *filepath,
@@ -956,7 +956,7 @@ int tf5_load_core_mpk(const char *filepath,
     LOG_I(TF5, "Loaded Core MPK from %s (%d bytes)\n",
           filepath, TF5_IBS_MPK_LEN);
 
-    return 0;
+    return TF5_OK;
 }
 
 #endif /* ENABLE_TF5 */

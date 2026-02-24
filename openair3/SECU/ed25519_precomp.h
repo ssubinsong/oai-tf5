@@ -7,8 +7,8 @@
  * Requires linking against the LOCAL libsodium build (private headers).
  */
 
-#ifndef ED25519_PRECOMP_H
-#define ED25519_PRECOMP_H
+#ifndef TF5_ED25519_PRECOMP_H
+#define TF5_ED25519_PRECOMP_H
 
 /* Auto-detect 128-bit integer support for fe_51 representation */
 #if defined(__SIZEOF_INT128__) && !defined(HAVE_TI_MODE)
@@ -410,4 +410,4 @@ ge25519_scalarmult_vartime(ge25519_p3 *h, const unsigned char *scalar,
     }
 }
 
-#endif /* ED25519_PRECOMP_H */
+#endif /* TF5_ED25519_PRECOMP_H */

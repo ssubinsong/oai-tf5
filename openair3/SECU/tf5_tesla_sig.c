@@ -23,7 +23,6 @@
 
 #include <sodium.h>
 #include <string.h>
-#include <stdio.h>
 
 /* ==========================================================================
  * Static helpers

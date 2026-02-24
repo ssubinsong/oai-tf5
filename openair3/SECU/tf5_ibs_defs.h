@@ -49,7 +49,6 @@ typedef enum {
     /* File I/O */
     TF5_ERR_FILE_OPEN           = -8,   // fopen / open failure
     TF5_ERR_FILE_IO             = -9,   // fread size mismatch or read error
-    TF5_ERR_FILE_WRITE          = -10,  // fwrite or file creation failure
     /* Protocol state */
     TF5_ERR_CHAIN_EXHAUSTED     = -11,  // TESLA key chain interval exceeded
     TF5_ERR_NO_DATA             = -12,  // No buffered entries for verification
