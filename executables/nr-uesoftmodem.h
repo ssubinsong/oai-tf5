@@ -28,7 +28,7 @@ extern uint16_t ue_id_g;
 #define  CONFIG_HLP_EXTRA_PDU_ID           "ID of an additional PDU session to configure alongside default PDU session\n"
 
 #ifdef ENABLE_TF5
-#define  CONFIG_HLP_TF5_CORE_MPK         "Core's Master Public Key (MPK) file for IBS verification (96-byte raw binary). REQUIRED.\n"
+#define  CONFIG_HLP_TF5_CORE_MPK         "Core's Master Public Key (MPK) file for IBS verification. REQUIRED.\n"
 #define  CONFIG_HLP_TF5_D_BOUND          "TESLA D bound in microseconds (upper bound on sender-receiver time offset). Default: 1005 us.\n"
 #define  CONFIG_HLP_TF5_RP_TS_WINDOW        "Signature timestamp replay window in milliseconds. Default: 60000 ms.\n"
 #endif
@@ -53,8 +53,8 @@ extern uint16_t ue_id_g;
 #ifdef ENABLE_TF5
 #define CMDLINE_TF5_PARAMS_UE \
   {"tf5-core-mpk",               CONFIG_HLP_TF5_CORE_MPK,   0,              .strptr=&nrUE_params.tf5_core_mpk_file,         .defstrval=NULL,  TYPE_STRING, 0}, \
-  {"tesla-d-bound",                CONFIG_HLP_TF5_D_BOUND,    0,              .uptr=&nrUE_params.tf5_d_bound_us,              .defuintval=TF5_TESLA_DEFAULT_D_BOUND_US, TYPE_UINT,   0}, \
-  {"signature-timestamp-window-ms", CONFIG_HLP_TF5_RP_TS_WINDOW, 0,              .uptr=&nrUE_params.tf5_rp_timestamp_window_ms, .defuintval=TF5_RP_DEFAULT_TIME_WINDOW_MS, TYPE_UINT, 0},
+  {"tf5-d-bound",                CONFIG_HLP_TF5_D_BOUND,    0,              .uptr=&nrUE_params.tf5_d_bound_us,              .defuintval=TF5_TESLA_DEFAULT_D_BOUND_US, TYPE_UINT,   0}, \
+  {"tf5-sig-rp-window-ms", CONFIG_HLP_TF5_RP_TS_WINDOW, 0,              .uptr=&nrUE_params.tf5_rp_timestamp_window_ms, .defuintval=TF5_RP_DEFAULT_TIME_WINDOW_MS, TYPE_UINT, 0},
 #else
 #define CMDLINE_TF5_PARAMS_UE
 #endif

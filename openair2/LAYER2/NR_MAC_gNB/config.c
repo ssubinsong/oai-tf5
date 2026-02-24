@@ -1110,69 +1110,6 @@ void prepare_du_configuration_update(gNB_MAC_INST *mac,
   mac->mac_rrc.gnb_du_configuration_update(&update);
 }
 
-#ifdef ENABLE_TF5
-/**
- * Compute TESLA T_0 reference point from SIB1 occasion pattern
- *
- * T_0 is NOT the actual first SIB1 frame, but a reference point that aligns
- * with the SIB1 transmission pattern. With sfn_c determining frame parity
- * (0=even, 1=odd) and n_0 as the slot, every SIB1 transmission falls exactly
- * on a TESLA interval boundary (since SIB1 period = TESLA interval = 20ms).
- *
- * Example: If sfn_c=0 and n_0=0, T_0=(0,0). A gNB starting at frame 67 will
- * transmit first SIB1 at frame 68, which is interval 34 - not interval 0.
- * This is correct behavior; intervals 0-33 are simply unused.
- *
- * @param nrmac     gNB MAC instance
- * @param out_sfn   Output: SFN component of T_0 (0 or 1, frame parity)
- * @param out_slot  Output: slot component of T_0 (n_0 from Type0 PDCCH CSS)
- */
-static void tf5_compute_t0_reference(gNB_MAC_INST *nrmac, uint16_t *out_sfn, uint16_t *out_slot)
-{
-  NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
-  const NR_MIB_t *mib = cc->mib->message.choice.mib;
-  NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
-
-  NR_SubcarrierSpacing_t scs_ssb = *scc->ssbSubcarrierSpacing;
-  const long band = *scc->downlinkConfigCommon->frequencyInfoDL->frequencyBandList.list.array[0];
-  uint16_t ssb_start_symbol = get_ssb_start_symbol(band, scs_ssb, 0);
-
-  int8_t ssb_period_enum = *scc->ssb_periodicityServingCell;
-  uint8_t ssb_frame_periodicity = 1;
-  if (ssb_period_enum > 1)
-    ssb_frame_periodicity = 1 << (ssb_period_enum - 1);
-
-  const int8_t numb_slots_frame = nrmac->frame_structure.numb_slots_frame;
-  frequency_range_t frequency_range = scc->ssb_PositionsInBurst->present == 3 ? FR2 : FR1;
-  const int prb_offset = frequency_range == FR1 ? nrmac->ssb_OffsetPointA >> scs_ssb : nrmac->ssb_OffsetPointA >> (scs_ssb - 2);
-
-  // Compute type0 PDCCH CSS config to get timing parameters
-  NR_Type0_PDCCH_CSS_config_t type0_PDCCH_CSS_config = {0};
-  get_type0_PDCCH_CSS_config_parameters(&type0_PDCCH_CSS_config,
-                                        0,
-                                        mib,
-                                        numb_slots_frame,
-                                        nrmac->ssb_SubcarrierOffset,
-                                        ssb_start_symbol,
-                                        scs_ssb,
-                                        frequency_range,
-                                        band,
-                                        0,  // ssb_index = 0
-                                        ssb_frame_periodicity,
-                                        prb_offset);
-
-  // TF5 simplification: only support CORESET mux pattern 1
-  AssertFatal(type0_PDCCH_CSS_config.type0_pdcch_ss_mux_pattern == 1,
-              "TF5 TESLA only supports CORESET mux pattern 1 (got pattern %d)\n",
-              type0_PDCCH_CSS_config.type0_pdcch_ss_mux_pattern);
-
-  // T_0 reference point: sfn_c sets frame parity alignment, n_0 sets slot
-  // This ensures every SIB1 TX (on frames matching parity) aligns with interval start
-  *out_sfn = type0_PDCCH_CSS_config.sfn_c;  // 0 or 1 (even or odd frame parity)
-  *out_slot = type0_PDCCH_CSS_config.n_0;
-}
-#endif // ENABLE_TF5
-
 void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t cellID, int tac)
 {
   AssertFatal(IS_SA_MODE(get_softmodem_params()), "error: SIB1 only applicable for SA\n");
@@ -1202,8 +1139,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   // Check that key path is provided (no defaults - must be explicit)
   if (tf5_privkey_file == NULL || tf5_privkey_file[0] == '\0') {
     AssertFatal(false,
-                "TF5: --tf5-privkey is required. Specify path to sk_ID file (issued by Core PKG).\n"
-                "TF5: Generate with: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>\n");
+                "TF5: --tf5-privkey is required. Specify path to sk_ID file (issued by Core PKG).\n");
   }
 
   // Initialize GG09 Schnorr IBS subsystem
@@ -1214,7 +1150,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   rc = tf5_load_gnb_privkey(tf5_privkey_file, private_key, &key_validity_end);
   AssertFatal(rc == 0,
               "TF5: Failed to load sk_ID from %s (rc=%d)\n"
-              "TF5: Use tf5_ibs_issue to generate key for this gNB\n",
+              "TF5: Use tf5_ibs_issue.sh to generate key for this gNB\n",
               tf5_privkey_file, rc);
 
   // Validate gnb_key_validity_end is within 24-bit range
@@ -1226,7 +1162,7 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   uint64_t current_unix = tf5_rp_get_wallclock_ms() / 1000;
   AssertFatal(current_unix < expiry_unix,
               "TF5: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n"
-              "TF5: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n",
+              "TF5: Re-issue key with tf5_ibs_issue.sh using a future gnb_key_validity_end\n",
               key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
 
   LOG_I(TF5, "Loaded sk_ID from: %s\n", tf5_privkey_file);
