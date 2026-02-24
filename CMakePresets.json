@@ -45,6 +45,7 @@
                 "nr-uesoftmodem",
                 "nr-softmodem",
                 "rfsimulator",
+                "vrtsim",
                 "dfts",
                 "ldpc",
                 "params_libconfig",
