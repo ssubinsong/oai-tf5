@@ -37,9 +37,9 @@ cd cmake_targets/ran_build/build_test
 ctest -R tf5 -V
 ```
 
-## Known Issues
+## Unimplemented Features
 
-`doc-tf5/known-issues.md` documents known limitations of the codebase. Issues listed there are already acknowledged — do NOT report them as new bugs or attempt to fix them unless explicitly asked.
+`doc-tf5/unimplemented-features.md` documents unimplemented features of the codebase. DO NOT report them as new bugs or attempt to implement them unless explicitly asked.
 
 ## IBS Scheme
 
