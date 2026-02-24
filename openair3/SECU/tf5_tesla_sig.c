@@ -270,7 +270,7 @@ int tf5_ibs_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
     const uint8_t *sigma   = signature + TF5_ED25519_POINT_LEN;
     const uint8_t *pk      = signature + TF5_ED25519_POINT_LEN + TF5_ED25519_SCALAR_LEN;
 
-    /* Step 2: cid = H(cell_id ‖ validity ‖ pk ‖ mpk) mod l */
+    /* Step 2: cid = H(pk ‖ mpk ‖ cell_id ‖ validity) mod l */
     uint8_t cid[TF5_ED25519_SCALAR_LEN];
     int rc = tf5_ibs_hash_identity(cell_id, TF5_IBS_CELL_ID_LEN,
                                     gnb_key_validity_end, pk, mpk, cid);

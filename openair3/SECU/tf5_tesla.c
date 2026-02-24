@@ -506,11 +506,12 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
     }
 
     // Set wall-clock timestamp for signature replay protection
-    ext->timestamp_ms = (uint32_t)tf5_rp_get_wallclock_ms() & TF5_RP_TIMESTAMP_MASK;
-    if (ext->timestamp_ms == 0) {
+    uint64_t wallclock_ms = tf5_rp_get_wallclock_ms();
+    if (wallclock_ms == 0) {
         LOG_E(TF5, "Failed to get wall-clock time\n");
         return TF5_ERR_CRYPTO;
     }
+    ext->timestamp_ms = (uint32_t)wallclock_ms & TF5_RP_TIMESTAMP_MASK;
 
     // Build signature auth input
     uint8_t sig_auth_input[TF5_MAX_AUTH_INPUT];

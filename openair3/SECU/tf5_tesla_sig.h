@@ -126,7 +126,7 @@ int tf5_ibs_sign_online(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
  *
  * GG09 verification algorithm:
  *   1. Parse σ = (R, sigma, pk) from signature
- *   2. cid = SHA-512(cell_id ‖ validity_be ‖ pk ‖ mpk) mod l
+ *   2. cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity_be) mod l
  *   3. Q = cid·mpk + pk (via precomp table for mpk + point add)
  *   4. R' = sigma·B − h·Q (via Shamir's trick / double scalar mult)
  *   5. h' = SHA-512(data ‖ R')
