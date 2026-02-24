@@ -715,8 +715,6 @@ target_link_libraries(SECURITY PRIVATE ${OpenSSL_LIBRARIES})
 if(ENABLE_TF5)
   target_link_libraries(SECURITY PUBLIC sodium)
 
-  # TF5 IBS PKG utilities (keygen and issue executables)
-  add_subdirectory(${OPENAIR3_DIR}/SECU/core-pkg ${CMAKE_CURRENT_BINARY_DIR}/openair3/SECU/core-pkg)
 endif()
 
 # Physical Channel Procedures Scheduling

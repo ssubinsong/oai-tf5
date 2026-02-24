@@ -20,43 +20,28 @@ TF5 uses **Identity-Based Signatures (IBS)** where the 5G Core acts as a Private
 See [pkg-cryptography.md](pkg-cryptography.md) for the full cryptographic specification
 (key hierarchy, algorithms, domain separation tags, security analysis).
 
-### Step 1: Build Core PKG Utilities
-
-The Core PKG utilities are built automatically when building OAI with TESLA enabled:
+### Step 1: Generate Master Keypair (One-time)
 
 ```bash
-cmake --preset default
-cmake --build --preset 5gdefault
-```
-
-This produces two utilities in `cmake_targets/ran_build/build/`:
-- `tf5_ibs_pkg_keygen` - Master keypair generation
-- `tf5_ibs_issue` - gNB secret key issuance
-
-### Step 2: Generate Master Keypair (One-time)
-
-```bash
-cd cmake_targets/ran_build/build
-./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
+./openair3/SECU/core-pkg/tf5_ibs_keygen.sh pkg_keys/msk.bin pkg_keys/mpk.bin
 ```
 
 **Output:**
 - `msk.bin` (32 bytes) - Master secret key. **KEEP SECURE!**
 - `mpk.bin` (32 bytes) - Master public key. Distribute to all UEs.
 
-### Step 3: Issue gNB Secret Key
+### Step 2: Issue gNB Secret Key
 
 For each gNB, issue a secret key based on its NR Cell ID (36 bits) and a validity period:
 
 ```bash
-cd cmake_targets/ran_build/build
 # Cell ID 0x000000e00, valid for 5 years (2628000 minutes from 2024-01-01)
-./tf5_ibs_issue pkg_keys/msk.bin 000000e00 2628000 gnb_keys/sk_gnb.bin
+./openair3/SECU/core-pkg/tf5_ibs_issue.sh pkg_keys/msk.bin 000000e00 2628000 gnb_keys/sk_gnb.bin
 ```
 
 **Usage:**
 ```
-tf5_ibs_issue <msk_path> <cell_id_hex> <validity_end> <sk_path>
+tf5_ibs_issue.sh <msk_path> <cell_id_hex> <validity_end> <sk_path>
 ```
 
 **Arguments:**

@@ -50,16 +50,31 @@ protected:
         std::string sk_path = base_test_dir + "/sk.bin";
 
         uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x00, 0x00, 0x00, 0x0e, 0x00};
-        tf5_ibs_generate_master_keypair(msk_path.c_str(), mpk_path.c_str());
-        tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, 1051200, sk_path.c_str());
+        uint32_t validity_end = 1051200;
 
-        tf5_load_core_mpk(mpk_path.c_str(), test_mpk);
+        // Generate MSK and derive MPK
+        uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
+        randombytes_buf(msk, TF5_IBS_MASTER_SECRET_LEN);
+        uint8_t sk_tmp[crypto_sign_SECRETKEYBYTES];
+        crypto_sign_seed_keypair(test_mpk, sk_tmp, msk);
+        sodium_memzero(sk_tmp, sizeof(sk_tmp));
 
-        FILE *f = fopen(sk_path.c_str(), "rb");
+        // Compute gNB secret key
+        tf5_ibs_compute_gnb_secret(msk, cell_id, validity_end, test_mpk, test_private_key);
+
+        // Write key files for functions that load from disk
+        std::ofstream f_mpk(mpk_path, std::ios::binary);
+        f_mpk.write(reinterpret_cast<const char*>(test_mpk), TF5_IBS_MASTER_PUBLIC_LEN);
+        f_mpk.close();
+
         uint8_t sk_file[TF5_IBS_SK_FILE_SIZE];
-        fread(sk_file, 1, TF5_IBS_SK_FILE_SIZE, f);
-        fclose(f);
-        memcpy(test_private_key, sk_file, TF5_IBS_GNB_SK_LEN);
+        memcpy(sk_file, test_private_key, TF5_IBS_GNB_SK_LEN);
+        sk_file[TF5_IBS_GNB_SK_LEN + 0] = (validity_end >> 16) & 0xFF;
+        sk_file[TF5_IBS_GNB_SK_LEN + 1] = (validity_end >> 8) & 0xFF;
+        sk_file[TF5_IBS_GNB_SK_LEN + 2] = validity_end & 0xFF;
+        std::ofstream f_sk(sk_path, std::ios::binary);
+        f_sk.write(reinterpret_cast<const char*>(sk_file), TF5_IBS_SK_FILE_SIZE);
+        f_sk.close();
     }
 
     void TearDown() override {
@@ -634,27 +649,37 @@ protected:
         TF5UeTest::TearDown();
     }
 
+    static void writeTestKeyFile(const std::string &path, const uint8_t *data, size_t len, mode_t mode) {
+        std::ofstream f(path, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(data), len);
+        f.close();
+        chmod(path.c_str(), mode);
+    }
+
     void generateAndLoadKeys() {
-        int rc = tf5_ibs_generate_master_keypair(msk_path.c_str(), mpk_path.c_str());
-        ASSERT_EQ(0, rc) << "Failed to generate master keypair";
+        // 1. Generate random seed (MSK)
+        randombytes_buf(ibs_msk, TF5_IBS_MASTER_SECRET_LEN);
 
-        rc = tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, validity_end, sk_gnb_path.c_str());
-        ASSERT_EQ(0, rc) << "Failed to issue gNB key";
+        // 2. Derive MPK via Ed25519 key expansion
+        uint8_t sk_tmp[crypto_sign_SECRETKEYBYTES];
+        crypto_sign_seed_keypair(ibs_mpk, sk_tmp, ibs_msk);
+        sodium_memzero(sk_tmp, sizeof(sk_tmp));
 
-        rc = tf5_ibs_load_master_secret(msk_path.c_str(), ibs_msk);
-        ASSERT_EQ(0, rc) << "Failed to load MSK";
+        // 3. Write MSK and MPK to files
+        writeTestKeyFile(msk_path, ibs_msk, TF5_IBS_MASTER_SECRET_LEN, 0600);
+        writeTestKeyFile(mpk_path, ibs_mpk, TF5_IBS_MASTER_PUBLIC_LEN, 0644);
 
-        rc = tf5_load_core_mpk(mpk_path.c_str(), ibs_mpk);
-        ASSERT_EQ(0, rc) << "Failed to load MPK";
+        // 4. Compute gNB secret key
+        int rc = tf5_ibs_compute_gnb_secret(ibs_msk, cell_id, validity_end, ibs_mpk, ibs_sk);
+        ASSERT_EQ(0, rc) << "Failed to compute gNB secret key";
 
-        FILE* f = fopen(sk_gnb_path.c_str(), "rb");
-        ASSERT_NE(nullptr, f) << "Failed to open gNB SK file";
+        // 5. Write gNB SK file: sk_id[64] + validity_be[3]
         uint8_t sk_file[TF5_IBS_SK_FILE_SIZE];
-        size_t n = fread(sk_file, 1, TF5_IBS_SK_FILE_SIZE, f);
-        fclose(f);
-        ASSERT_EQ(TF5_IBS_SK_FILE_SIZE, n) << "Failed to read gNB SK";
-
-        memcpy(ibs_sk, sk_file, TF5_IBS_GNB_SK_LEN);
+        memcpy(sk_file, ibs_sk, TF5_IBS_GNB_SK_LEN);
+        sk_file[TF5_IBS_GNB_SK_LEN + 0] = (validity_end >> 16) & 0xFF;
+        sk_file[TF5_IBS_GNB_SK_LEN + 1] = (validity_end >> 8) & 0xFF;
+        sk_file[TF5_IBS_GNB_SK_LEN + 2] = validity_end & 0xFF;
+        writeTestKeyFile(sk_gnb_path, sk_file, TF5_IBS_SK_FILE_SIZE, 0600);
     }
 
     int initUeWithTestMpk() {

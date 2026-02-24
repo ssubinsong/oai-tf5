@@ -16,9 +16,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <fstream>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <filesystem>
+#include <sodium.h>
 
 /*
  * =============================================================================
@@ -123,14 +125,37 @@ protected:
         sk_gnb_path = test_dir + "/sk_gnb.bin";
     }
 
+    static void writeTestKeyFile(const std::string &path, const uint8_t *data, size_t len, mode_t mode) {
+        std::ofstream f(path, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(data), len);
+        f.close();
+        chmod(path.c_str(), mode);
+    }
+
     void generateAndLoadKeys() {
-        int rc = tf5_ibs_generate_master_keypair(msk_path.c_str(), mpk_path.c_str());
-        ASSERT_EQ(0, rc) << "Failed to generate master keypair";
+        // 1. Generate random seed (MSK)
+        randombytes_buf(ibs_msk, TF5_IBS_MASTER_SECRET_LEN);
 
-        rc = tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, validity_end, sk_gnb_path.c_str());
-        ASSERT_EQ(0, rc) << "Failed to issue gNB key";
+        // 2. Derive MPK via Ed25519 key expansion
+        uint8_t sk_tmp[crypto_sign_SECRETKEYBYTES];
+        crypto_sign_seed_keypair(ibs_mpk, sk_tmp, ibs_msk);
+        sodium_memzero(sk_tmp, sizeof(sk_tmp));
 
-        loadGeneratedKeys();
+        // 3. Write MSK and MPK to files
+        writeTestKeyFile(msk_path, ibs_msk, TF5_IBS_MASTER_SECRET_LEN, 0600);
+        writeTestKeyFile(mpk_path, ibs_mpk, TF5_IBS_MASTER_PUBLIC_LEN, 0644);
+
+        // 4. Compute gNB secret key
+        int rc = tf5_ibs_compute_gnb_secret(ibs_msk, cell_id, validity_end, ibs_mpk, ibs_sk);
+        ASSERT_EQ(0, rc) << "Failed to compute gNB secret key";
+
+        // 5. Write gNB SK file: sk_id[64] + validity_be[3]
+        uint8_t sk_file[TF5_IBS_SK_FILE_SIZE];
+        memcpy(sk_file, ibs_sk, TF5_IBS_GNB_SK_LEN);
+        sk_file[TF5_IBS_GNB_SK_LEN + 0] = (validity_end >> 16) & 0xFF;
+        sk_file[TF5_IBS_GNB_SK_LEN + 1] = (validity_end >> 8) & 0xFF;
+        sk_file[TF5_IBS_GNB_SK_LEN + 2] = validity_end & 0xFF;
+        writeTestKeyFile(sk_gnb_path, sk_file, TF5_IBS_SK_FILE_SIZE, 0600);
     }
 
     void loadGeneratedKeys() {

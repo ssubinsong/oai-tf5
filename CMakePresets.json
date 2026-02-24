@@ -48,9 +48,7 @@
                 "dfts",
                 "ldpc",
                 "params_libconfig",
-                "params_yaml",
-                "tf5_ibs_pkg_keygen",
-                "tf5_ibs_issue"
+                "params_yaml"
             ]
         },
         {

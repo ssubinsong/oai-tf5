@@ -102,18 +102,17 @@ The TESLA config inherits all other parameters from the base configuration:
 ## Usage
 
 ```bash
-cd cmake_targets/ran_build/build
-
-# Generate TESLA keys (from build directory)
+# Generate TESLA keys (from project root)
 mkdir -p pkg_keys gnb_keys
-./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
-./tf5_ibs_issue pkg_keys/msk.bin 000000e00 2628000 gnb_keys/sk_gnb.bin
+./openair3/SECU/core-pkg/tf5_ibs_keygen.sh pkg_keys/msk.bin pkg_keys/mpk.bin
+./openair3/SECU/core-pkg/tf5_ibs_issue.sh pkg_keys/msk.bin 000000e00 2628000 gnb_keys/sk_gnb.bin
 
 # Run gNB with TESLA config
+cd cmake_targets/ran_build/build
 sudo ./nr-softmodem \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
     --rfsim \
-    --tf5-privkey gnb_keys/sk_gnb.bin
+    --tf5-privkey ../../../gnb_keys/sk_gnb.bin
 
 # Run UE (separate terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim \

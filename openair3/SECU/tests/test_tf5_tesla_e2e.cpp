@@ -57,22 +57,16 @@ protected:
         // Generate PKG keys for the gNB
         test_dir = "/tmp/tf5_e2e_test_" + std::to_string(getpid());
         std::filesystem::create_directories(test_dir);
-        std::string msk_path = test_dir + "/msk.bin";
-        std::string mpk_path = test_dir + "/mpk.bin";
-        std::string sk_path = test_dir + "/sk.bin";
 
-        tf5_ibs_generate_master_keypair(msk_path.c_str(), mpk_path.c_str());
-        tf5_ibs_issue_gnb_key(msk_path.c_str(), cell_id, tf5_test::TV_IBS_VALIDITY_END, sk_path.c_str());
+        // Generate MSK and derive MPK
+        uint8_t msk[TF5_IBS_MASTER_SECRET_LEN];
+        randombytes_buf(msk, TF5_IBS_MASTER_SECRET_LEN);
+        uint8_t sk_tmp[crypto_sign_SECRETKEYBYTES];
+        crypto_sign_seed_keypair(gnb_mpk, sk_tmp, msk);
+        sodium_memzero(sk_tmp, sizeof(sk_tmp));
 
-        // Load keys
-        tf5_load_core_mpk(mpk_path.c_str(), gnb_mpk);
-
-        // Load sk from file (first TF5_IBS_GNB_SK_LEN bytes)
-        FILE *f = fopen(sk_path.c_str(), "rb");
-        uint8_t sk_file[TF5_IBS_SK_FILE_SIZE];
-        fread(sk_file, 1, TF5_IBS_SK_FILE_SIZE, f);
-        fclose(f);
-        memcpy(gnb_private_key, sk_file, TF5_IBS_GNB_SK_LEN);
+        // Compute gNB secret key
+        tf5_ibs_compute_gnb_secret(msk, cell_id, tf5_test::TV_IBS_VALIDITY_END, gnb_mpk, gnb_private_key);
 
         // Set T_0
         t0 = tf5_slot_time_make(0, 0);

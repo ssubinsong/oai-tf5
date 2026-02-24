@@ -34,38 +34,6 @@
  */
 
 /**
- * Generate Core PKG master keypair
- *
- * Generates a random Ed25519 seed (MSK) and derives the corresponding
- * master public key (MPK) via crypto_sign_seed_keypair.
- *
- * @param msk_path  Path to save master secret key (32 bytes, binary)
- * @param mpk_path  Path to save master public key (32 bytes, binary)
- * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_CRYPTO,
- *         TF5_ERR_KEY_INVALID, TF5_ERR_FILE_WRITE
- */
-int tf5_ibs_generate_master_keypair(const char *msk_path, const char *mpk_path);
-
-/**
- * Issue gNB secret key from Cell ID and validity period
- *
- * Signs the identity message (cell_id ‖ validity) with the master key
- * using crypto_sign_detached. The Ed25519 signature (R‖S) maps to:
- *   sk_id = (y=S[32], pk=R[32]) = 64 bytes
- *
- * @param msk_path     Path to master secret key file
- * @param cell_id      NR Cell ID (5 bytes, 36 bits with 4 padding bits)
- * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
- * @param sk_path      Path to save gNB secret key (67 bytes: 64B sk_id + 3B validity)
- * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_WRITE,
- *         or propagated error from tf5_ibs_load_master_secret / tf5_ibs_compute_gnb_secret
- */
-int tf5_ibs_issue_gnb_key(const char *msk_path,
-                           const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                           uint32_t gnb_key_validity_end,
-                           const char *sk_path);
-
-/**
  * Hash identity to scalar for GG09 Schnorr IBS
  *
  * Computes cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity_be[3]) mod l
