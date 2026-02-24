@@ -566,6 +566,12 @@ int tf5_ue_init(tf5_ue_state_t *state,
     uint32_t slot_duration_us = TF5_NR_FRAME_DURATION_US / slots_per_frame;
     state->d_offset_slots = (d_bound_us + slot_duration_us - 1) / slot_duration_us;
 
+    // Pre-build MPK precomputation table for fast IBS verification
+    int precomp_rc = tf5_ibs_precompute_mpk(mpk);
+    if (precomp_rc != TF5_OK) {
+        LOG_W(TF5, "MPK precomputation failed (rc=%d), will build on first verify\n", precomp_rc);
+    }
+
     state->initialized = true;
 
     LOG_I(TF5, "UE initialized (D=%u slots, first-time UE)\n", state->d_offset_slots);

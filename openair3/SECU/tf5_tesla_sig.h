@@ -39,6 +39,18 @@ typedef struct {
 int tf5_ibs_init(void);
 
 /**
+ * Pre-build MPK precomputation table for IBS verification
+ *
+ * Builds the 32x8 Duif precomp table (~30KB) for the fixed-point
+ * scalar multiplication cid*mpk, moving this cost from the first
+ * tf5_ibs_verify() call to initialization time.
+ *
+ * @param mpk   Core's Master Public Key (32 bytes)
+ * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_KEY_INVALID
+ */
+int tf5_ibs_precompute_mpk(const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN]);
+
+/**
  * Validate a GG09 Schnorr IBS secret key
  *
  * Decompresses the pk portion (bytes 32-63) as an Ed25519 point and checks:

@@ -72,6 +72,34 @@ int tf5_ibs_init(void)
     return 0;
 }
 
+int tf5_ibs_precompute_mpk(const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN])
+{
+    if (!mpk) return TF5_ERR_INVALID_PARAM;
+    if (!s_initialized) {
+        LOG_E(TF5, "GG09 IBS not initialized\n");
+        return TF5_ERR_INVALID_PARAM;
+    }
+
+    /* Skip if already cached for this MPK */
+    if (s_mpk_cache.valid &&
+        sodium_memcmp(s_mpk_cache.mpk, mpk, TF5_IBS_MASTER_PUBLIC_LEN) == 0) {
+        return TF5_OK;
+    }
+
+    ge25519_p3 mpk_p3;
+    if (ge25519_frombytes(&mpk_p3, mpk) != 0) {
+        LOG_E(TF5, "Failed to decompress MPK for precomputation\n");
+        return TF5_ERR_KEY_INVALID;
+    }
+
+    build_precomp_table(s_mpk_cache.table, &mpk_p3);
+    memcpy(s_mpk_cache.mpk, mpk, TF5_IBS_MASTER_PUBLIC_LEN);
+    s_mpk_cache.valid = 1;
+
+    LOG_I(TF5, "MPK precomputation table built (32x8 Duif, ~30KB)\n");
+    return TF5_OK;
+}
+
 int tf5_ibs_validate_sk(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN])
 {
     if (!sk_id) {
