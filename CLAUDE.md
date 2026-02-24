@@ -1,3 +1,14 @@
+## ⚠️ CRITICAL: Research PoC — Keep It Simple
+
+This is a **research proof-of-concept** for a paper, NOT production code. Simplicity is intentional.
+The primary goal is **measuring latency overhead** of the TESLA-based SIB1 authentication scheme. Correctness and measurability matter; robustness and completeness do not.
+
+- **Only implement what is explicitly asked.** No extra features, no "while we're at it" improvements.
+- **Do NOT suggest or add:** unnecessary error handling, logging, abstractions, config options, backwards compatibility, or defensive code.
+- **Do NOT comment on:** missing edge-case handling, lack of input validation, hardcoded values, or other "production concerns". These are known and intentional.
+- **Prefer the simplest working solution.** 3 direct lines > 1 elegant abstraction.
+- **When proposing changes**, always ask: "Is this the minimum change needed?" If not, simplify.
+
 ## (MANDATORY) Serena MCP Usage
 
 VERY IMPORTANT: ALWAYS use Serena MCP to analyze the codebase and understand the code.
