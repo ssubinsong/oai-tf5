@@ -390,6 +390,32 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
 
     LOG_I(TF5, "Key chain generated with %u intervals (K_{-1} at index 0)\n", chain_len);
 
+    // Pre-generate IBS signature nonces (offline/online split)
+    // Each precomp = (r, R=r·B) pair, 64 bytes. Removes the expensive
+    // base-point scalar mult from the per-SIB1 online signing path.
+    state->sign_precomps = calloc(chain_len, sizeof(tf5_ibs_sign_precomp_t));
+    if (!state->sign_precomps) {
+        LOG_E(TF5, "Failed to allocate IBS precomp table (%u entries)\n", chain_len);
+        free(state->key_chain);
+        return TF5_ERR_ALLOC;
+    }
+    state->sign_precomp_count = chain_len;
+    state->sign_precomp_next = 0;
+
+    for (uint32_t i = 0; i < chain_len; i++) {
+        int precomp_rc = tf5_ibs_sign_precomp(&state->sign_precomps[i]);
+        if (precomp_rc != TF5_OK) {
+            LOG_E(TF5, "IBS precomp failed at entry %u (rc=%d)\n", i, precomp_rc);
+            free(state->sign_precomps);
+            state->sign_precomps = NULL;
+            free(state->key_chain);
+            return precomp_rc;
+        }
+    }
+
+    LOG_I(TF5, "IBS precomp table built (%u entries, %zu KB)\n",
+          chain_len, (size_t)chain_len * sizeof(tf5_ibs_sign_precomp_t) / 1024);
+
     // Set TESLA parameters
     state->tesla_params.t_int_ms = t_int_ms;
     state->tesla_params.d = d;
@@ -412,6 +438,11 @@ void tf5_gnb_free(tf5_gnb_state_t *state)
             // Clear sensitive data (chain_len + 1 entries including K_{-1})
             OPENSSL_cleanse(state->key_chain, (state->key_chain_len + 1) * TF5_TESLA_KEY_LEN);
             free(state->key_chain);
+        }
+        if (state->sign_precomps) {
+            // Clear precomputed nonces (r_scalar values are secret)
+            OPENSSL_cleanse(state->sign_precomps, state->sign_precomp_count * sizeof(tf5_ibs_sign_precomp_t));
+            free(state->sign_precomps);
         }
         OPENSSL_cleanse(state->private_key, TF5_IBS_GNB_SK_LEN);
         memset(state, 0, sizeof(*state));
@@ -498,9 +529,21 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
     }
 
     // Compute GG09 Schnorr IBS signature over full content
-    rc = tf5_ibs_sign(state->private_key,
-                            sig_auth_input, sig_auth_input_len,
-                            ext->signature);
+    // Use precomputed (r, R=r·B) nonce if available (online-only path),
+    // otherwise fall back to monolithic signing
+    if (state->sign_precomps && state->sign_precomp_next < state->sign_precomp_count) {
+        rc = tf5_ibs_sign_online(state->private_key,
+                                 sig_auth_input, sig_auth_input_len,
+                                 &state->sign_precomps[state->sign_precomp_next],
+                                 ext->signature);
+        state->sign_precomp_next++;
+    } else {
+        LOG_W(TF5, "IBS precomp table exhausted (%u/%u), falling back to monolithic sign\n",
+              state->sign_precomp_next, state->sign_precomp_count);
+        rc = tf5_ibs_sign(state->private_key,
+                          sig_auth_input, sig_auth_input_len,
+                          ext->signature);
+    }
     if (rc != 0) {
         LOG_E(TF5, "Failed to compute signature\n");
         return TF5_ERR_SIGN;

@@ -134,6 +134,13 @@ typedef struct {
     uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 64B - sk_id: y[32] + pk[32] (issued by Core PKG)
     uint32_t key_validity_end;                      // Key expiration (minutes since 2024-01-01)
 
+    // IBS signature precomputation table (offline/online signing split)
+    // Pre-generates (r, R=r·B) nonce pairs at init time, removing the expensive
+    // base-point scalar multiplication from the per-SIB1 online signing path.
+    tf5_ibs_sign_precomp_t *sign_precomps;          // Pre-generated nonce commitments
+    uint32_t sign_precomp_count;                    // Total entries allocated
+    uint32_t sign_precomp_next;                     // Next entry to consume
+
     // Slots per frame (depends on numerology)
     uint16_t slots_per_frame;
 
