@@ -147,16 +147,16 @@ int tf5_ibs_sign(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
         return TF5_ERR_SIGN;
     }
 
-    /* Step 3: h = BLAKE2b(data ‖ R) mod l */
+    /* Step 3: h = SHA-512(data ‖ R) mod l */
     uint8_t h[TF5_ED25519_SCALAR_LEN];
     {
-        crypto_generichash_state state;
-        crypto_generichash_init(&state, NULL, 0, 32);
-        crypto_generichash_update(&state, data, data_len);
-        crypto_generichash_update(&state, R_point, TF5_ED25519_POINT_LEN);
-        uint8_t hash_buf[32];
-        crypto_generichash_final(&state, hash_buf, 32);
-        scalar_reduce_32(h, hash_buf);
+        crypto_hash_sha512_state state;
+        crypto_hash_sha512_init(&state);
+        crypto_hash_sha512_update(&state, data, data_len);
+        crypto_hash_sha512_update(&state, R_point, TF5_ED25519_POINT_LEN);
+        uint8_t hash_buf[64];
+        crypto_hash_sha512_final(&state, hash_buf);
+        crypto_core_ed25519_scalar_reduce(h, hash_buf);
     }
 
     /* Step 4: sigma = h·y + r mod l */
@@ -219,16 +219,16 @@ int tf5_ibs_sign_online(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
     const uint8_t *y  = sk_id;
     const uint8_t *pk = sk_id + TF5_ED25519_SCALAR_LEN;
 
-    /* h = BLAKE2b(data ‖ R) mod l */
+    /* h = SHA-512(data ‖ R) mod l */
     uint8_t h[TF5_ED25519_SCALAR_LEN];
     {
-        crypto_generichash_state state;
-        crypto_generichash_init(&state, NULL, 0, 32);
-        crypto_generichash_update(&state, data, data_len);
-        crypto_generichash_update(&state, precomp->R_point, TF5_ED25519_POINT_LEN);
-        uint8_t hash_buf[32];
-        crypto_generichash_final(&state, hash_buf, 32);
-        scalar_reduce_32(h, hash_buf);
+        crypto_hash_sha512_state state;
+        crypto_hash_sha512_init(&state);
+        crypto_hash_sha512_update(&state, data, data_len);
+        crypto_hash_sha512_update(&state, precomp->R_point, TF5_ED25519_POINT_LEN);
+        uint8_t hash_buf[64];
+        crypto_hash_sha512_final(&state, hash_buf);
+        crypto_core_ed25519_scalar_reduce(h, hash_buf);
     }
 
     /* sigma = h·y + r mod l */
@@ -314,16 +314,16 @@ int tf5_ibs_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
     ge25519_p3 Q_p3;
     ge25519_p1p1_to_p3(&Q_p3, &Q_sum);
 
-    /* Step 4: h = BLAKE2b(data ‖ R) mod l */
+    /* Step 4: h = SHA-512(data ‖ R) mod l */
     uint8_t h[TF5_ED25519_SCALAR_LEN];
     {
-        crypto_generichash_state state;
-        crypto_generichash_init(&state, NULL, 0, 32);
-        crypto_generichash_update(&state, data, data_len);
-        crypto_generichash_update(&state, R_point, TF5_ED25519_POINT_LEN);
-        uint8_t hash_buf[32];
-        crypto_generichash_final(&state, hash_buf, 32);
-        scalar_reduce_32(h, hash_buf);
+        crypto_hash_sha512_state state;
+        crypto_hash_sha512_init(&state);
+        crypto_hash_sha512_update(&state, data, data_len);
+        crypto_hash_sha512_update(&state, R_point, TF5_ED25519_POINT_LEN);
+        uint8_t hash_buf[64];
+        crypto_hash_sha512_final(&state, hash_buf);
+        crypto_core_ed25519_scalar_reduce(h, hash_buf);
     }
 
     /* Step 5: R' = sigma·B − h·Q  via Shamir's trick (double scalar mult) */
@@ -336,16 +336,16 @@ int tf5_ibs_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
     uint8_t R_prime[TF5_ED25519_POINT_LEN];
     ge25519_tobytes(R_prime, &R_prime_p2);
 
-    /* Step 6: h' = BLAKE2b(data ‖ R') mod l */
+    /* Step 6: h' = SHA-512(data ‖ R') mod l */
     uint8_t h_prime[TF5_ED25519_SCALAR_LEN];
     {
-        crypto_generichash_state state;
-        crypto_generichash_init(&state, NULL, 0, 32);
-        crypto_generichash_update(&state, data, data_len);
-        crypto_generichash_update(&state, R_prime, TF5_ED25519_POINT_LEN);
-        uint8_t hash_buf[32];
-        crypto_generichash_final(&state, hash_buf, 32);
-        scalar_reduce_32(h_prime, hash_buf);
+        crypto_hash_sha512_state state;
+        crypto_hash_sha512_init(&state);
+        crypto_hash_sha512_update(&state, data, data_len);
+        crypto_hash_sha512_update(&state, R_prime, TF5_ED25519_POINT_LEN);
+        uint8_t hash_buf[64];
+        crypto_hash_sha512_final(&state, hash_buf);
+        crypto_core_ed25519_scalar_reduce(h_prime, hash_buf);
     }
 
     /* Step 7: Accept iff h == h' (constant-time comparison) */

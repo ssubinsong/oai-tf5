@@ -68,7 +68,7 @@ int tf5_ibs_validate_sk(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN]);
  * GG09 signing algorithm:
  *   1. r ← random scalar
  *   2. R = r·B
- *   3. h = BLAKE2b(data ‖ R) mod l
+ *   3. h = SHA-512(data ‖ R) mod l
  *   4. σ = h·y + r mod l
  *   5. Output: R[32] || σ[32] || pk[32] = 96 bytes
  *
@@ -102,7 +102,7 @@ int tf5_ibs_sign_precomp(tf5_ibs_sign_precomp_t *precomp);
  * Online phase of GG09 Schnorr IBS signing (uses precomputed state)
  *
  * Completes the signing using precomputed (r, R):
- *   1. h = BLAKE2b(data ‖ R) mod l
+ *   1. h = SHA-512(data ‖ R) mod l
  *   2. sigma = h·y + r mod l
  *   3. Output: R[32] || sigma[32] || pk[32]
  *
@@ -126,10 +126,10 @@ int tf5_ibs_sign_online(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
  *
  * GG09 verification algorithm:
  *   1. Parse σ = (R, sigma, pk) from signature
- *   2. cid = BLAKE2b(cell_id ‖ validity_be ‖ pk ‖ mpk) mod l
+ *   2. cid = SHA-512(cell_id ‖ validity_be ‖ pk ‖ mpk) mod l
  *   3. Q = cid·mpk + pk (via precomp table for mpk + point add)
  *   4. R' = sigma·B − h·Q (via Shamir's trick / double scalar mult)
- *   5. h' = BLAKE2b(data ‖ R')
+ *   5. h' = SHA-512(data ‖ R')
  *   6. Accept iff h == h' (constant-time)
  *
  * Optimizations (matching bench_schnorr_2ibs.c):
