@@ -1678,7 +1678,7 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
       // Check that MPK path is provided (no default - must be explicit)
       // Core's Master Public Key (MPK) for IBS verification
       if (params->tf5_core_mpk_file == NULL || params->tf5_core_mpk_file[0] == '\0') {
-        LOG_E(TF5, "--tesla-core-mpk is required. Specify path to Core's MPK file.\n");
+        LOG_E(TF5, "--tf5-core-mpk is required. Specify path to Core's MPK file.\n");
         LOG_E(TF5, "Obtain MPK from Core PKG: tf5_ibs_pkg_keygen <msk_path> <mpk_path>\n");
         free(ptr->SInfo.tf5_state);
         ptr->SInfo.tf5_state = NULL;
