@@ -5,9 +5,9 @@ This module implements the Core Private Key Generator (PKG) for the TESLA Identi
 ## Overview
 
 In the IBS scheme, the Core PKG:
-1. Generates and securely stores the master secret key (`s`)
-2. Publishes the master public key (`MPK = s*Q`)
-3. Issues gNB-specific secret keys based on their NR Cell ID
+1. Generates and securely stores the master secret key (Ed25519 seed)
+2. Publishes the master public key (MPK, derived via `crypto_sign_seed_keypair`)
+3. Issues gNB-specific secret keys by signing the identity message with `crypto_sign_detached`
 
 UEs only need the master public key (MPK) pre-provisioned (e.g., in SIM) to verify signatures from any gNB whose key was issued by this PKG.
 
@@ -32,33 +32,44 @@ cmake --preset default
 cmake --build --preset 5gdefault
 ```
 
-This produces two utilities in `cmake_targets/ran_build/build/`:
+This produces two C utilities in `cmake_targets/ran_build/build/`:
 - `tf5_ibs_pkg_keygen` - Master keypair generation
 - `tf5_ibs_issue` - gNB secret key issuance
 
+Alternatively, use the **Bash/OpenSSL scripts** (no build required):
+- `tf5_ibs_keygen.sh` - Master keypair generation
+- `tf5_ibs_issue.sh` - gNB secret key issuance
+
 ## Usage
 
-### 1. Generate Master Keypair (One-time Setup)
+### Option A: Bash Scripts (Recommended for offline PKG)
 
 ```bash
+# 1. Generate master keypair
+./tf5_ibs_keygen.sh pkg_keys/msk.bin pkg_keys/mpk.bin
+
+# 2. Issue gNB secret key (Cell ID = 9 hex chars, validity = minutes since 2024-01-01)
+./tf5_ibs_issue.sh pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_gnb1.bin
+```
+
+Requires: `openssl` (with Ed25519 support) and `python3`.
+
+### Option B: C Utilities
+
+```bash
+# 1. Generate master keypair
 ./tf5_ibs_pkg_keygen pkg_keys/msk.bin pkg_keys/mpk.bin
+
+# 2. Issue gNB secret key
+./tf5_ibs_issue pkg_keys/msk.bin 123456789 1051200 gnb_keys/sk_gnb1.bin
 ```
 
+Both options produce identical, interchangeable key files.
+
 **Output:**
-- `msk.bin` (32 bytes) - Master secret key. **KEEP SECURE!**
+- `msk.bin` (32 bytes) - Master secret key (Ed25519 seed). **KEEP SECURE!**
 - `mpk.bin` (32 bytes) - Master public key. Distribute to all UEs.
-
-### 2. Issue gNB Secret Key
-
-For each gNB, issue a secret key based on its NR Cell ID:
-
-```bash
-# Cell ID is 36 bits, provided as 9 hex characters
-./tf5_ibs_issue pkg_keys/msk.bin 123456789 gnb_keys/sk_gnb1.bin
-```
-
-**Output:**
-- `sk_gnb1.bin` (64 bytes) - gNB's secret key (y[32] + pk[32]). Transfer securely to gNB.
+- `sk_gnb1.bin` (67 bytes) - gNB's secret key (y[32] + pk[32] + validity[3]). Transfer securely to gNB.
 
 ### 3. Deploy Keys
 
@@ -76,9 +87,9 @@ For each gNB, issue a secret key based on its NR Cell ID:
 
 | File | Size | Format | Permissions |
 |------|------|--------|-------------|
-| Master Secret (msk) | 32 bytes | Ed25519 scalar, little-endian | 0600 (owner only) |
+| Master Secret (msk) | 32 bytes | Ed25519 seed (raw) | 0600 (owner only) |
 | Master Public (mpk) | 32 bytes | Ed25519 point, compressed | 0644 (public) |
-| gNB Secret (sk_id) | 64 bytes | y[32] scalar + pk[32] point | 0600 (owner only) |
+| gNB Secret (sk_id) | 67 bytes | y[32] scalar + pk[32] point + validity[3] BE | 0600 (owner only) |
 
 ## Security Considerations
 
@@ -112,28 +123,24 @@ See [doc-tf5/pkg-cryptography.md](../../../doc-tf5/pkg-cryptography.md) for the 
 **Summary:**
 - **Curve:** Ed25519 (via libsodium)
 - **Scheme:** GG09 Schnorr IBS (Galindo-Garcia, 2009)
-- **Identity:** NR Cell ID (36 bits) || validity_end (24 bits)
-- **Extract:** `b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b`
+- **Identity hash:** `cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity) mod l`
+- **Extract:** `(R‖S) = Ed25519_sign(msk, id_msg)`, `sk_id = (y=S, pk=R)` (deterministic)
 - **Sign:** `r ← Z_l, R = r·B, h = H(data‖R), σ = h·y + r`
-- **Verify:** `cid = H(id‖pk‖mpk), Q = cid·MPK + pk, R' = σ·B − h·Q, check R' == R`
+- **Verify:** `cid = SHA-512(pk ‖ mpk ‖ id_msg) mod l, Q = cid·MPK + pk, R' = σ·B − h·Q, check R' == R`
 
 ## Directory Structure
 
 ```
-tf5-core-pkg/
-├── CMakeLists.txt
+core-pkg/
+├── CMakeLists.txt           # Build rules for C utilities and static library
 ├── README.md
-├── .gitmodules              # Submodule declaration (if any)
-├── doc/
-│   └── ibs-protocol.md      # Cryptographic specification
-├── include/
-│   └── tf5_ibs_pkg.h        # API header
-├── src/
-│   ├── tf5_ibs_common.c     # Shared utilities
-│   ├── tf5_ibs_keygen.c     # Master keypair generation
-│   └── tf5_ibs_issue.c      # gNB key issuance
+├── tf5_ibs_keygen.c         # Master keypair generation (C)
+├── tf5_ibs_issue.c          # gNB key issuance (C)
+├── tf5_ibs_file_util.h      # File I/O helpers
+├── tf5_ibs_keygen.sh        # Master keypair generation (Bash/OpenSSL)
+├── tf5_ibs_issue.sh         # gNB key issuance (Bash/OpenSSL)
 └── scripts/
-    └── tf5_setup_pkg.sh     # Setup script (optional)
+    └── ...
 ```
 
 ## Integration with OAI-TF5

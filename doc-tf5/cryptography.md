@@ -30,9 +30,9 @@ analysis, domain separation tags), see [pkg-cryptography.md](pkg-cryptography.md
 ### Key File Format
 
 Keys are stored as raw binary files:
-- **Master secret key (msk)**: 32-byte Ed25519 scalar (little-endian)
+- **Master secret key (msk)**: 32-byte Ed25519 seed (raw)
 - **Master public key (mpk)**: 32-byte Ed25519 point (compressed)
-- **gNB secret key (sk_ID)**: 64 bytes (y[32] scalar + pk[32] point)
+- **gNB secret key file**: 67 bytes (y[32] scalar + pk[32] point + validity[3] big-endian)
 
 ### Sign Operation
 
@@ -54,8 +54,8 @@ int tf5_ibs_verify(const uint8_t mpk[32],           // Core's MPK (Ed25519 point
                    const uint8_t signature[96]);    // R[32] || σ[32] || pk[32]
 ```
 
-Verification computes `Q = cid·B + MPK` where `cid = H(id || pk || mpk)`,
-then checks `R' = σ·B − h·Q` where `h = H(R || Q || data)`, accepting iff `R' == R`.
+Verification computes `cid = SHA-512(pk || mpk || cell_id || validity) mod l`,
+then `Q = cid·MPK + pk`, `h = H(data || R)`, `R' = σ·B − h·Q`, accepting iff `R' == R`.
 
 ---
 

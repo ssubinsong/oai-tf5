@@ -21,9 +21,10 @@ The scheme allows UEs to verify gNB signatures using only:
 ### 2.2 Hash Functions
 
 **Identity hash: $H_{id}$**
-- Input: cell_id (5B) || validity_end_be (3B) || pk (32B) || mpk (32B)
+- Input: pk (32B) || mpk (32B) || cell_id (5B) || validity_end_be (3B)
+- Input order follows Ed25519 convention: H(R ‖ A ‖ M)
 - Output: Scalar in $\mathbb{Z}_l$
-- Implementation: BLAKE2b-512 → `crypto_core_ed25519_scalar_reduce()`
+- Implementation: SHA-512 → `crypto_core_ed25519_scalar_reduce()`
 - Used in both key extraction and verification
 
 **Message hash: $H_m$**
@@ -59,40 +60,47 @@ The scheme allows UEs to verify gNB signatures using only:
 
 **Input:** Security parameter λ (implicit: Ed25519)
 
-**Output:** Master secret z, Master public key MPK
+**Output:** Master seed, Master public key MPK
 
 $$
 \begin{aligned}
-1. &\ z \leftarrow \text{random scalar in } \mathbb{Z}_l \\
-2. &\ \text{MPK} \leftarrow z \cdot B \\
-3. &\ \text{Return } (z, \text{MPK})
+1. &\ \text{seed} \leftarrow \text{random 32 bytes} \\
+2. &\ (\text{MPK}, \_) \leftarrow \texttt{crypto\_sign\_seed\_keypair}(\text{seed}) \\
+3. &\ \text{Return } (\text{seed}, \text{MPK})
 \end{aligned}
 $$
 
+Internally, `crypto_sign_seed_keypair` expands the seed via SHA-512 and clamps the first 32 bytes to produce the Ed25519 private scalar $a$, then computes $\text{MPK} = a \cdot B$.
+
 **File Output:**
-- `msk.bin`: 32 bytes, z serialized little-endian
+- `msk.bin`: 32 bytes, Ed25519 seed (raw)
 - `mpk.bin`: 32 bytes, MPK compressed
 
 ### 4.2 Key Extraction (Core PKG)
 
-**Input:** Master secret z, MPK, gNB identity ID (NR Cell ID || validity_end)
+**Input:** Master seed, gNB identity message id_msg = Cell_ID[5] ‖ validity_end_be[3]
 
 **Output:** gNB secret key sk_ID = (y, pk)
 
 $$
 \begin{aligned}
-1. &\ b \leftarrow \text{random scalar in } \mathbb{Z}_l \\
-2. &\ pk \leftarrow b \cdot B & \text{// identity-derived public point} \\
-3. &\ cid \leftarrow H_{id}(\text{Cell\_ID} \| \text{validity\_end} \| pk \| \text{MPK}) & \text{// identity scalar} \\
-4. &\ y \leftarrow cid \cdot z + b \mod l & \text{// secret scalar} \\
-5. &\ \text{Return } sk_{ID} = (y, pk)
+1. &\ (R \| S) \leftarrow \texttt{crypto\_sign\_detached}(\text{seed}, \text{id\_msg}) & \text{// Ed25519 signature} \\
+2. &\ pk \leftarrow R & \text{// identity-derived public point} \\
+3. &\ y \leftarrow S & \text{// secret scalar} \\
+4. &\ \text{Return } sk_{ID} = (y, pk)
 \end{aligned}
 $$
+
+Internally, `crypto_sign_detached` computes:
+- $r \leftarrow \text{SHA-512}(\text{prefix} \| \text{id\_msg})$ (deterministic nonce from seed)
+- $R \leftarrow r \cdot B$
+- $h \leftarrow \text{SHA-512}(R \| \text{MPK} \| \text{id\_msg}) \bmod l$ (this is $cid$ in the IBS scheme)
+- $S \leftarrow r + h \cdot a \bmod l$ (this is $y = b + cid \cdot z$ with swapped order, equivalent)
 
 **Properties:**
 - sk_ID is 64 bytes: y[32] scalar + pk[32] point
 - Different Cell IDs produce different keys
-- Key extraction is NOT deterministic (random b each time)
+- Key extraction is **deterministic** (Ed25519 deterministic nonce)
 - Core can issue keys without gNB interaction
 
 ### 4.3 Sign (gNB)
@@ -130,7 +138,7 @@ $$
 
 $$
 \begin{aligned}
-1. &\ cid \leftarrow H_{id}(\text{Cell\_ID} \| \text{validity\_end} \| pk \| \text{MPK}) & \text{// identity scalar} \\
+1. &\ cid \leftarrow H_{id}(pk \| \text{MPK} \| \text{Cell\_ID} \| \text{validity\_end}) & \text{// identity scalar} \\
 2. &\ Q \leftarrow cid \cdot \text{MPK} + pk & \text{// identity-derived verification key} \\
 3. &\ h \leftarrow H_m(m \| R) & \text{// recompute challenge} \\
 4. &\ R' \leftarrow \sigma \cdot B - h \cdot Q & \text{// double scalar mult (Shamir's trick)} \\
@@ -217,9 +225,9 @@ This is a standard and well-studied assumption in elliptic curve cryptography.
 
 | Entity | Trusts | Holds |
 |--------|--------|-------|
-| Core PKG | — | Master secret (z) |
+| Core PKG | — | Master seed |
 | gNB | Core PKG | sk_ID = (y, pk) |
-| UE | Core PKG | MPK = z·B |
+| UE | Core PKG | MPK |
 
 ### 7.4 Attack Resistance
 
@@ -233,7 +241,7 @@ This is a standard and well-studied assumption in elliptic curve cryptography.
 
 **Identity Substitution:**
 - Cell ID and validity_end are included in the identity hash
-- pk is bound to the identity via cid = H(id || pk || mpk)
+- pk is bound to the identity via cid = H(pk || mpk || id)
 - Changing Cell ID breaks signature validity
 
 ## 8. Implementation Notes
@@ -241,13 +249,15 @@ This is a standard and well-studied assumption in elliptic curve cryptography.
 ### 8.1 Library
 
 Uses **libsodium** for Ed25519 operations:
+- `crypto_sign_seed_keypair`: Expand seed to Ed25519 keypair (Setup)
+- `crypto_sign_detached`: Ed25519 signing (Key Extraction)
+- `crypto_hash_sha512`: SHA-512 hashing (Identity hash $H_{id}$)
 - `crypto_core_ed25519_scalar_reduce`: Reduce 64-byte hash to scalar mod l
 - `crypto_core_ed25519_scalar_mul`: Scalar multiplication mod l
 - `crypto_core_ed25519_scalar_add`: Scalar addition mod l
-- `crypto_scalarmult_ed25519_base_noclamp`: Base-point scalar multiplication
 - `crypto_core_ed25519_is_valid_point`: Point validation (subgroup check)
 - `ge25519_double_scalarmult_vartime`: Shamir's trick (via ed25519_precomp.h)
-- `crypto_generichash_blake2b`: BLAKE2b hashing
+- `crypto_generichash_blake2b`: BLAKE2b hashing (Message hash $H_m$)
 
 **Note:** `ed25519_precomp.h` contains local reimplementations of libsodium internal `ge25519_*` functions (they are `static` in libsodium source and not exported).
 
@@ -265,9 +275,10 @@ Note: GG09 Schnorr verification uses Ed25519 point arithmetic only.
 
 | Key | Size | Encoding |
 |-----|------|----------|
-| Master secret (z) | 32 bytes | Scalar, little-endian |
+| Master secret (seed) | 32 bytes | Ed25519 seed (raw) |
 | Master public (MPK) | 32 bytes | Ed25519 point, compressed |
 | gNB secret (sk_ID) | 64 bytes | y[32] scalar + pk[32] point |
+| gNB key file | 67 bytes | sk_ID[64] + validity_be[3] |
 | Signature (σ) | 96 bytes | R[32] || σ[32] || pk[32] |
 
 ### 8.4 Precomputed Values
