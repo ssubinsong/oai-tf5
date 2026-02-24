@@ -118,7 +118,7 @@ sudo ./nr-softmodem \
 # Run UE (separate terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.conf \
-    --tesla-core-mpk pkg_keys/mpk.bin
+    --tf5-core-mpk pkg_keys/mpk.bin
 ```
 
 ---

@@ -12,7 +12,7 @@ This document catalogs features described in the TF5 research paper that are not
 
 ---
 
-## 1. HFN (Hyper-Frame Number) Tracking
+## HFN (Hyper-Frame Number) Tracking
 
 **Description**: Full RRC-layer HFN tracking to extend replay protection beyond the 10.24-second SFN wrap cycle.
 
@@ -31,7 +31,7 @@ This extends replay protection from 10.24 seconds (one SFN cycle) to approximate
 
 ---
 
-## 2. Neighbor TESLA Broadcast
+## Neighbor TESLA Broadcast
 
 **Description**: Complete neighbor broadcast mechanism for efficient handover without IBS re-verification.
 
@@ -85,7 +85,7 @@ Byzantine fault tolerance for neighbor cache:
 
 ---
 
-## 3. Chain Renewal Optimization
+## Chain Renewal Optimization
 
 **Description**: Pre-announcement mechanism for seamless TESLA chain transitions without IBS re-verification.
 
@@ -114,48 +114,13 @@ TESLA uses a finite key chain of length N. When the chain is exhausted, the gNB 
 
 ---
 
-## 4. IBS Signature Batch Verification
+## TESLA key recovery
 
-**Description**: Amortize verification costs across multiple GG09 Schnorr IBS signatures during cell selection/reselection.
+**Status:** By design (removed for delay measurement simplification)
 
-During cell selection and reselection, UEs detect and measure multiple candidate cells, ranking them by signal quality before selecting the best one (3GPP TS 38.304). This procedure inherently requires authenticating signatures from several gNBs.
+Multi-step TESLA key chain recovery (RFC 4082 §3: "if intermediate values
+of the one-way chain are lost, they can be recomputed using subsequent values
+in the chain") is not implemented. If the UE misses a key disclosure interval,
+the buffered SIB1 from that interval cannot be verified. Only consecutive
+(1-step) key chain verification is supported.
 
-GG09 Schnorr IBS verification uses Ed25519 point arithmetic per signature. Batch verification could reduce costs by combining multiple signature equations into a single multi-scalar multiplication with random coefficients.
-
-**Current Status**: Not implemented. The current implementation verifies one GG09 Schnorr IBS signature at a time.
-
-**Rationale for Deferral**:
-- Requires neighbor broadcast infrastructure (UE needs to receive SIB1 from multiple cells)
-- Current single-cell evaluation does not exercise multi-cell scenarios
-- Optimization benefit is marginal for small n (e.g., 2-3 candidate cells)
-
----
-
-## Summary
-
-| Feature | Status | Dependencies |
-|---------|--------|--------------|
-| HFN Tracking | Not implemented | None (independent) |
-| Neighbor TESLA Broadcast | Not implemented | Multi-cell testbed |
-| Chain Renewal Optimization | Not implemented | Neighbor broadcast (for optimal path) |
-| Schnorr Batch Verification | Not implemented | Multi-cell scenario |
-
----
-
-## Implementation Roadmap
-
-### Phase 1: Core Stabilization (Current)
-- Complete single-cell authentication
-- Validate performance on real hardware
-
-### Phase 2: HFN Tracking
-- Implement RRC-layer HFN tracking
-- Enable long-session support (>10.24 seconds)
-
-### Phase 3: Multi-Cell Foundation
-- Implement neighbor broadcast infrastructure
-- Deploy multi-cell testbed
-
-### Phase 4: Optimization
-- Implement chain renewal pre-announcement
-- Fine-tune checkpoint periodicity

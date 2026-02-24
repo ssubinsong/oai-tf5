@@ -25,19 +25,6 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 
 ### Core Protocol
 - [Protocol Design](protocol.md) - Key chains, time intervals, disclosure delay, dual authentication
-- [Cryptographic Primitives](cryptography.md) - Algorithms, key derivation, MAC computation
-- [IBS Protocol Specification](pkg-cryptography.md) - GG09 Schnorr IBS (Ed25519) scheme, Core PKG, key hierarchy, security analysis
-
-### Data Structures
-- [Data Structures](data-structures.md) - Static/dynamic parameters, extension format, state structures
-
-### Implementation
-- [gNB Implementation](gnb-implementation.md) - gNB-side initialization and transmission flow
-- [UE Implementation](ue-implementation.md) - UE-side verification and reception flow
-- [Time Synchronization](time-sync.md) - Time sync model, D calculation, and safe packet test
-
-### Integration
-- [Integration Points](integration.md) - File locations and OAI structure modifications
 
 ### Build & Configuration
 - [Build Configuration](build.md) - CMake options, build commands, dependencies

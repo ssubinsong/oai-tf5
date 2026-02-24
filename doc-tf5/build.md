@@ -4,28 +4,12 @@
 
 ---
 
-## CMake Option
-
-In `CMakeLists.txt`:
-
-```cmake
-option(ENABLE_TF5
-       "Enable TESLA broadcast authentication for SIB1 (fake base station protection)"
-       OFF)
-
-if(ENABLE_TF5)
-  add_definitions(-DENABLE_TF5)
-endif()
-```
-
----
-
 ## Build Commands
 
 **Build gNB and UE with TESLA enabled**:
 ```bash
-cd cmake_targets
-./build_oai --ninja --gNB --nrUE --cmake-opt -DENABLE_TF5=ON
+cmake --preset default
+cmake --build --preset 5gdefault
 ```
 
 ---
@@ -40,12 +24,6 @@ See [pkg-cryptography.md](pkg-cryptography.md) for the full cryptographic specif
 
 The Core PKG utilities are built automatically when building OAI with TESLA enabled:
 
-```bash
-cd cmake_targets
-./build_oai --ninja --gNB --nrUE --cmake-opt -DENABLE_TF5=ON
-```
-
-Or using CMake presets:
 ```bash
 cmake --preset default
 cmake --build --preset 5gdefault
@@ -82,6 +60,7 @@ tf5_ibs_issue <msk_path> <cell_id_hex> <validity_end> <sk_path>
 ```
 
 **Arguments:**
+
 | Argument | Description |
 |----------|-------------|
 | `msk_path` | Path to Core's master secret key |
@@ -90,6 +69,7 @@ tf5_ibs_issue <msk_path> <cell_id_hex> <validity_end> <sk_path>
 | `sk_path` | Output path for gNB's secret key |
 
 **Validity Period Examples:**
+
 | Duration | Minutes | Expiration Date |
 |----------|---------|-----------------|
 | 1 year | 525600 | 2025-01-01 |
@@ -119,7 +99,7 @@ Key paths **must** be specified explicitly on the command line (no defaults):
 | Component | Parameter | Description |
 |-----------|-----------|-------------|
 | gNB | `--tf5-privkey` | Path to gNB's secret key file (67 bytes: sk_ID + validity) |
-| UE | `--tesla-core-mpk` | Path to Core's Master Public Key (MPK) |
+| UE | `--tf5-core-mpk` | Path to Core's Master Public Key (MPK) |
 
 **Note**: The validity period is embedded in the 67-byte key file (bytes 64-66, big-endian).
 
@@ -144,7 +124,7 @@ sudo ./nr-softmodem \
 # Run UE with Core's MPK (in another terminal)
 sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi 001010000000001 --rfsim \
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.conf \
-    --tesla-core-mpk /path/to/pkg_keys/mpk.bin
+    --tf5-core-mpk /path/to/pkg_keys/mpk.bin
 ```
 
 **Key Validity Checks:**
@@ -165,101 +145,3 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 - Both Cell ID and gnb_key_validity_end are hashed together: `H(Cell_ID || gnb_key_validity_end || mpk)`
 - UE extracts gnb_key_validity_end from the TESLA extension in SIB1
 - UE checks if the key has expired before attempting verification
-
----
-
-## Dependencies
-
-| Dependency | Purpose |
-|------------|---------|
-| OpenSSL | SHA-256 for key derivation, HMAC-SHA256 for MAC computation |
-| libsodium | Ed25519 GG09 Schnorr IBS signatures |
-
-The libsodium library is built via `ExternalProject_Add` in the root `CMakeLists.txt`.
-
----
-
-## Unit Testing
-
-TF5 includes comprehensive unit tests using Google Test (GTest) framework.
-
-### Build with Tests Enabled
-
-```bash
-cd cmake_targets
-./build_oai --ninja --gNB --nrUE --cmake-opt "-DENABLE_TESTS=ON -DENABLE_TF5=ON"
-```
-
-**Required CMake options:**
-| Option | Description |
-|--------|-------------|
-| `ENABLE_TESTS=ON` | Enables test target and CTest |
-| `ENABLE_TF5=ON` | Enables TESLA authentication code |
-
-### Run All TF5 Tests
-
-```bash
-cd cmake_targets/ran_build/build
-
-# Build and run all tests
-ninja tests
-ctest -V
-```
-
-### Run Specific Test Suites
-
-```bash
-cd cmake_targets/ran_build/build
-
-# Run individual test executables
-./test_tf5_tesla_crypto    # Cryptographic primitives
-./test_tf5_tesla_gnb       # gNB functions
-./test_tf5_tesla_ue        # UE functions
-./test_tf5_tesla_serial    # Serialization (pack/unpack)
-./test_tf5_tesla_ibs       # GG09 Schnorr IBS signatures
-./test_tf5_tesla_e2e       # End-to-end integration
-```
-
-### Run Tests with CTest Filters
-
-```bash
-# Run only TF5 tests
-ctest -R tf5
-
-# Run with verbose output
-ctest -R tf5 -V
-
-# List available tests
-ctest -N
-```
-
-### Test Coverage
-
-| Test Suite | File | Coverage |
-|------------|------|----------|
-| `test_tf5_tesla_crypto` | `test_tf5_tesla_crypto.cpp` | SHA-256 (`tf5_sha256` from `tf5_crypto.h`), key chain (`tf5_chain_key`), MAC key derivation (`tf5_derive_mac_key`), tag computation (`tf5_compute_tag`), auth input builders (`tf5_build_mac_auth_input`, `tf5_build_sig_auth_input`) |
-| `test_tf5_tesla_gnb` | `test_tf5_tesla_gnb.cpp` | gNB init, interval calculation, extension preparation, resource cleanup |
-| `test_tf5_tesla_ue` | `test_tf5_tesla_ue.cpp` | UE init, safe packet test, SIB1 buffering, key chain verification, buffered verification, key recovery, IBS signature verification (`tf5_ibs_verify`), buffered message verification (`tf5_tesla_ue_verify_buffered_msgs`) |
-| `test_tf5_tesla_serial` | `test_tf5_tesla_serial.cpp` | Extension pack/unpack (134-byte format), big-endian encoding helpers |
-| `test_tf5_tesla_ibs` | `test_tf5_tesla_ibs.cpp` | GG09 Schnorr IBS sign, verify; key extraction, sk validation |
-| `test_tf5_tesla_e2e` | `test_tf5_tesla_e2e.cpp` | Full gNB→UE flow, tamper detection, key recovery scenarios |
-| `test_tf5_tesla_timing` | `test_tf5_tesla_timing.cpp` | Timing utilities (`tf5_tesla_slots_since_t0`, `tf5_tesla_get_interval_index`), replay protection (`tf5_rp_get_wallclock_ms`, `tf5_rp_validate_timestamp`) |
-| `test_tf5_tesla_fileio` | `test_tf5_tesla_fileio.cpp` | Key file I/O (`tf5_load_gnb_privkey`, `tf5_load_core_mpk`) |
-
-### Test Files Location
-
-Tests are located in `openair3/SECU/tests/`:
-
-```
-openair3/SECU/tests/
-├── CMakeLists.txt              # Test build configuration
-├── tf5_test_vectors.h          # Known-answer test vectors
-├── test_tf5_tesla_crypto.cpp   # Crypto primitive tests
-├── test_tf5_tesla_gnb.cpp      # gNB function tests
-├── test_tf5_tesla_ue.cpp       # UE function tests
-├── test_tf5_tesla_serial.cpp   # Serialization tests
-├── test_tf5_tesla_ibs.cpp      # GG09 Schnorr IBS signature tests
-├── test_tf5_tesla_e2e.cpp      # Integration tests
-├── test_tf5_tesla_timing.cpp   # Timing and replay protection tests
-└── test_tf5_tesla_fileio.cpp   # Key file I/O tests
-```
