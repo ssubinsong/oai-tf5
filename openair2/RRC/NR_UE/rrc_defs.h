@@ -278,6 +278,9 @@ typedef struct NR_UE_RRC_INST_s {
   NR_NTN_Config_r17_t *target_ntncfg;
   bool process_target_ntncfg;
   notifiedFIFO_t *mac_input_nf;
+#ifdef ENABLE_TF5
+  NR_timer_t tf5_returning_release_timer;
+#endif
 } NR_UE_RRC_INST_t;
 
 #endif

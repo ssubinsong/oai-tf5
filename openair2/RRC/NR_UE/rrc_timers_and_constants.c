@@ -216,6 +216,18 @@ void nr_rrc_handle_timers(NR_UE_RRC_INST_t *rrc)
     handle_t430_expiry(rrc);
   }
 
+
+#ifdef ENABLE_TF5
+  bool tf5_release_expired = nr_timer_tick(&rrc->tf5_returning_release_timer);
+  if (tf5_release_expired) {
+    LOG_A(TF5, "Returning UE sim: RRC Release triggered\n");
+    NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[0].SInfo;
+    if (SI_info->tf5_state)
+      SI_info->tf5_state->returning_idle_phase = true;
+    nr_rrc_going_to_IDLE(rrc, OTHER, NULL);
+  }
+#endif
+
   handle_meas_timers(rrc);
 }
 

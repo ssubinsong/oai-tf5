@@ -181,6 +181,10 @@ typedef struct {
     uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete (used when phase == RRCSETUP_DEFERRED)
     uint64_t rp_timestamp_window_ms;     // Timestamp window for signature replay protection (default 60000ms)
 
+    // Returning UE simulation fields (--tf5-returning-ue mode)
+    bool returning_ue_sim;          // --tf5-returning-ue mode enabled
+    bool returning_release_done;    // Phase 1 complete, release scheduled
+    bool returning_idle_phase;      // IDLE entered, waiting for returning path
 } tf5_ue_state_t;
 
 /*
