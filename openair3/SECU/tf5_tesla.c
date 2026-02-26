@@ -766,16 +766,14 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
     DevAssert(disclosed_interval > ue_state->trust_anchor_idx);
 
     uint32_t steps = (uint32_t)(disclosed_interval - ue_state->trust_anchor_idx);
-    if (steps > 1) {
-        LOG_W(TF5, "Key recovery not supported (gap=%u, anchor=%d)\n",
-              steps, ue_state->trust_anchor_idx);
-        return false;
-    }
 
-    // Single-step chain verification: F(K_disclosed) == K_anchor
+    // Multi-step chain verification: F^steps(K_disclosed) == K_anchor
+    // Normal operation: steps=1 (O(1)). Returning UE gap: steps~100 (~100us of SHA-256)
     uint8_t computed_key[TF5_TESLA_KEY_LEN];
     memcpy(computed_key, disclosed_key, TF5_TESLA_KEY_LEN);
-    tf5_chain_key_inplace(computed_key);
+    for (uint32_t i = 0; i < steps; i++) {
+        tf5_chain_key_inplace(computed_key);
+    }
 
     if (memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
       LOG_D(TF5,
@@ -804,7 +802,9 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
     }
     *rrc_trigger_verified = false;
 
-    // Verify only entries matching key_disclosure_interval (no multi-step recovery)
+    // Verify entries with rx_interval_index <= key_disclosure_interval by deriving
+    // the correct key via chain function: K_j = F^(kdi - j)(K_kdi)
+    // This handles SIB1 interval steps != 1 (e.g., step=2 with D=3).
     bool has_match = false;
     bool mac_failed = false;
 
@@ -815,33 +815,36 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
             continue;
         }
 
-        if (entry->rx_interval_index != key_disclosure_interval) {
-            // Drop entries from earlier intervals (cannot be verified without recovery)
-            if (entry->rx_interval_index < key_disclosure_interval) {
-                LOG_W(TF5, "Dropping unverifiable entry from interval %u (disclosed=%u)\n",
-                      entry->rx_interval_index, key_disclosure_interval);
-                entry->valid = false;
-            }
+        if (entry->rx_interval_index > key_disclosure_interval) {
+            // Key not yet disclosed for this entry — keep in buffer
             continue;
         }
 
         has_match = true;
 
-        // Compute expected tag using disclosed key directly
+        // Derive the correct key for this entry's interval
+        uint32_t steps = key_disclosure_interval - entry->rx_interval_index;
+        uint8_t derived_key[TF5_TESLA_KEY_LEN];
+        memcpy(derived_key, key_disclosure, TF5_TESLA_KEY_LEN);
+        for (uint32_t s = 0; s < steps; s++) {
+            tf5_chain_key_inplace(derived_key);
+        }
+
+        // Compute expected tag using derived key
         uint8_t expected_tag[TF5_TESLA_TAG_LEN];
-        int rc = tf5_compute_tag(key_disclosure,
+        int rc = tf5_compute_tag(derived_key,
                                        entry->auth_input,
                                        entry->auth_input_len,
                                        expected_tag);
         if (rc != 0) {
-            LOG_E(TF5, "Failed to compute tag for interval %u\n", key_disclosure_interval);
+            LOG_E(TF5, "Failed to compute tag for interval %u\n", entry->rx_interval_index);
             entry->valid = false;
             continue;
         }
 
         if (memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
-            LOG_I(TF5, "MAC verified for interval %u (rrc_trigger=%d)\n",
-                  key_disclosure_interval, entry->triggered_rrc_setup);
+            LOG_I(TF5, "MAC verified for interval %u (steps=%u, rrc_trigger=%d)\n",
+                  entry->rx_interval_index, steps, entry->triggered_rrc_setup);
 
             if (entry->triggered_rrc_setup) {
               *rrc_trigger_verified = true;
@@ -849,8 +852,8 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
 
             entry->valid = false;
         } else {
-            LOG_E(TF5, "MAC verification FAILED for interval %u\n",
-                  key_disclosure_interval);
+            LOG_E(TF5, "MAC verification FAILED for interval %u (steps=%u)\n",
+                  entry->rx_interval_index, steps);
             entry->valid = false;
             mac_failed = true;
             if (entry->triggered_rrc_setup) {

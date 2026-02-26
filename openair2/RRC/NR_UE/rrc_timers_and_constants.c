@@ -220,11 +220,15 @@ void nr_rrc_handle_timers(NR_UE_RRC_INST_t *rrc)
 #ifdef ENABLE_TF5
   bool tf5_release_expired = nr_timer_tick(&rrc->tf5_returning_release_timer);
   if (tf5_release_expired) {
-    LOG_A(TF5, "Returning UE sim: RRC Release triggered\n");
+    LOG_A(TF5, "Returning UE sim: forcing SIB1 re-acquisition for returning path\n");
     NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[0].SInfo;
-    if (SI_info->tf5_state)
+    if (SI_info->tf5_state) {
       SI_info->tf5_state->returning_idle_phase = true;
-    nr_rrc_going_to_IDLE(rrc, OTHER, NULL);
+      SI_info->tf5_state->returning_auth_pending = true;
+      /* Invalidate SIB1 so MAC re-schedules SI-RNTI reception.
+       * Stay CONNECTED — only the TF5 verification path changes. */
+      SI_info->sib1_validity = false;
+    }
   }
 #endif
 

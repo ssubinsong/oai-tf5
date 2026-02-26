@@ -700,7 +700,9 @@ if(ENABLE_TF5)
   # Create include directory at configure time so CMake doesn't fail the existence check
   # (ExternalProject creates it at build time, but INTERFACE_INCLUDE_DIRECTORIES is validated early)
   file(MAKE_DIRECTORY ${SODIUM_BUILD_DIR}/src/libsodium/include)
-  # Public header: <sodium.h>
+  # Public header: <sodium.h> (source tree; out-of-source build does not copy it)
+  target_include_directories(sodium INTERFACE ${SODIUM_DIR}/src/libsodium/include)
+  # Generated header: <sodium/version.h> (created by configure in build tree)
   target_include_directories(sodium INTERFACE ${SODIUM_BUILD_DIR}/src/libsodium/include)
   # Private header: <private/ed25519_ref10.h> (for precomp table operations)
   target_include_directories(sodium INTERFACE ${SODIUM_DIR}/src/libsodium/include/sodium)
@@ -714,7 +716,14 @@ target_link_libraries(SECURITY PRIVATE ${OpenSSL_LIBRARIES})
 # Add libsodium includes and link when TESLA is enabled
 if(ENABLE_TF5)
   target_link_libraries(SECURITY PUBLIC sodium)
-
+  # Suppress warnings from libsodium private headers (#warning directives)
+  # and unused helper functions in ed25519_precomp.h
+  set_source_files_properties(
+    ${OPENAIR3_DIR}/SECU/tf5_tesla_sig.c
+    ${OPENAIR3_DIR}/SECU/tf5_ibs_common.c
+    ${OPENAIR3_DIR}/SECU/tf5_crypto.c
+    PROPERTIES COMPILE_FLAGS "-Wno-cpp -Wno-unused-function"
+  )
 endif()
 
 # Physical Channel Procedures Scheduling

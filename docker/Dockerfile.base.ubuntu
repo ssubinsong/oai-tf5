@@ -49,6 +49,10 @@ RUN apt-get update && \
        bison \
        flex \
        m4 \
+       # autotools needed for libsodium build (TF5)
+       autoconf \
+       automake \
+       libtool \
        # python3-pip for conf template generation
        python3-pip \
        wget && \

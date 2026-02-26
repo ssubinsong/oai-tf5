@@ -517,8 +517,6 @@ typedef enum {
     TF5_VERIFY_SKIP_NO_STATE = 2,   // No tesla_state configured
     TF5_VERIFY_BUFFERED = 3,         // Buffered, waiting for key disclosure
     TF5_VERIFY_SKIP_UNSAFE = 4,     // Safe packet test failed
-    TF5_VERIFY_BUFFERED_FIRST = 5,  // First returning SIB1 from IDLE — trigger RACH
-
     TF5_VERIFY_FAIL_UNPACK = -1,        // Extension unpack failed
     TF5_VERIFY_FAIL_KEY_EXPIRED = -2,   // gNB key expired
     TF5_VERIFY_FAIL_ENCODE = -3,        // SIB1 re-encoding failed
@@ -746,6 +744,11 @@ static tf5_verify_result_t tf5_verify_returning(NR_UE_RRC_INST_t *rrc,
         if (ue_state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED && rrc_trigger_verified) {
           tf5_send_deferred_rrcsetupcomplete(rrc, SI_info);
         }
+        /* Returning UE simulation: deferred TESLA MAC verification complete */
+        if (ue_state->returning_auth_pending) {
+          ue_state->returning_auth_pending = false;
+          LOG_A(TF5, "Returning UE: auth complete\n");
+        }
       }
     }
   }
@@ -800,17 +803,13 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
         return tf5_verify_firsttime(rrc, SI_info, sib1, &ext, sib1_buf, sib1_len);
     }
 
-    /* Save phase before returning path — used to detect IDLE→returning transition */
-    tf5_ue_phase_t phase_before = SI_info->tf5_state->curr_phase;
     tf5_verify_result_t ret = tf5_verify_returning(rrc, SI_info, &ext, sib1_buf, sib1_len, rx_frame, rx_slot);
 
-    /* Detect first returning SIB1 after IDLE: RACH not yet in progress, must trigger it */
+    /* Detect first returning SIB1 after simulated re-acquisition */
     if (ret == TF5_VERIFY_BUFFERED
-        && SI_info->tf5_state->returning_idle_phase
-        && phase_before == TF5_PHASE_INITIAL) {
+        && SI_info->tf5_state->returning_idle_phase) {
         SI_info->tf5_state->returning_idle_phase = false;
-        LOG_A(TF5, "Returning UE: first SIB1 buffered, RACH triggered\n");
-        return TF5_VERIFY_BUFFERED_FIRST;
+        LOG_A(TF5, "Returning UE: first SIB1 buffered\n");
     }
     return ret;
 }
@@ -842,9 +841,6 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
     case TF5_VERIFY_BUFFERED:
       LOG_I(TF5, "SIB1 buffered - waiting for key disclosure; RACH already in progress\n");
       return;
-    case TF5_VERIFY_BUFFERED_FIRST:
-      LOG_I(TF5, "First returning SIB1 - proceeding to RACH\n");
-      break;  // fall through to SIB1 processing + RACH trigger
     case TF5_VERIFY_SKIP_UNSAFE:
       LOG_W(TF5, "Packet unsafe - discarding packet\n");
       return;
@@ -2362,7 +2358,7 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
         && !SI_info->tf5_state->returning_release_done) {
       LOG_A(TF5, "Returning UE sim: scheduling release in 2s\n");
       SI_info->tf5_state->returning_release_done = true;
-      nr_timer_setup(&rrc->tf5_returning_release_timer, 200, 10); // 2000ms at 10ms step
+      nr_timer_setup(&rrc->tf5_returning_release_timer, 2000, 10); // 2000ms target, 10ms step
       nr_timer_start(&rrc->tf5_returning_release_timer);
     }
   }
@@ -2400,15 +2396,6 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
   // TODO procedues described in 5.3.3.4 seems more complex than what we actualy do
   rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
 
-#ifdef ENABLE_TF5
-  {
-    NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[0].SInfo;
-    if (SI_info->tf5_state && SI_info->tf5_state->returning_release_done
-        && SI_info->tf5_state->returning_ue_sim) {
-      LOG_A(TF5, "Returning UE: reconnection complete\n");
-    }
-  }
-#endif
 }
 
 static void nr_rrc_process_rrcreject(NR_UE_RRC_INST_t *rrc, const NR_RRCReject_t *rrcReject)

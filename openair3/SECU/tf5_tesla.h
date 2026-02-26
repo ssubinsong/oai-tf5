@@ -183,8 +183,9 @@ typedef struct {
 
     // Returning UE simulation fields (--tf5-returning-ue mode)
     bool returning_ue_sim;          // --tf5-returning-ue mode enabled
-    bool returning_release_done;    // Phase 1 complete, release scheduled
-    bool returning_idle_phase;      // IDLE entered, waiting for returning path
+    bool returning_release_done;    // Phase 1 complete, SIB1 re-acquisition scheduled
+    bool returning_idle_phase;      // Awaiting returning path SIB1
+    bool returning_auth_pending;    // Returning SIB1 buffered, awaiting deferred verification
 } tf5_ue_state_t;
 
 /*
