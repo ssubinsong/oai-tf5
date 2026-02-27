@@ -109,21 +109,21 @@ uint64_t tf5_rp_get_wallclock_ms(void)
     return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
 }
 
-int tf5_rp_validate_timestamp(uint64_t ue_time_ms,
-                                 uint32_t ext_timestamp_ms,
-                                 uint64_t window_ms)
+int tf5_rp_validate_timestamp(uint64_t ue_time_s,
+                                 uint32_t ext_timestamp_s,
+                                 uint64_t window_s)
 {
-    uint32_t ue_time_lsb_ms = (uint32_t)ue_time_ms & TF5_RP_TIMESTAMP_MASK;
-    uint32_t ext_time_lsb_ms = ext_timestamp_ms & TF5_RP_TIMESTAMP_MASK;
+    uint32_t ue_time_lsb = (uint32_t)ue_time_s & TF5_RP_TIMESTAMP_MASK;
+    uint32_t ext_time_lsb = ext_timestamp_s & TF5_RP_TIMESTAMP_MASK;
     // Proper 24-bit modular signed difference: map into [-2^23, 2^23)
-    int32_t diff_ms = (int32_t)(((ue_time_lsb_ms - ext_time_lsb_ms + TF5_RP_TIMESTAMP_HALF) & TF5_RP_TIMESTAMP_MASK)) - (int32_t)TF5_RP_TIMESTAMP_HALF;
+    int32_t diff = (int32_t)(((ue_time_lsb - ext_time_lsb + TF5_RP_TIMESTAMP_HALF) & TF5_RP_TIMESTAMP_MASK)) - (int32_t)TF5_RP_TIMESTAMP_HALF;
 
-    // This comparison assumes window_ms << 2^23 (fits into 24-bit signed range).
-    if (diff_ms > 0 && (uint64_t)diff_ms > window_ms) {
+    // This comparison assumes window_s << 2^23 (fits into 24-bit signed range).
+    if (diff > 0 && (uint64_t)diff > window_s) {
         return TF5_ERR_TIMESTAMP_OLD;
     }
 
-    if (diff_ms < 0 && (uint64_t)(-diff_ms) > window_ms) {
+    if (diff < 0 && (uint64_t)(-diff) > window_s) {
         return TF5_ERR_TIMESTAMP_FUTURE;
     }
 
@@ -194,7 +194,7 @@ int tf5_build_sig_auth_input(uint8_t *out,
                                    uint8_t te_version,
                                    const tf5_tesla_params_t *tesla_params,
                                    uint32_t validity_end,
-                                   uint32_t timestamp_ms)
+                                   uint32_t timestamp_s)
 {
     if (!out || !out_len || !tesla_params) {
         return TF5_ERR_INVALID_PARAM;
@@ -216,8 +216,8 @@ int tf5_build_sig_auth_input(uint8_t *out,
     tf5_encode_gnb_key_validity_end(out + offset, validity_end);
     offset += TF5_IBS_VALIDITY_PERIOD_LEN;
 
-    // 4. timestamp_ms (3 bytes) - for signature replay protection
-    tf5_encode_u24_be(out + offset, timestamp_ms);
+    // 4. timestamp_s (3 bytes) - for signature replay protection
+    tf5_encode_u24_be(out + offset, timestamp_s);
     offset += 3;
 
     *out_len = offset;
@@ -258,7 +258,7 @@ int tf5_pack_extension(const tf5_extension_t *ext,
     offset += TF5_TESLA_KEY_LEN;
 
     // Timestamp (3 bytes) - for signature replay protection
-    tf5_encode_u24_be(buf + offset, ext->timestamp_ms);
+    tf5_encode_u24_be(buf + offset, ext->timestamp_s);
     offset += 3;
 
     // Signature (96 bytes - GG09 Schnorr IBS: R[32] || sigma[32] || pk[32])
@@ -306,7 +306,7 @@ int tf5_unpack_extension(const uint8_t *buf,
     offset += TF5_TESLA_KEY_LEN;
 
     // Timestamp (3 bytes) - for signature replay protection
-    ext->timestamp_ms = tf5_decode_u24_be(buf + offset);
+    ext->timestamp_s = tf5_decode_u24_be(buf + offset);
     offset += 3;
 
     // Signature (96 bytes - GG09 Schnorr IBS: R[32] || sigma[32] || pk[32])
@@ -369,7 +369,7 @@ int tf5_pack_sib9_ext(const tf5_sib9_ext_t *ext, uint8_t *buf, size_t buf_len)
     buf[offset++] = ext->te_version;
     offset += tf5_encode_tesla_params(buf + offset, &ext->tesla_params);
     tf5_encode_gnb_key_validity_end(buf + offset, ext->validity_end); offset += TF5_IBS_VALIDITY_PERIOD_LEN;
-    tf5_encode_u24_be(buf + offset, ext->timestamp_ms); offset += 3;
+    tf5_encode_u24_be(buf + offset, ext->timestamp_s); offset += 3;
     memcpy(buf + offset, ext->signature, TF5_IBS_SIG_LEN); offset += TF5_IBS_SIG_LEN;
 
     return (int)offset;
@@ -386,7 +386,7 @@ int tf5_unpack_sib9_ext(const uint8_t *buf, size_t buf_len, tf5_sib9_ext_t *ext)
     ext->te_version = buf[offset++];
     offset += tf5_decode_tesla_params(buf + offset, &ext->tesla_params);
     ext->validity_end = tf5_decode_gnb_key_validity_end(buf + offset); offset += TF5_IBS_VALIDITY_PERIOD_LEN;
-    ext->timestamp_ms = tf5_decode_u24_be(buf + offset); offset += 3;
+    ext->timestamp_s = tf5_decode_u24_be(buf + offset); offset += 3;
     memcpy(ext->signature, buf + offset, TF5_IBS_SIG_LEN); offset += TF5_IBS_SIG_LEN;
 
     return TF5_OK;
@@ -445,31 +445,28 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
 
     LOG_I(TF5, "Key chain generated with %u intervals (K_{-1} at index 0)\n", chain_len);
 
-    // Pre-generate IBS signature nonces (offline/online split)
-    // Each precomp = (r, R=r·B) pair, 64 bytes. Removes the expensive
-    // base-point scalar mult from the per-SIB1 online signing path.
-    state->sign_precomps = calloc(chain_len, sizeof(tf5_ibs_sign_precomp_t));
+    // Pre-generate 1 IBS signature nonce (offline/online split)
+    // SIB9 is signed once per chain, so only 1 precomp needed.
+    state->sign_precomps = calloc(1, sizeof(tf5_ibs_sign_precomp_t));
     if (!state->sign_precomps) {
-        LOG_E(TF5, "Failed to allocate IBS precomp table (%u entries)\n", chain_len);
+        LOG_E(TF5, "Failed to allocate IBS precomp\n");
         free(state->key_chain);
         return TF5_ERR_ALLOC;
     }
-    state->sign_precomp_count = chain_len;
+    state->sign_precomp_count = 1;
     state->sign_precomp_next = 0;
 
-    for (uint32_t i = 0; i < chain_len; i++) {
-        int precomp_rc = tf5_ibs_sign_precomp(&state->sign_precomps[i]);
-        if (precomp_rc != TF5_OK) {
-            LOG_E(TF5, "IBS precomp failed at entry %u (rc=%d)\n", i, precomp_rc);
-            free(state->sign_precomps);
-            state->sign_precomps = NULL;
-            free(state->key_chain);
-            return precomp_rc;
-        }
+    int precomp_rc = tf5_ibs_sign_precomp(&state->sign_precomps[0]);
+    if (precomp_rc != TF5_OK) {
+        LOG_E(TF5, "IBS precomp failed (rc=%d)\n", precomp_rc);
+        free(state->sign_precomps);
+        state->sign_precomps = NULL;
+        free(state->key_chain);
+        return precomp_rc;
     }
 
-    LOG_I(TF5, "IBS precomp table built (%u entries, %zu KB)\n",
-          chain_len, (size_t)chain_len * sizeof(tf5_ibs_sign_precomp_t) / 1024);
+    LOG_I(TF5, "IBS precomp: 1 entry (%zu bytes)\n",
+          sizeof(tf5_ibs_sign_precomp_t));
 
     // Set TESLA parameters
     state->tesla_params.t_int_ms = t_int_ms;
@@ -560,13 +557,13 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
               interval, disclosed_interval);
     }
 
-    // Set wall-clock timestamp for signature replay protection
+    // Set wall-clock timestamp (seconds) for signature replay protection
     uint64_t wallclock_ms = tf5_rp_get_wallclock_ms();
     if (wallclock_ms == 0) {
         LOG_E(TF5, "Failed to get wall-clock time\n");
         return TF5_ERR_CRYPTO;
     }
-    ext->timestamp_ms = (uint32_t)wallclock_ms & TF5_RP_TIMESTAMP_MASK;
+    ext->timestamp_s = (uint32_t)(wallclock_ms / 1000) & TF5_RP_TIMESTAMP_MASK;
 
     // Build signature auth input (TESLA params only, no SIB1 content)
     uint8_t sig_auth_input[TF5_MAX_AUTH_INPUT];
@@ -575,7 +572,7 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
                                             ext->te_version,
                                             &ext->tesla_params,
                                             ext->validity_end,
-                                            ext->timestamp_ms);
+                                            ext->timestamp_s);
     if (rc != 0) {
         LOG_E(TF5, "Failed to build signature auth input\n");
         return rc;
@@ -638,7 +635,7 @@ int tf5_ue_init(tf5_ue_state_t *state,
                       const uint8_t mpk[TF5_IBS_MPK_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us,
-                      uint64_t rp_timestamp_window_ms)
+                      uint64_t rp_timestamp_window_s)
 {
     if (!state || !mpk) {
         return TF5_ERR_INVALID_PARAM;
@@ -652,9 +649,9 @@ int tf5_ue_init(tf5_ue_state_t *state,
     state->buffer_queue_count = 0;  // All queue entries initialized to 0/false by memset
 
     // Timestamp validation for signature replay protection
-    state->rp_timestamp_window_ms = (rp_timestamp_window_ms == 0)
-                                     ? TF5_RP_DEFAULT_TIME_WINDOW_MS
-                                     : rp_timestamp_window_ms;
+    state->rp_timestamp_window_s = (rp_timestamp_window_s == 0)
+                                    ? TF5_RP_DEFAULT_TIME_WINDOW_S
+                                    : rp_timestamp_window_s;
 
     // D parameter (CLI-configured)
     // Per RFC 4082 Section 2.2, D is the upper bound on (sender_time - receiver_time)

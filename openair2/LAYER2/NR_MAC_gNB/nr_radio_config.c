@@ -4462,23 +4462,27 @@ void nr_mac_update_tf5_sib(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
 
   tf5_gnb_state_t *state = cc->tf5_state;
 
+  // SIB9 is signed once per chain — skip if already cached
+  if (state->sib9_pdu_cached)
+    return;
+
   // Build SIB9 extension
   tf5_sib9_ext_t sib9_ext;
   sib9_ext.te_version = TF5_VERSION;
   memcpy(&sib9_ext.tesla_params, &state->tesla_params, sizeof(tf5_tesla_params_t));
   sib9_ext.validity_end = state->key_validity_end;
 
-  // Wall-clock timestamp for replay protection
+  // Wall-clock timestamp (seconds) for replay protection
   uint64_t wallclock_ms = tf5_rp_get_wallclock_ms();
   AssertFatal(wallclock_ms != 0, "TF5: Failed to get wall-clock time\n");
-  sib9_ext.timestamp_ms = (uint32_t)wallclock_ms & TF5_RP_TIMESTAMP_MASK;
+  sib9_ext.timestamp_s = (uint32_t)(wallclock_ms / 1000) & TF5_RP_TIMESTAMP_MASK;
 
   // Build sig auth input and compute IBS signature
   uint8_t sig_auth[TF5_MAX_AUTH_INPUT];
   size_t sig_auth_len;
   int rc = tf5_build_sig_auth_input(sig_auth, &sig_auth_len,
                                     sib9_ext.te_version, &sib9_ext.tesla_params,
-                                    sib9_ext.validity_end, sib9_ext.timestamp_ms);
+                                    sib9_ext.validity_end, sib9_ext.timestamp_s);
   AssertFatal(rc == 0, "TF5: Failed to build sig auth input (rc=%d)\n", rc);
 
   if (state->sign_precomps && state->sign_precomp_next < state->sign_precomp_count) {
@@ -4520,7 +4524,8 @@ void nr_mac_update_tf5_sib(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
   member->choice.sib9 = NULL;  // prevent ASN_STRUCT_FREE from touching stack sib9
   ASN_STRUCT_FREE(asn_DEF_NR_SystemInformation_IEs, &sysInfo);
 
-  LOG_D(TF5, "Updated SIB9 for frame %d slot %d (ext_len=%d, si_len=%d)\n",
+  state->sib9_pdu_cached = true;
+  LOG_I(TF5, "SIB9 signed and cached for frame %d slot %d (ext_len=%d, si_len=%d)\n",
         frame, slot, ext_len, cc->other_sib_bcch_length[0]);
 }
 #endif /* ENABLE_TF5 */

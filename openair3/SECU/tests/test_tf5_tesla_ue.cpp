@@ -92,7 +92,7 @@ protected:
             test_mpk,
             tf5_test::TV_SLOTS_PER_FRAME,
             TF5_TESLA_DEFAULT_D_BOUND_US,
-            TF5_RP_DEFAULT_TIME_WINDOW_MS
+            TF5_RP_DEFAULT_TIME_WINDOW_S
         );
     }
 
@@ -160,14 +160,14 @@ TEST_F(TF5UeTest, UeInit_AuthStateUnauthenticated) {
 
 TEST_F(TF5UeTest, UeInit_NullState_ReturnsError) {
     int ret = tf5_ue_init(nullptr, test_mpk, tf5_test::TV_SLOTS_PER_FRAME,
-                                 TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+                                 TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
 
     EXPECT_LT(ret, 0) << "Null state should return error";
 }
 
 TEST_F(TF5UeTest, UeInit_NullMpk_ReturnsError) {
     int ret = tf5_ue_init(&ue_state, nullptr, tf5_test::TV_SLOTS_PER_FRAME,
-                                 TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+                                 TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
 
     EXPECT_LT(ret, 0) << "Null MPK should return error";
 }
@@ -178,7 +178,7 @@ TEST_F(TF5UeTest, UeInit_DefaultTimestampWindow) {
                                  TF5_TESLA_DEFAULT_D_BOUND_US, 0);
 
     EXPECT_EQ(0, ret);
-    EXPECT_EQ(TF5_RP_DEFAULT_TIME_WINDOW_MS, ue_state.rp_timestamp_window_ms)
+    EXPECT_EQ(TF5_RP_DEFAULT_TIME_WINDOW_S, ue_state.rp_timestamp_window_s)
         << "Should use default timestamp window when 0 is passed";
 }
 
@@ -201,7 +201,7 @@ TEST_F(TF5UeTest, UeInit_DOffsetSlots_Mu0) {
     // slot_duration = 10000/10 = 1000us
     // d_offset_slots = ceil(1005/1000) = (1005+999)/1000 = 2
     int ret = tf5_ue_init(&ue_state, test_mpk, 10,
-                          TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+                          TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
     ASSERT_EQ(0, ret);
     EXPECT_EQ(2u, ue_state.d_offset_slots)
         << "mu=0: ceil(1005/1000) should be 2 slots";
@@ -212,7 +212,7 @@ TEST_F(TF5UeTest, UeInit_DOffsetSlots_Mu2) {
     // slot_duration = 10000/40 = 250us
     // d_offset_slots = ceil(1005/250) = (1005+249)/250 = 5
     int ret = tf5_ue_init(&ue_state, test_mpk, 40,
-                          TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+                          TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
     ASSERT_EQ(0, ret);
     EXPECT_EQ(5u, ue_state.d_offset_slots)
         << "mu=2: ceil(1005/250) should be 5 slots";
@@ -222,7 +222,7 @@ TEST_F(TF5UeTest, UeInit_DOffsetSlots_ExactDivisor) {
     // d_bound=1000us, slots_per_frame=10 → slot_duration=1000us
     // d_offset_slots = ceil(1000/1000) = 1
     int ret = tf5_ue_init(&ue_state, test_mpk, 10,
-                          1000, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+                          1000, TF5_RP_DEFAULT_TIME_WINDOW_S);
     ASSERT_EQ(0, ret);
     EXPECT_EQ(1u, ue_state.d_offset_slots)
         << "Exact divisor: ceil(1000/1000) should be 1 slot";
@@ -651,7 +651,7 @@ protected:
 
     int initUeWithTestMpk() {
         return tf5_ue_init(&ue_state, ibs_mpk, tf5_test::TV_SLOTS_PER_FRAME,
-                                  TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_MS);
+                                  TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
     }
 
     void createValidSignature(const uint8_t* auth_input, size_t auth_input_len,

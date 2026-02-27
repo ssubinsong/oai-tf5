@@ -35,7 +35,7 @@ protected:
         ext.i = tf5_test::TV_EXT_INTERVAL;
         memcpy(ext.key_disclosure, tf5_test::TV_EXT_DISCLOSED_KEY, TF5_TESLA_KEY_LEN);
         ext.validity_end = tf5_test::TV_EXT_VALIDITY_END;
-        ext.timestamp_ms = tf5_test::TV_EXT_TIMESTAMP_MS;
+        ext.timestamp_s = tf5_test::TV_EXT_TIMESTAMP_MS;
         memcpy(ext.signature, tf5_test::TV_EXT_SIGNATURE, TF5_IBS_SIG_LEN);
         memcpy(ext.tesla_tag, tf5_test::TV_EXT_TAG, TF5_TESLA_TAG_LEN);
     }
@@ -129,11 +129,11 @@ TEST_F(TF5SerialTest, PackExtension_KeyDisclosureAtOffset19) {
 TEST_F(TF5SerialTest, PackExtension_TimestampAtOffset35) {
     tf5_pack_extension(&ext, packed_buf, sizeof(packed_buf));
 
-    // timestamp_ms is 3 bytes at offset 35
+    // timestamp_s is 3 bytes at offset 35
     uint32_t timestamp = tf5_decode_u24_be(&packed_buf[35]);
 
     EXPECT_EQ(tf5_test::TV_EXT_TIMESTAMP_MS, timestamp)
-        << "timestamp_ms should be at offset 35-37";
+        << "timestamp_s should be at offset 35-37";
 }
 
 TEST_F(TF5SerialTest, PackExtension_SignatureAtOffset38) {
@@ -203,7 +203,7 @@ TEST_F(TF5SerialTest, UnpackExtension_AllFieldsCorrect) {
     EXPECT_EQ(ext.validity_end, unpacked.validity_end);
     EXPECT_EQ(ext.i, unpacked.i);
     EXPECT_EQ(0, memcmp(ext.key_disclosure, unpacked.key_disclosure, TF5_TESLA_KEY_LEN));
-    EXPECT_EQ(ext.timestamp_ms, unpacked.timestamp_ms);
+    EXPECT_EQ(ext.timestamp_s, unpacked.timestamp_s);
     EXPECT_EQ(0, memcmp(ext.signature, unpacked.signature, TF5_IBS_SIG_LEN));
     EXPECT_EQ(0, memcmp(ext.tesla_tag, unpacked.tesla_tag, TF5_TESLA_TAG_LEN));
 }

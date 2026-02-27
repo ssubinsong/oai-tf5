@@ -37,7 +37,7 @@
 /* ── Default Configuration ─────────────────────────────── */
 #define TF5_TESLA_DEFAULT_D_BOUND_US       1005    // D bound (microseconds)
 #define TF5_TESLA_BUFFER_QUEUE_SIZE        4       // Max SIB1s buffered per UE
-#define TF5_RP_DEFAULT_TIME_WINDOW_MS      60000   // Replay protection window (60s)
+#define TF5_RP_DEFAULT_TIME_WINDOW_S        10800   // Replay protection window (3 hours, in seconds)
 
 /* ── NR Radio Timing Constants (3GPP TS 38.211) ──────── */
 #define TF5_NR_FRAME_DURATION_MS    10      // 1 radio frame = 10ms
@@ -115,7 +115,7 @@ typedef struct {
     uint32_t                   i;                // 4B - Current interval i
     uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
     uint32_t                   validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
-    uint32_t                   timestamp_ms;                  // 3B (wire) - Unix epoch timestamp LSB (ms) for replay protection
+    uint32_t                   timestamp_s;                   // 3B (wire) - Unix epoch timestamp LSB (seconds) for replay protection
     uint8_t                    signature[TF5_IBS_SIG_LEN]; // 96B - GG09 Schnorr IBS signature (R[32] || sigma[32] || pk[32])
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_extension_t;
@@ -137,7 +137,7 @@ typedef struct {
     uint8_t            te_version;
     tf5_tesla_params_t tesla_params;                  // 11B
     uint32_t           validity_end;                  // 3B wire
-    uint32_t           timestamp_ms;                  // 3B wire
+    uint32_t           timestamp_s;                   // 3B wire
     uint8_t            signature[TF5_IBS_SIG_LEN];    // 96B
 } tf5_sib9_ext_t;
 
@@ -168,6 +168,7 @@ typedef struct {
 
     // Initialization flag
     bool     initialized;
+    bool     sib9_pdu_cached;                       // SIB9 PDU already signed & encoded (once per chain)
 } tf5_gnb_state_t;
 
 typedef enum {
@@ -198,7 +199,7 @@ typedef struct {
     bool initialized; // Initialization flag
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
     tf5_ue_phase_t curr_phase; // Current authentication state
-    uint64_t rp_timestamp_window_ms;     // Timestamp window for signature replay protection (default 60000ms)
+    uint64_t rp_timestamp_window_s;      // Timestamp window for signature replay protection (default 10800s)
 
     // Returning UE simulation fields (--tf5-returning-ue mode)
     bool returning_ue_sim;          // --tf5-returning-ue mode enabled
@@ -268,7 +269,7 @@ int tf5_build_mac_auth_input(uint8_t *out,
  * Build signature authentication input buffer
  *
  * Constructs the data to be signed (SIB9 data only, no SIB1 content):
- * te_version || tesla_params || validity_end || timestamp_ms
+ * te_version || tesla_params || validity_end || timestamp_s
  *
  * IBS authenticates TESLA params only. SIB1 content is authenticated by TESLA MAC.
  *
@@ -277,7 +278,7 @@ int tf5_build_mac_auth_input(uint8_t *out,
  * @param te_version    TESLA protocol version
  * @param tesla_params  TESLA parameters (includes T_0)
  * @param validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
- * @param timestamp_ms  Wall-clock timestamp LSB (ms since Unix epoch) for replay protection (24-bit)
+ * @param timestamp_s   Wall-clock timestamp LSB (seconds since Unix epoch) for replay protection (24-bit)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_build_sig_auth_input(uint8_t *out,
@@ -285,7 +286,7 @@ int tf5_build_sig_auth_input(uint8_t *out,
                                    uint8_t te_version,
                                    const tf5_tesla_params_t *tesla_params,
                                    uint32_t validity_end,
-                                   uint32_t timestamp_ms);
+                                   uint32_t timestamp_s);
 
 /**
  * Update dynamic parameters and compute signature/tag
@@ -373,14 +374,14 @@ int tf5_unpack_sib9_ext(const uint8_t *buf, size_t buf_len, tf5_sib9_ext_t *ext)
  * @param mpk           Pre-provisioned Core Master Public Key (32 bytes)
  * @param slots_per_frame Number of slots per frame
  * @param d_bound_us    D bound for safe packet test (microseconds)
- * @param rp_timestamp_window_ms Timestamp window for signature replay protection (ms)
+ * @param rp_timestamp_window_s Timestamp window for signature replay protection (seconds)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM
  */
 int tf5_ue_init(tf5_ue_state_t *state,
                       const uint8_t mpk[TF5_IBS_MPK_LEN],
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us,
-                      uint64_t rp_timestamp_window_ms);
+                      uint64_t rp_timestamp_window_s);
 
 /**
  * Free TESLA state resources on UE
@@ -660,15 +661,15 @@ uint64_t tf5_rp_get_wallclock_ms(void);
  * Checks if the received timestamp is within acceptable window of local time.
  * This prevents signature replay attacks using old captured SIB1 messages.
  *
- * @param ue_time_ms      UE's current wall-clock time (ms since epoch)
- * @param ext_timestamp_ms Timestamp LSB from received extension
- * @param window_ms       Acceptable time window in milliseconds
+ * @param ue_time_s       UE's current wall-clock time (seconds since epoch)
+ * @param ext_timestamp_s Timestamp LSB from received extension
+ * @param window_s        Acceptable time window in seconds
  * @return TF5_OK if valid, TF5_ERR_TIMESTAMP_OLD if too old,
  *         TF5_ERR_TIMESTAMP_FUTURE if too far in future
  */
-int tf5_rp_validate_timestamp(uint64_t ue_time_ms,
-                                 uint32_t ext_timestamp_ms,
-                                 uint64_t window_ms);
+int tf5_rp_validate_timestamp(uint64_t ue_time_s,
+                                 uint32_t ext_timestamp_s,
+                                 uint64_t window_s);
 
 #endif /* ENABLE_TF5 */
 

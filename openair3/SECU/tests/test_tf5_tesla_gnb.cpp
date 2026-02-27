@@ -399,7 +399,7 @@ TEST_F(TF5GnbTest, PrepareExtension_TimestampZero_Handled) {
     );
 
     EXPECT_EQ(0, ret);
-    EXPECT_NE(0u, ext.timestamp_ms);
+    EXPECT_NE(0u, ext.timestamp_s);
 }
 
 // ============================================================================

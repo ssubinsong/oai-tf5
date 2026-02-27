@@ -4,7 +4,7 @@
  *
  * Tests for:
  * - tf5_rp_get_wallclock_ms(): Wall-clock time retrieval
- * - tf5_rp_validate_timestamp(): Timestamp validation for replay protection
+ * - tf5_rp_validate_timestamp(): Timestamp validation for replay protection (seconds)
  * - Helper functions: tf5_slot_time_make(), tf5_tesla_absolute_slots(), etc.
  */
 
@@ -64,177 +64,175 @@ TEST_F(TF5TimingTest, GetWallclockMs_IncrementsCorrectly) {
 }
 
 // ============================================================================
-// Timestamp Validation Tests (tf5_rp_validate_timestamp)
+// Timestamp Validation Tests (tf5_rp_validate_timestamp) — seconds
 // ============================================================================
 
 TEST_F(TF5TimingTest, ValidateTimestamp_WithinWindow_Valid) {
-    uint64_t ue_time_ms = 1000000;  // Some reference time
-    uint32_t ext_timestamp_ms = 1000000 & 0xFFFFFFu;  // Same time (24-bit)
-    uint64_t window_ms = 60000;  // 60 second window
+    uint64_t ue_time_s = 1000;  // Some reference time (seconds)
+    uint32_t ext_timestamp_s = 1000 & 0xFFFFFFu;
+    uint64_t window_s = 10800;  // 3 hour window
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
     EXPECT_EQ(0, result) << "Exact same time should be valid";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_SlightlyOld_Valid) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = (1000000 - 30000) & 0xFFFFFFu;  // 30 seconds old
-    uint64_t window_ms = 60000;
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = (100000 - 30) & 0xFFFFFFu;  // 30 seconds old
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
-    EXPECT_EQ(0, result) << "30 seconds old within 60 second window should be valid";
+    EXPECT_EQ(0, result) << "30 seconds old within 3-hour window should be valid";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_SlightlyFuture_Valid) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = (1000000 + 30000) & 0xFFFFFFu;  // 30 seconds in future
-    uint64_t window_ms = 60000;
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = (100000 + 30) & 0xFFFFFFu;  // 30 seconds in future
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
-    EXPECT_EQ(0, result) << "30 seconds in future within 60 second window should be valid";
+    EXPECT_EQ(0, result) << "30 seconds in future within 3-hour window should be valid";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_TooOld) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = (1000000 - 70000) & 0xFFFFFFu;  // 70 seconds old
-    uint64_t window_ms = 60000;
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = (100000 - 11000) & 0xFFFFFFu;  // 11000 seconds old
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
-    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "70 seconds old should be rejected as too old";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "11000 seconds old should be rejected as too old";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_TooFuture) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = (1000000 + 70000) & 0xFFFFFFu;  // 70 seconds in future
-    uint64_t window_ms = 60000;
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = (100000 + 11000) & 0xFFFFFFu;  // 11000 seconds in future
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
-    EXPECT_EQ(TF5_ERR_TIMESTAMP_FUTURE, result) << "70 seconds in future should be rejected";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_FUTURE, result) << "11000 seconds in future should be rejected";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_ExactBoundaryOld_Valid) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = (1000000 - 60000) & 0xFFFFFFu;  // Exactly at window edge
-    uint64_t window_ms = 60000;
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = (100000 - 10800) & 0xFFFFFFu;  // Exactly at window edge
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
     EXPECT_EQ(0, result) << "Exactly at old boundary should be valid";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_ExactBoundaryFuture_Valid) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = (1000000 + 60000) & 0xFFFFFFu;  // Exactly at window edge
-    uint64_t window_ms = 60000;
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = (100000 + 10800) & 0xFFFFFFu;  // Exactly at window edge
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
     EXPECT_EQ(0, result) << "Exactly at future boundary should be valid";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_24BitWrap_PositiveWrap) {
     // Test 24-bit wraparound: UE at 0x100, ext at 0xFFFFF0
-    // In 24-bit modular signed math: diff = 0x100 - 0xFFFFF0 = +0x110 (272 ms old)
-    uint64_t ue_time_ms = 0x100;
-    uint32_t ext_timestamp_ms = 0xFFFFF0;
-    uint64_t window_ms = 60000;
+    // In 24-bit modular signed math: diff = 0x100 - 0xFFFFF0 = +0x110 (272 seconds old)
+    uint64_t ue_time_s = 0x100;
+    uint32_t ext_timestamp_s = 0xFFFFF0;
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
-    EXPECT_EQ(0, result) << "24-bit wrap: ext 272ms old should be valid";
+    EXPECT_EQ(0, result) << "24-bit wrap: ext 272s old should be valid";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_24BitWrap_NegativeWrap) {
     // UE near max (0xFFFFF0), ext just after wrap (0x100)
-    // In 24-bit modular signed math: diff = 0xFFFFF0 - 0x100 = -0x110 (-272 ms, ext is in future)
-    uint64_t ue_time_ms = 0xFFFFF0;
-    uint32_t ext_timestamp_ms = 0x100;
-    uint64_t window_ms = 60000;
+    // In 24-bit modular signed math: diff = 0xFFFFF0 - 0x100 = -0x110 (-272s, ext is in future)
+    uint64_t ue_time_s = 0xFFFFF0;
+    uint32_t ext_timestamp_s = 0x100;
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
-    EXPECT_EQ(0, result) << "24-bit wrap: ext 272ms in future should be valid";
+    EXPECT_EQ(0, result) << "24-bit wrap: ext 272s in future should be valid";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_TimestampZero) {
-    // Verify behavior when ext_timestamp_ms = 0
-    uint64_t ue_time_ms = 500;
-    uint32_t ext_timestamp_ms = 0;
-    uint64_t window_ms = 60000;
+    // Verify behavior when ext_timestamp_s = 0
+    uint64_t ue_time_s = 500;
+    uint32_t ext_timestamp_s = 0;
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
-    EXPECT_EQ(0, result) << "ext_timestamp=0 with UE at 500ms should be valid (500ms old, within 60s window)";
+    EXPECT_EQ(0, result) << "ext_timestamp=0 with UE at 500s should be valid (500s old, within 3h window)";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_SmallWindow) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = (1000000 - 5000) & 0xFFFFFFu;  // 5 seconds old
-    uint64_t window_ms = 3000;  // 3 second window
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = (100000 - 50) & 0xFFFFFFu;  // 50 seconds old
+    uint64_t window_s = 30;  // 30 second window
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
-    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "5 seconds old should be rejected with 3 second window";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "50 seconds old should be rejected with 30 second window";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_JustOutsideWindow_TooOld) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = (1000000 - 60001) & 0xFFFFFFu;  // 60.001 seconds old
-    uint64_t window_ms = 60000;  // 60 second window
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = (100000 - 10801) & 0xFFFFFFu;  // 10801 seconds old
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
     EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "Timestamp just outside window (old) should be rejected";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_JustOutsideWindow_TooFuture) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = (1000000 + 60001) & 0xFFFFFFu;  // 60.001 seconds in future
-    uint64_t window_ms = 60000;  // 60 second window
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = (100000 + 10801) & 0xFFFFFFu;  // 10801 seconds in future
+    uint64_t window_s = 10800;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
     EXPECT_EQ(TF5_ERR_TIMESTAMP_FUTURE, result) << "Timestamp just outside window (future) should be rejected";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_LargeTimeDrift_Rejected) {
-    // Use a large enough ue_time so that subtraction doesn't wrap into 24-bit space
-    uint64_t ue_time_ms = 5000000;  // 5000 seconds = ~83 minutes
-    uint32_t ext_timestamp_ms = (5000000 - 300000) & 0xFFFFFFu;  // 5 minutes old
-    uint64_t window_ms = 60000;  // 60 second window
+    uint64_t ue_time_s = 500000;
+    uint32_t ext_timestamp_s = (500000 - 50000) & 0xFFFFFFu;  // ~14 hours old
+    uint64_t window_s = 10800;  // 3 hour window
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
-    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "Large time drift (5 minutes old) should be rejected with 60s window";
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result) << "Large time drift (~14 hours old) should be rejected with 3h window";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_ReplayAttackScenario) {
     // Scenario: Attacker records a valid SIB1 and tries to replay it later
-    // Time when SIB1 was originally sent
-    uint64_t original_time_ms = 1000000;
-    uint32_t original_timestamp = original_time_ms & 0xFFFFFFu;
+    uint64_t original_time_s = 100000;
+    uint32_t original_timestamp = original_time_s & 0xFFFFFFu;
 
     // UE validates immediately - should succeed
-    int result1 = tf5_rp_validate_timestamp(original_time_ms, original_timestamp, 60000);
+    int result1 = tf5_rp_validate_timestamp(original_time_s, original_timestamp, 10800);
     EXPECT_EQ(0, result1) << "Original timestamp should be valid";
 
-    // Attacker waits 2 minutes and replays
-    uint64_t replay_time_ms = original_time_ms + 120000;  // 2 minutes later
-    int result2 = tf5_rp_validate_timestamp(replay_time_ms, original_timestamp, 60000);
-    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result2) << "Replayed timestamp (2 minutes later) should be rejected";
+    // Attacker waits 4 hours and replays
+    uint64_t replay_time_s = original_time_s + 14400;  // 4 hours later
+    int result2 = tf5_rp_validate_timestamp(replay_time_s, original_timestamp, 10800);
+    EXPECT_EQ(TF5_ERR_TIMESTAMP_OLD, result2) << "Replayed timestamp (4 hours later) should be rejected";
 }
 
 TEST_F(TF5TimingTest, ValidateTimestamp_ZeroWindow) {
-    uint64_t ue_time_ms = 1000000;
-    uint32_t ext_timestamp_ms = 1000000 & 0xFFFFFFu;  // Same time
-    uint64_t window_ms = 0;
+    uint64_t ue_time_s = 100000;
+    uint32_t ext_timestamp_s = 100000 & 0xFFFFFFu;  // Same time
+    uint64_t window_s = 0;
 
-    int result = tf5_rp_validate_timestamp(ue_time_ms, ext_timestamp_ms, window_ms);
+    int result = tf5_rp_validate_timestamp(ue_time_s, ext_timestamp_s, window_s);
 
     EXPECT_EQ(0, result) << "Exact same time with zero window should be valid";
 }

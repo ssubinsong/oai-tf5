@@ -685,9 +685,9 @@ static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc,
     return;
   }
 
-  int ts_rc = tf5_rp_validate_timestamp(ue_time_ms,
-                                         sib9_ext.timestamp_ms,
-                                         state->rp_timestamp_window_ms);
+  int ts_rc = tf5_rp_validate_timestamp(ue_time_ms / 1000,
+                                         sib9_ext.timestamp_s,
+                                         state->rp_timestamp_window_s);
   if (ts_rc != 0) {
     LOG_E(TF5, "Timestamp validation FAILED (rc=%d)\n", ts_rc);
     return;
@@ -700,7 +700,7 @@ static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc,
                             sib9_ext.te_version,
                             &sib9_ext.tesla_params,
                             sib9_ext.validity_end,
-                            sib9_ext.timestamp_ms);
+                            sib9_ext.timestamp_s);
 
   /* IBS signature verification */
   int sig_rc = tf5_ibs_verify(state->mpk,
@@ -1672,11 +1672,11 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
             uint16_t slots_per_frame = 20;
             tf5_ue_init(ptr->SInfo.tf5_state, mpk, slots_per_frame,
                               params->tf5_d_bound_us,
-                              params->tf5_rp_timestamp_window_ms);
+                              params->tf5_rp_timestamp_window_s);
             ptr->SInfo.tf5_state->returning_ue_sim = (params->tf5_returning_ue != 0);
-            LOG_I(TF5, "Loaded Core MPK from %s (D=%u us, window=%u ms, returning=%d)\n",
+            LOG_I(TF5, "Loaded Core MPK from %s (D=%u us, window=%u s, returning=%d)\n",
                   params->tf5_core_mpk_file, params->tf5_d_bound_us,
-                  params->tf5_rp_timestamp_window_ms, params->tf5_returning_ue);
+                  params->tf5_rp_timestamp_window_s, params->tf5_returning_ue);
             // Log MPK for verification (first 32 bytes)
             char hex_buf[65];
             for (int j = 0; j < 32; j++) {
