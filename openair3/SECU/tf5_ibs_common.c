@@ -36,7 +36,8 @@ int tf5_ibs_hash_identity(const uint8_t *cell_id,
                            const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN],
                            uint8_t scalar_out[TF5_ED25519_SCALAR_LEN])
 {
-    if (!cell_id || !pk || !mpk || !scalar_out || cell_id_len == 0) {
+    if (!cell_id || !pk || !mpk || !scalar_out || cell_id_len == 0
+        || cell_id_len > TF5_IBS_CELL_ID_LEN) {
         return TF5_ERR_INVALID_PARAM;
     }
 

@@ -92,7 +92,7 @@ static const uint16_t TV_EXT_T0_SLOT = 5;
 static const uint32_t TV_EXT_CHAIN_LEN = 65536;
 static const uint32_t TV_EXT_INTERVAL = 42;
 static const uint32_t TV_EXT_VALIDITY_END = 525600;  // ~1 year
-static const uint32_t TV_EXT_TIMESTAMP_MS = 0x123456;
+static const uint32_t TV_EXT_TIMESTAMP_S = 0x123456;
 
 // Test disclosed key
 static const uint8_t TV_EXT_DISCLOSED_KEY[16] = {

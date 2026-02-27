@@ -2,6 +2,7 @@
 
 #include "tf5_crypto.h"
 
+#include <stdlib.h>
 #include <openssl/evp.h>
 #include <openssl/core_names.h>
 #include <pthread.h>
@@ -22,10 +23,19 @@ void tf5_sha256(const uint8_t *data, size_t len, uint8_t out[32])
 static EVP_MAC *s_hmac_mac = NULL;
 static pthread_once_t s_hmac_once = PTHREAD_ONCE_INIT;
 
+static void tf5_hmac_cleanup(void)
+{
+    if (s_hmac_mac) {
+        EVP_MAC_free(s_hmac_mac);
+        s_hmac_mac = NULL;
+    }
+}
+
 static void tf5_hmac_init_once(void)
 {
     s_hmac_mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
     AssertFatal(s_hmac_mac != NULL, "tf5_hmac: EVP_MAC_fetch failed\n");
+    atexit(tf5_hmac_cleanup);
 }
 
 /* Thread-specific HMAC context with automatic cleanup via pthread_key_t destructor */

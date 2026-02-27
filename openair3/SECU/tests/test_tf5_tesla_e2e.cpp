@@ -84,7 +84,7 @@ protected:
     int initGnb(uint32_t chain_len = 100) {
         return tf5_gnb_init(
             &gnb_state,
-            tf5_test::TV_EXT_T_INT_MS,   // t_int_ms = 20
+            tf5_test::TV_EXT_T_INT_MS,   // t_int_ms = 160
             tf5_test::TV_EXT_D,          // d = 1
             chain_len,
             gnb_private_key,
@@ -174,7 +174,7 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
                                    (const uint8_t*)sib1, strlen(sib1),
                                    TF5_VERSION);
 
-    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
+
     ret = tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, rx_ext.i, rx_ext.tesla_tag);
     ASSERT_EQ(0, ret);
 
@@ -304,7 +304,7 @@ TEST_F(TF5E2ETest, E2E_TamperedTag_Rejected) {
     tampered_tag[0] ^= 0xFF;  // Flip bits
 
     // Buffer with tampered tag
-    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
+
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag);
 
     // Try to verify - first verify key chain
@@ -340,7 +340,7 @@ TEST_F(TF5E2ETest, E2E_TamperedSib1_Rejected) {
                                    TF5_VERSION);
 
     // Buffer with original tag but tampered content
-    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
+
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // Try to verify - should fail because MAC auth input doesn't match tag
@@ -375,7 +375,7 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
                                    (const uint8_t*)sib1, strlen(sib1),
                                    TF5_VERSION);
 
-    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
+
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // Try to verify with WRONG key
@@ -457,7 +457,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
                                    (const uint8_t*)sib1, strlen(sib1),
                                    TF5_VERSION);
 
-    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
+
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // First verify key chain
@@ -535,7 +535,7 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
                                    (const uint8_t*)sib1, strlen(sib1),
                                    TF5_VERSION);
 
-    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
+
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // First verify key chain

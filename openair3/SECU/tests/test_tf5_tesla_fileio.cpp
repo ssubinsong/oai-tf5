@@ -35,18 +35,18 @@ protected:
         std::filesystem::remove_all(test_dir);
     }
 
-    // Helper to create a valid 51-byte private key file
+    // Helper to create a valid 67-byte private key file
     void CreateValidPrivkeyFile(const std::string& path, uint32_t validity = 525600) {
-        // Generate a valid IBS secret key (G1 point) using the library
+        // Generate a valid IBS secret key using the library
         uint8_t sk[TF5_IBS_GNB_SK_LEN];
 
         // Use a fixed test key (deterministic for testing)
         // Fill with pattern; tf5_load_gnb_privkey will validate via tf5_ibs_validate_sk
         memset(sk, 0x42, TF5_IBS_GNB_SK_LEN);
-        // Set first byte to compressed G1 prefix to help pass basic format checks
-        sk[0] = 0x80;  // Compressed G1 infinity-ish prefix
+        // Set pk portion (second 32 bytes) to a recognizable pattern
+        sk[32] = 0x01;  // Ed25519 pk starts at offset 32
 
-        // Write the 51-byte file: sk (48) + validity (3 big-endian)
+        // Write the 67-byte file: sk (64) + validity (3 big-endian)
         std::ofstream file(path, std::ios::binary);
         file.write(reinterpret_cast<char*>(sk), TF5_IBS_GNB_SK_LEN);
 
@@ -322,8 +322,8 @@ TEST_F(TF5FileIOTest, RoundTrip_PrivkeyValidity) {
     // Create file with known validity
     uint8_t sk[TF5_IBS_GNB_SK_LEN];
     memset(sk, 0x42, TF5_IBS_GNB_SK_LEN);
-    // Set compressed G1 prefix
-    sk[0] = 0x80;
+    // Set pk portion to a recognizable pattern
+    sk[32] = 0x01;
 
     std::ofstream file(privkey_path, std::ios::binary);
     file.write(reinterpret_cast<char*>(sk), TF5_IBS_GNB_SK_LEN);
@@ -343,7 +343,7 @@ TEST_F(TF5FileIOTest, RoundTrip_PrivkeyValidity) {
             << "Big-endian validity should be decoded correctly";
     } else {
         // Acceptable: key validation failed (TF5_ERR_KEY_INVALID) because
-        // the dummy bytes are not a valid compressed G1 point
+        // the dummy bytes are not a valid Ed25519 point
         EXPECT_EQ(TF5_ERR_KEY_INVALID, result);
     }
 }

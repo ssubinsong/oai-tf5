@@ -85,11 +85,13 @@ int tf5_ibs_precompute_mpk(const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN])
         return TF5_OK;
     }
 
-    ge25519_p3 mpk_p3;
-    if (ge25519_frombytes(&mpk_p3, mpk) != 0) {
-        LOG_E(TF5, "Failed to decompress MPK for precomputation\n");
+    if (!crypto_core_ed25519_is_valid_point(mpk)) {
+        LOG_E(TF5, "MPK is not a valid Ed25519 point\n");
         return TF5_ERR_KEY_INVALID;
     }
+
+    ge25519_p3 mpk_p3;
+    ge25519_frombytes(&mpk_p3, mpk);  /* safe: is_valid_point already checked */
 
     build_precomp_table(s_mpk_cache.table, &mpk_p3);
     memcpy(s_mpk_cache.mpk, mpk, TF5_IBS_MASTER_PUBLIC_LEN);
@@ -215,6 +217,11 @@ int tf5_ibs_sign_online(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
         return TF5_ERR_SIGN;
     }
 
+    if (sodium_is_zero(precomp->r_scalar, TF5_ED25519_SCALAR_LEN)) {
+        LOG_E(TF5, "IBS precomp already consumed (r_scalar is zero)\n");
+        return TF5_ERR_INVALID_PARAM;
+    }
+
     const uint8_t *y  = sk_id;
     const uint8_t *pk = sk_id + TF5_ED25519_SCALAR_LEN;
 
@@ -284,11 +291,12 @@ int tf5_ibs_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
     /* Build/cache MPK precomp table (32×8 Duif, ~30KB) */
     if (!s_mpk_cache.valid ||
         sodium_memcmp(s_mpk_cache.mpk, mpk, TF5_IBS_MASTER_PUBLIC_LEN) != 0) {
-        ge25519_p3 mpk_p3;
-        if (ge25519_frombytes(&mpk_p3, mpk) != 0) {
-            LOG_E(TF5, "Failed to decompress MPK\n");
+        if (!crypto_core_ed25519_is_valid_point(mpk)) {
+            LOG_E(TF5, "MPK is not a valid Ed25519 point\n");
             return TF5_ERR_KEY_INVALID;
         }
+        ge25519_p3 mpk_p3;
+        ge25519_frombytes(&mpk_p3, mpk);  /* safe: is_valid_point already checked */
         build_precomp_table(s_mpk_cache.table, &mpk_p3);
         memcpy(s_mpk_cache.mpk, mpk, TF5_IBS_MASTER_PUBLIC_LEN);
         s_mpk_cache.valid = 1;

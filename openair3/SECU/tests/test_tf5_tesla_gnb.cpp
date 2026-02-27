@@ -47,7 +47,7 @@ protected:
     int initGnbDefault(uint32_t chain_len = 100) {
         return tf5_gnb_init(
             &gnb_state,
-            tf5_test::TV_EXT_T_INT_MS,   // t_int_ms = 20
+            tf5_test::TV_EXT_T_INT_MS,   // t_int_ms = 160
             tf5_test::TV_EXT_D,          // d = 1
             chain_len,
             ibs_sk,                      // 64B sk_id: y[32] + pk[32] from PKG

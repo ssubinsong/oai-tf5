@@ -41,6 +41,7 @@ void tf5_chain_key(const uint8_t key_next[TF5_TESLA_KEY_LEN],
 
     // Truncate to 16 bytes
     memcpy(key_out, full_hash, TF5_TESLA_KEY_LEN);
+    OPENSSL_cleanse(full_hash, sizeof(full_hash));
 }
 
 int tf5_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
@@ -63,6 +64,8 @@ int tf5_compute_tag(const uint8_t key[TF5_TESLA_KEY_LEN],
     // Truncate to 16 bytes
     memcpy(tag_out, full_tag, TF5_TESLA_TAG_LEN);
 
+    OPENSSL_cleanse(mac_key, sizeof(mac_key));
+    OPENSSL_cleanse(full_tag, sizeof(full_tag));
     return TF5_OK;
 }
 
@@ -707,7 +710,7 @@ bool tf5_ue_safe_packet_test(tf5_ue_state_t *ue_state,
     uint32_t i = tf5_ext->i;
     uint8_t d = ue_state->tesla_params.d;
 
-    bool safe = (x < i + d);
+    bool safe = ((uint64_t)x < (uint64_t)i + d);
 
     if (!safe) {
         LOG_W(TF5, "Safe packet test FAILED - x=%u (T+D, D=%u slots) >= i=%u + d=%u\n",
@@ -810,7 +813,11 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
     // Works uniformly for all cases including bootstrap (trust_anchor_idx == -1)
     int32_t disclosed_interval = (int32_t)disclosed_key_interval;
 
-    DevAssert(disclosed_interval > ue_state->trust_anchor_idx);
+    if (disclosed_interval <= ue_state->trust_anchor_idx) {
+        LOG_W(TF5, "Disclosed key interval %d <= trust anchor %d, skipping\n",
+              disclosed_interval, ue_state->trust_anchor_idx);
+        return false;
+    }
 
     uint32_t steps = (uint32_t)(disclosed_interval - ue_state->trust_anchor_idx);
 
@@ -822,7 +829,7 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
         tf5_chain_key_inplace(computed_key);
     }
 
-    if (memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
+    if (CRYPTO_memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
       LOG_D(TF5,
             "Key chain verified K_%u -> K_%d (%u hash ops)\n",
             disclosed_key_interval,
@@ -887,7 +894,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
             continue;
         }
 
-        if (memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
+        if (CRYPTO_memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
             LOG_I(TF5, "MAC verified for interval %u (steps=%u)\n",
                   entry->rx_interval_index, steps);
             entry->valid = false;

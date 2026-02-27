@@ -320,7 +320,7 @@ TEST_F(TF5UeTest, BufferSib1_Success) {
 
     const char auth_input[] = "test auth input";
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+
 
     int ret = tf5_ue_buffer_msg(&ue_state,
                                        (const uint8_t*)auth_input,
@@ -337,7 +337,7 @@ TEST_F(TF5UeTest, BufferSib1_QueueCountIncremented) {
 
     const char auth_input[] = "test auth input";
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+
 
     EXPECT_EQ(0, ue_state.buffer_queue_count);
 
@@ -351,7 +351,7 @@ TEST_F(TF5UeTest, BufferSib1_DataStored) {
 
     const char auth_input[] = "test auth input data";
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0xde, 0xad, 0xbe, 0xef};
-    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+
 
     tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag);
 
@@ -377,7 +377,7 @@ TEST_F(TF5UeTest, BufferSib1_MultipleEntries) {
     const char auth_input2[] = "auth input 2";
     uint8_t tag1[TF5_TESLA_TAG_LEN] = {0x01};
     uint8_t tag2[TF5_TESLA_TAG_LEN] = {0x02};
-    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+
 
     tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input1, strlen(auth_input1), 5, tag1);
     tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input2, strlen(auth_input2), 6, tag2);
@@ -389,7 +389,7 @@ TEST_F(TF5UeTest, BufferSib1_FullQueue_DropsOldest) {
     ASSERT_EQ(0, initUeDefault());
 
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+
 
     // Fill the queue
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
@@ -412,7 +412,7 @@ TEST_F(TF5UeTest, BufferSib1_NullInputs_ReturnsError) {
     ASSERT_EQ(0, initUeDefault());
 
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
+
 
     int ret = tf5_ue_buffer_msg(nullptr, (const uint8_t*)"test", 4, 5, tag);
     EXPECT_LT(ret, 0) << "Null state should return error";

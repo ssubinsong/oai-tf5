@@ -35,7 +35,7 @@ protected:
         ext.i = tf5_test::TV_EXT_INTERVAL;
         memcpy(ext.key_disclosure, tf5_test::TV_EXT_DISCLOSED_KEY, TF5_TESLA_KEY_LEN);
         ext.validity_end = tf5_test::TV_EXT_VALIDITY_END;
-        ext.timestamp_s = tf5_test::TV_EXT_TIMESTAMP_MS;
+        ext.timestamp_s = tf5_test::TV_EXT_TIMESTAMP_S;
         memcpy(ext.signature, tf5_test::TV_EXT_SIGNATURE, TF5_IBS_SIG_LEN);
         memcpy(ext.tesla_tag, tf5_test::TV_EXT_TAG, TF5_TESLA_TAG_LEN);
     }
@@ -132,7 +132,7 @@ TEST_F(TF5SerialTest, PackExtension_TimestampAtOffset35) {
     // timestamp_s is 3 bytes at offset 35
     uint32_t timestamp = tf5_decode_u24_be(&packed_buf[35]);
 
-    EXPECT_EQ(tf5_test::TV_EXT_TIMESTAMP_MS, timestamp)
+    EXPECT_EQ(tf5_test::TV_EXT_TIMESTAMP_S, timestamp)
         << "timestamp_s should be at offset 35-37";
 }
 
