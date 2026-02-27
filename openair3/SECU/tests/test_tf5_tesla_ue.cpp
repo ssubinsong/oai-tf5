@@ -456,17 +456,17 @@ TEST_F(TF5UeTest, VerifyKeyChain_InvalidChain_ReturnsFalse) {
     EXPECT_FALSE(valid) << "Fake key should not chain to anchor";
 }
 
-TEST_F(TF5UeTest, VerifyKeyChain_MultiStep_Rejected) {
+TEST_F(TF5UeTest, VerifyKeyChain_MultiStep_Accepted) {
     ASSERT_EQ(0, initUeDefault());
     ASSERT_EQ(0, initGnbDefault(10));
 
     // Set up UE with K_0 as trust anchor
     setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
 
-    // Multi-step (gap > 1) should be rejected
+    // Multi-step (gap > 1) should succeed via chain recovery
     bool valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(5)], 5);
 
-    EXPECT_FALSE(valid) << "Multi-step key recovery (gap=5) should be rejected";
+    EXPECT_TRUE(valid) << "Multi-step key recovery (gap=5) should succeed";
 }
 
 TEST_F(TF5UeTest, VerifyKeyChain_BootstrapAnchor) {
