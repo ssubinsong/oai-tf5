@@ -4520,9 +4520,9 @@ void nr_mac_update_tf5_sib(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
                                                     sizeof(cc->other_sib_bcch_pdu[0]));
   AssertFatal(cc->other_sib_bcch_length[0] > 0, "TF5: Failed to encode SIB9 SI message\n");
 
-  // Clean up: only free the list member wrapper, not the SIB9 content (stack-allocated)
-  member->choice.sib9 = NULL;  // prevent ASN_STRUCT_FREE from touching stack sib9
-  ASN_STRUCT_FREE(asn_DEF_NR_SystemInformation_IEs, &sysInfo);
+  // Clean up: free internal allocations only (sysInfo is stack-allocated)
+  member->choice.sib9 = NULL;  // prevent freeing stack sib9
+  ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NR_SystemInformation_IEs, &sysInfo);
 
   state->sib9_pdu_cached = true;
   LOG_I(TF5, "SIB9 signed and cached for frame %d slot %d (ext_len=%d, si_len=%d)\n",

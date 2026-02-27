@@ -146,7 +146,7 @@ protected:
         writeTestKeyFile(mpk_path, ibs_mpk, TF5_IBS_MASTER_PUBLIC_LEN, 0644);
 
         // 4. Compute gNB secret key
-        int rc = tf5_ibs_compute_gnb_secret(ibs_msk, cell_id, validity_end, ibs_mpk, ibs_sk);
+        int rc = tf5_ibs_compute_gnb_secret(ibs_msk, cell_id, validity_end, ibs_sk);
         ASSERT_EQ(0, rc) << "Failed to compute gNB secret key";
 
         // 5. Write gNB SK file: sk_id[64] + validity_be[3]

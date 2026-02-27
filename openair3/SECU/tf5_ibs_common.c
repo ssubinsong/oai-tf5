@@ -78,72 +78,6 @@ int tf5_ibs_hash_identity(const uint8_t *cell_id,
  *   byte[3] = bits 11-4
  *   byte[4] = bits 3-0 in upper nibble, lower nibble = 0 (padding)
  */
-int tf5_ibs_parse_cell_id_hex(const char *hex_str,
-                               uint8_t cell_id[TF5_IBS_CELL_ID_LEN])
-{
-    if (!hex_str || !cell_id) {
-        return TF5_ERR_INVALID_PARAM;
-    }
-
-    size_t len = strlen(hex_str);
-    if (len != 9) {
-        /* Expect exactly 9 hex chars for 36 bits */
-        return TF5_ERR_INVALID_PARAM;
-    }
-
-    /* Validate all characters are hex */
-    for (size_t i = 0; i < len; i++) {
-        if (!isxdigit((unsigned char)hex_str[i])) {
-            return TF5_ERR_INVALID_PARAM;
-        }
-    }
-
-    /* Parse as 64-bit value (only lower 36 bits used) */
-    uint64_t value = 0;
-    for (size_t i = 0; i < len; i++) {
-        char c = hex_str[i];
-        uint8_t nibble;
-        if (c >= '0' && c <= '9') {
-            nibble = c - '0';
-        } else if (c >= 'a' && c <= 'f') {
-            nibble = 10 + (c - 'a');
-        } else { /* c >= 'A' && c <= 'F' */
-            nibble = 10 + (c - 'A');
-        }
-        value = (value << 4) | nibble;
-    }
-
-    /* Pack into 5 bytes (36 bits + 4 padding bits) */
-    cell_id[0] = (value >> 28) & 0xFF;
-    cell_id[1] = (value >> 20) & 0xFF;
-    cell_id[2] = (value >> 12) & 0xFF;
-    cell_id[3] = (value >> 4) & 0xFF;
-    cell_id[4] = (value << 4) & 0xF0;  /* 4 padding bits in lower nibble */
-
-    return TF5_OK;
-}
-
-/*
- * Format Cell ID as hex string
- */
-int tf5_ibs_format_cell_id_hex(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                                char hex_str[10])
-{
-    if (!cell_id || !hex_str) {
-        return TF5_ERR_INVALID_PARAM;
-    }
-
-    /* Reconstruct 36-bit value from 5 bytes */
-    uint64_t value = ((uint64_t)cell_id[0] << 28) |
-                     ((uint64_t)cell_id[1] << 20) |
-                     ((uint64_t)cell_id[2] << 12) |
-                     ((uint64_t)cell_id[3] << 4) |
-                     ((uint64_t)cell_id[4] >> 4);
-
-    snprintf(hex_str, 10, "%09llx", (unsigned long long)value);
-    return TF5_OK;
-}
-
 /*
  * Load master secret key from file
  */
@@ -186,10 +120,9 @@ int tf5_ibs_load_master_secret(const char *filepath,
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                 uint32_t gnb_key_validity_end,
-                                const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN],
                                 uint8_t sk_out[TF5_IBS_GNB_SK_LEN])
 {
-    if (!msk || !cell_id || !mpk || !sk_out) {
+    if (!msk || !cell_id || !sk_out) {
         return TF5_ERR_INVALID_PARAM;
     }
 

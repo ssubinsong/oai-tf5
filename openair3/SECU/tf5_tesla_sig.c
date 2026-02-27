@@ -298,12 +298,13 @@ int tf5_ibs_verify(const uint8_t mpk[TF5_IBS_GNB_PK_LEN],
     ge25519_p3 Q_part_p3;
     scalarmult_precomp_vartime(&Q_part_p3, cid, s_mpk_cache.table);
 
-    /* pk_p3 = decompress(pk) */
-    ge25519_p3 pk_p3;
-    if (ge25519_frombytes(&pk_p3, pk) != 0) {
-        LOG_W(TF5, "Failed to decompress pk from signature\n");
+    /* pk must be a valid prime-order point (reject small-subgroup attacks) */
+    if (!crypto_core_ed25519_is_valid_point(pk)) {
+        LOG_W(TF5, "Invalid pk in signature (not a valid Ed25519 point)\n");
         return TF5_ERR_KEY_INVALID;
     }
+    ge25519_p3 pk_p3;
+    ge25519_frombytes(&pk_p3, pk);  /* safe: is_valid_point already checked */
 
     /* Q = Q_part + pk */
     ge25519_cached pk_cached;

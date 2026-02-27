@@ -66,7 +66,7 @@ protected:
         sodium_memzero(sk_tmp, sizeof(sk_tmp));
 
         // Compute gNB secret key
-        tf5_ibs_compute_gnb_secret(msk, cell_id, tf5_test::TV_IBS_VALIDITY_END, gnb_mpk, gnb_private_key);
+        tf5_ibs_compute_gnb_secret(msk, cell_id, tf5_test::TV_IBS_VALIDITY_END, gnb_private_key);
 
         // Set T_0
         t0 = tf5_slot_time_make(0, 0);

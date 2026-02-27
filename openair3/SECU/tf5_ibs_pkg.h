@@ -57,32 +57,6 @@ int tf5_ibs_hash_identity(const uint8_t *cell_id,
                            const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN],
                            uint8_t scalar_out[TF5_ED25519_SCALAR_LEN]);
 
-/**
- * Parse Cell ID from hex string
- *
- * Converts a hex string (e.g., "123456789") to 5-byte Cell ID format.
- * The input should be 9 hex characters representing 36 bits.
- * The output is 5 bytes with 4 padding bits (MSB of last byte).
- *
- * @param hex_str    Hex string (9 characters for 36 bits)
- * @param cell_id    Output buffer (5 bytes)
- * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM
- */
-int tf5_ibs_parse_cell_id_hex(const char *hex_str,
-                               uint8_t cell_id[TF5_IBS_CELL_ID_LEN]);
-
-/**
- * Format Cell ID as hex string
- *
- * Converts 5-byte Cell ID to hex string format.
- *
- * @param cell_id    Cell ID (5 bytes)
- * @param hex_str    Output buffer (must be at least 10 bytes for 9 chars + null)
- * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM
- */
-int tf5_ibs_format_cell_id_hex(const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
-                                char hex_str[10]);
-
 /*
  * =============================================================================
  * Low-level Functions (for integration with OAI)
@@ -110,14 +84,12 @@ int tf5_ibs_load_master_secret(const char *filepath,
  * @param msk          Master secret key (32-byte Ed25519 seed)
  * @param cell_id      NR Cell ID (5 bytes)
  * @param gnb_key_validity_end Key expiration (minutes since 2024-01-01 00:00:00 UTC)
- * @param mpk          Master public key (32 bytes, Ed25519 point)
  * @param sk_out       Output gNB secret key (64 bytes: y[32] + pk[32])
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_KEY_INVALID, TF5_ERR_CRYPTO
  */
 int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
                                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
                                 uint32_t gnb_key_validity_end,
-                                const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN],
                                 uint8_t sk_out[TF5_IBS_GNB_SK_LEN]);
 
 /*

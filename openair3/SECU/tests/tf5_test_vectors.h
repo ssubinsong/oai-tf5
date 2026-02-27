@@ -136,24 +136,6 @@ static const uint16_t TV_SLOTS_PER_FRAME = 20;
 static const uint16_t TV_T0_SFN = 0;
 static const uint16_t TV_T0_SLOT = 0;
 
-/* ==========================================================================
- * Utility Functions
- * ========================================================================== */
-
-// Helper to print hex bytes for debugging
-inline void print_hex(const char* label, const uint8_t* data, size_t len) {
-    printf("%s: ", label);
-    for (size_t i = 0; i < len; i++) {
-        printf("%02x", data[i]);
-    }
-    printf("\n");
-}
-
-// Helper to compare byte arrays
-inline bool bytes_equal(const uint8_t* a, const uint8_t* b, size_t len) {
-    return memcmp(a, b, len) == 0;
-}
-
 }  // namespace tf5_test
 
 #endif /* TF5_TEST_VECTORS_H */
