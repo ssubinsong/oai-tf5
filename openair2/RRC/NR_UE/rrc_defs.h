@@ -164,6 +164,11 @@ typedef struct UE_RRC_SI_INFO_NR_s {
   int si_windowlength;
 #ifdef ENABLE_TF5
   tf5_ue_state_t *tf5_state;
+  uint8_t tf5_sib1_buf[512];       // SIB1 re-encoded for auth
+  size_t  tf5_sib1_len;
+  tf5_sib1_ext_t tf5_sib1_ext;     // Unpacked SIB1 TESLA data
+  bool    tf5_sib1_stored;          // SIB1 has been stored for auth
+  uint8_t tf5_cell_id[5];           // NR Cell ID extracted from SIB1 (36 bits)
 #endif
 } NR_UE_RRC_SI_INFO;
 

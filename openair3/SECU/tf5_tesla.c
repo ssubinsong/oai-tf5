@@ -166,13 +166,13 @@ int tf5_build_mac_auth_input(uint8_t *out,
                                    size_t *out_len,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
-                                   uint32_t gnb_key_validity_end)
+                                   uint8_t te_version)
 {
     if (!out || !out_len || !original_sib1) {
         return TF5_ERR_INVALID_PARAM;
     }
 
-    if (sib1_len + TF5_IBS_VALIDITY_PERIOD_LEN > TF5_MAX_AUTH_INPUT) {
+    if (sib1_len + 1 > TF5_MAX_AUTH_INPUT) {
         return TF5_ERR_BUFFER_OVERFLOW;
     }
 
@@ -182,9 +182,8 @@ int tf5_build_mac_auth_input(uint8_t *out,
     memcpy(out + offset, original_sib1, sib1_len);
     offset += sib1_len;
 
-    // 2. gNB key validity end
-    tf5_encode_gnb_key_validity_end(out + offset, gnb_key_validity_end);
-    offset += TF5_IBS_VALIDITY_PERIOD_LEN;
+    // 2. TF5 version (1 byte)
+    out[offset++] = te_version;
 
     *out_len = offset;
     return TF5_OK;
@@ -192,48 +191,32 @@ int tf5_build_mac_auth_input(uint8_t *out,
 
 int tf5_build_sig_auth_input(uint8_t *out,
                                    size_t *out_len,
-                                   const uint8_t *original_sib1,
-                                   size_t sib1_len,
                                    uint8_t te_version,
                                    const tf5_tesla_params_t *tesla_params,
-                                   uint32_t gnb_key_validity_end,
-                                   uint32_t interval_index,
-                                   const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
+                                   uint32_t validity_end,
                                    uint32_t timestamp_ms)
 {
-    if (!out || !out_len || !original_sib1 || !tesla_params || !key_disclosure) {
+    if (!out || !out_len || !tesla_params) {
         return TF5_ERR_INVALID_PARAM;
     }
 
-    if (sib1_len + TF5_SIG_AUTH_OVERHEAD > TF5_MAX_AUTH_INPUT) {
+    if (TF5_SIG_AUTH_OVERHEAD > TF5_MAX_AUTH_INPUT) {
         return TF5_ERR_BUFFER_OVERFLOW;
     }
 
-    // Build MAC auth input first (SIB1 + gnb_key_validity_end only)
-    size_t mac_len = 0;
-    int rc = tf5_build_mac_auth_input(out, &mac_len, original_sib1, sib1_len,
-                                            gnb_key_validity_end);
-    if (rc < 0) {
-        return rc;
-    }
+    size_t offset = 0;
 
-    size_t offset = mac_len;
-
-    // Append te_version (1 byte)
+    // 1. te_version (1 byte)
     out[offset++] = te_version;
 
-    // Append tesla_params (11 bytes)
+    // 2. tesla_params (11 bytes)
     offset += tf5_encode_tesla_params(out + offset, tesla_params);
 
-    // Append interval_index (4 bytes)
-    tf5_encode_u32_be(out + offset, interval_index);
-    offset += 4;
+    // 3. validity_end (3 bytes)
+    tf5_encode_gnb_key_validity_end(out + offset, validity_end);
+    offset += TF5_IBS_VALIDITY_PERIOD_LEN;
 
-    // Append key_disclosure (16 bytes)
-    memcpy(out + offset, key_disclosure, TF5_TESLA_KEY_LEN);
-    offset += TF5_TESLA_KEY_LEN;
-
-    // Append timestamp_ms (3 bytes) - for signature replay protection
+    // 4. timestamp_ms (3 bytes) - for signature replay protection
     tf5_encode_u24_be(out + offset, timestamp_ms);
     offset += 3;
 
@@ -333,6 +316,78 @@ int tf5_unpack_extension(const uint8_t *buf,
     // TESLA tag (16 bytes)
     memcpy(ext->tesla_tag, buf + offset, TF5_TESLA_TAG_LEN);
     offset += TF5_TESLA_TAG_LEN;
+
+    return TF5_OK;
+}
+
+/*
+ * =============================================================================
+ * SIB1/SIB9 Split Pack/Unpack Functions
+ * =============================================================================
+ */
+
+int tf5_pack_sib1_ext(const tf5_sib1_ext_t *ext, uint8_t *buf, size_t buf_len)
+{
+    if (!ext || !buf)
+        return TF5_ERR_INVALID_PARAM;
+    if (buf_len < TF5_SIB1_EXT_PACKED_SIZE)
+        return TF5_ERR_BUFFER_OVERFLOW;
+
+    size_t offset = 0;
+    buf[offset++] = ext->te_version;
+    tf5_encode_u32_be(buf + offset, ext->i); offset += 4;
+    memcpy(buf + offset, ext->key_disclosure, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
+    memcpy(buf + offset, ext->tesla_tag, TF5_TESLA_TAG_LEN); offset += TF5_TESLA_TAG_LEN;
+
+    return (int)offset;
+}
+
+int tf5_unpack_sib1_ext(const uint8_t *buf, size_t buf_len, tf5_sib1_ext_t *ext)
+{
+    if (!buf || !ext)
+        return TF5_ERR_INVALID_PARAM;
+    if (buf_len < TF5_SIB1_EXT_PACKED_SIZE)
+        return TF5_ERR_BUFFER_OVERFLOW;
+
+    size_t offset = 0;
+    ext->te_version = buf[offset++];
+    ext->i = tf5_decode_u32_be(buf + offset); offset += 4;
+    memcpy(ext->key_disclosure, buf + offset, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
+    memcpy(ext->tesla_tag, buf + offset, TF5_TESLA_TAG_LEN); offset += TF5_TESLA_TAG_LEN;
+
+    return TF5_OK;
+}
+
+int tf5_pack_sib9_ext(const tf5_sib9_ext_t *ext, uint8_t *buf, size_t buf_len)
+{
+    if (!ext || !buf)
+        return TF5_ERR_INVALID_PARAM;
+    if (buf_len < TF5_SIB9_EXT_PACKED_SIZE)
+        return TF5_ERR_BUFFER_OVERFLOW;
+
+    size_t offset = 0;
+    buf[offset++] = ext->te_version;
+    offset += tf5_encode_tesla_params(buf + offset, &ext->tesla_params);
+    tf5_encode_gnb_key_validity_end(buf + offset, ext->validity_end); offset += TF5_IBS_VALIDITY_PERIOD_LEN;
+    tf5_encode_u24_be(buf + offset, ext->timestamp_ms); offset += 3;
+    memcpy(buf + offset, ext->signature, TF5_IBS_SIG_LEN); offset += TF5_IBS_SIG_LEN;
+
+    return (int)offset;
+}
+
+int tf5_unpack_sib9_ext(const uint8_t *buf, size_t buf_len, tf5_sib9_ext_t *ext)
+{
+    if (!buf || !ext)
+        return TF5_ERR_INVALID_PARAM;
+    if (buf_len < TF5_SIB9_EXT_PACKED_SIZE)
+        return TF5_ERR_BUFFER_OVERFLOW;
+
+    size_t offset = 0;
+    ext->te_version = buf[offset++];
+    offset += tf5_decode_tesla_params(buf + offset, &ext->tesla_params);
+    ext->validity_end = tf5_decode_gnb_key_validity_end(buf + offset); offset += TF5_IBS_VALIDITY_PERIOD_LEN;
+    ext->timestamp_ms = tf5_decode_u24_be(buf + offset); offset += 3;
+    memcpy(ext->signature, buf + offset, TF5_IBS_SIG_LEN); offset += TF5_IBS_SIG_LEN;
 
     return TF5_OK;
 }
@@ -513,16 +568,13 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
     }
     ext->timestamp_ms = (uint32_t)wallclock_ms & TF5_RP_TIMESTAMP_MASK;
 
-    // Build signature auth input
+    // Build signature auth input (TESLA params only, no SIB1 content)
     uint8_t sig_auth_input[TF5_MAX_AUTH_INPUT];
     size_t sig_auth_input_len;
     int rc = tf5_build_sig_auth_input(sig_auth_input, &sig_auth_input_len,
-                                            original_sib1, sib1_len,
                                             ext->te_version,
                                             &ext->tesla_params,
                                             ext->validity_end,
-                                            ext->i,
-                                            ext->key_disclosure,
                                             ext->timestamp_ms);
     if (rc != 0) {
         LOG_E(TF5, "Failed to build signature auth input\n");
@@ -550,12 +602,12 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
         return TF5_ERR_SIGN;
     }
 
-    // Build MAC auth input (SIB1 + gnb_key_validity_end only)
+    // Build MAC auth input (SIB1 + version only)
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_input_len;
     rc = tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                         original_sib1, sib1_len,
-                                        ext->validity_end);
+                                        ext->te_version);
     if (rc != 0) {
         LOG_E(TF5, "Failed to build MAC auth input\n");
         return rc;

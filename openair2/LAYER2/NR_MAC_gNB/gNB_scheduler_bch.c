@@ -791,6 +791,13 @@ void schedule_nr_other_sib(module_id_t module_idP,
   if (!schedInfo)
     return;
 
+#ifdef ENABLE_TF5
+  // Update SIB9 with latest TESLA params + IBS signature before each SI transmission
+  if (cc->tf5_state && cc->tf5_state->initialized) {
+    nr_mac_update_tf5_sib(cc, frame, slot);
+  }
+#endif
+
   NR_ServingCellConfigCommon_t *scc = gNB_mac->common_channels[0].ServingCellConfigCommon;
   NR_PDCCH_ConfigCommon_t *pdcch_common = scc->downlinkConfigCommon->initialDownlinkBWP->pdcch_ConfigCommon->choice.setup;
   NR_SearchSpaceId_t *ss_id = pdcch_common->searchSpaceOtherSystemInformation;

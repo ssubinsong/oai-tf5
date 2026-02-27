@@ -338,37 +338,33 @@ TEST_F(TF5SerialTest, RoundTrip_U32) {
 // Auth Input Buffer Bounds Tests
 // ============================================================================
 
-TEST_F(TF5SerialTest, BuildSigAuthInput_ExceedsMaxAuthInput) {
-    // SIB1 larger than TF5_MAX_AUTH_INPUT - 38 bytes overhead should return -2
-    uint8_t out[TF5_MAX_AUTH_INPUT + 100];
+TEST_F(TF5SerialTest, BuildSigAuthInput_FixedSize) {
+    // sig_auth_input is now fixed 18 bytes (no SIB1), so overflow is impossible
+    uint8_t out[TF5_MAX_AUTH_INPUT];
     size_t out_len = 0;
-
-    // Create oversized SIB1 (TF5_MAX_AUTH_INPUT = 372, overhead = 38, so > 334 bytes fails)
-    uint8_t big_sib1[335];
-    memset(big_sib1, 0xAA, sizeof(big_sib1));
 
     tf5_tesla_params_t params = {};
     params.t_int_ms = 20;
     params.d = 1;
     params.chain_len = 100;
-    uint8_t key_disc[TF5_TESLA_KEY_LEN] = {};
 
-    int ret = tf5_build_sig_auth_input(out, &out_len, big_sib1, sizeof(big_sib1),
-                                       TF5_VERSION, &params, 525600, 42, key_disc, 0x123456);
+    int ret = tf5_build_sig_auth_input(out, &out_len,
+                                       TF5_VERSION, &params, 525600, 0x123456);
 
-    EXPECT_EQ(TF5_ERR_BUFFER_OVERFLOW, ret) << "SIB1 exceeding max auth input should return TF5_ERR_BUFFER_OVERFLOW";
+    EXPECT_EQ(0, ret);
+    EXPECT_EQ(18u, out_len) << "Sig auth input should be exactly 18 bytes";
 }
 
 TEST_F(TF5SerialTest, BuildMacAuthInput_ExceedsMaxAuthInput) {
-    // SIB1 larger than TF5_MAX_AUTH_INPUT - TF5_IBS_VALIDITY_PERIOD_LEN (3) should return TF5_ERR_BUFFER_OVERFLOW
+    // SIB1 larger than TF5_MAX_AUTH_INPUT - 1 (version byte) should return TF5_ERR_BUFFER_OVERFLOW
     uint8_t out[TF5_MAX_AUTH_INPUT + 100];
     size_t out_len = 0;
 
-    // TF5_MAX_AUTH_INPUT = 372, overhead = 3, so > 369 bytes fails
-    uint8_t big_sib1[370];
+    // TF5_MAX_AUTH_INPUT = 372, overhead = 1, so > 371 bytes fails
+    uint8_t big_sib1[372];
     memset(big_sib1, 0xBB, sizeof(big_sib1));
 
-    int ret = tf5_build_mac_auth_input(out, &out_len, big_sib1, sizeof(big_sib1), 525600);
+    int ret = tf5_build_mac_auth_input(out, &out_len, big_sib1, sizeof(big_sib1), TF5_VERSION);
 
     EXPECT_EQ(TF5_ERR_BUFFER_OVERFLOW, ret) << "SIB1 exceeding max auth input should return TF5_ERR_BUFFER_OVERFLOW";
 }

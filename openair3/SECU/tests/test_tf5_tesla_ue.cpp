@@ -847,7 +847,7 @@ TEST_F(TF5UeTest, AuthState_VerifyBufferedSuccess) {
     size_t mac_auth_input_len;
     tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                    (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
+                                   TF5_VERSION);
 
     tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag);
 

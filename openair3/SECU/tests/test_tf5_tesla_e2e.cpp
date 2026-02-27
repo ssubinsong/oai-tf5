@@ -172,7 +172,7 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     size_t mac_auth_input_len;
     tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                    (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
+                                   TF5_VERSION);
 
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
     ret = tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, rx_ext.i, rx_ext.tesla_tag);
@@ -215,10 +215,10 @@ TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
 
     tf5_build_mac_auth_input(mac_auth5, &mac_auth5_len,
                                    (const uint8_t*)sib1_5, strlen(sib1_5),
-                                   gnb_state.key_validity_end);
+                                   TF5_VERSION);
     tf5_build_mac_auth_input(mac_auth6, &mac_auth6_len,
                                    (const uint8_t*)sib1_6, strlen(sib1_6),
-                                   gnb_state.key_validity_end);
+                                   TF5_VERSION);
 
     tf5_ue_buffer_msg(&ue_state, mac_auth5, mac_auth5_len, ext5.i, ext5.tesla_tag);
     tf5_ue_buffer_msg(&ue_state, mac_auth6, mac_auth6_len, ext6.i, ext6.tesla_tag);
@@ -296,7 +296,7 @@ TEST_F(TF5E2ETest, E2E_TamperedTag_Rejected) {
     size_t mac_auth_len;
     tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
+                                   TF5_VERSION);
 
     // Tamper with the tag
     uint8_t tampered_tag[TF5_TESLA_TAG_LEN];
@@ -337,7 +337,7 @@ TEST_F(TF5E2ETest, E2E_TamperedSib1_Rejected) {
     size_t mac_auth_len;
     tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)tampered_sib1, strlen(tampered_sib1),
-                                   gnb_state.key_validity_end);
+                                   TF5_VERSION);
 
     // Buffer with original tag but tampered content
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
@@ -373,7 +373,7 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
     size_t mac_auth_len;
     tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
+                                   TF5_VERSION);
 
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
@@ -455,7 +455,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
     size_t mac_auth_len;
     tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
+                                   TF5_VERSION);
 
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
@@ -533,7 +533,7 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
     size_t mac_auth_len;
     tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                    (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
+                                   TF5_VERSION);
 
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);

@@ -1269,6 +1269,10 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   LOG_I(TF5, "Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, key_validity_end);
 
   LOG_I(TF5, "gNB initialization successful\n");
+
+  // Register SIB9 in SIB1's si-SchedulingInfo so UE knows to listen for it
+  update_SIB1_NR_SI(sib1, 1, (int[]){9});
+  LOG_I(TF5, "Registered SIB9 in schedulingInfoList for TESLA params + IBS signature\n");
 #endif
   cc->sib1_bcch_length = encode_SIB_NR(sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
   AssertFatal(cc->sib1_bcch_length > 0, "could not encode SIB1\n");

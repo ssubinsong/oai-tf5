@@ -31,6 +31,8 @@
 /* ── Buffer & Wire Format Sizes ────────────────────────── */
 #define TF5_MAX_AUTH_INPUT          372     // Max auth input buffer size
 #define TF5_EXTENSION_PACKED_SIZE   150     // Wire format size (tf5_extension_t)
+#define TF5_SIB1_EXT_PACKED_SIZE    37      // Wire format: version(1) + interval(4) + key(16) + tag(16)
+#define TF5_SIB9_EXT_PACKED_SIZE    114     // Wire format: version(1) + params(11) + validity(3) + timestamp(3) + sig(96)
 
 /* ── Default Configuration ─────────────────────────────── */
 #define TF5_TESLA_DEFAULT_D_BOUND_US       1005    // D bound (microseconds)
@@ -49,7 +51,7 @@
 
 /* ── Wire Format Sizes ────────────────────────────────── */
 #define TF5_TESLA_PARAMS_PACKED_SIZE  11    // t_int(2) + d(1) + t0(4) + chain_len(4)
-#define TF5_SIG_AUTH_OVERHEAD         (TF5_IBS_VALIDITY_PERIOD_LEN + 1 + TF5_TESLA_PARAMS_PACKED_SIZE + 4 + TF5_TESLA_KEY_LEN + 3)  // 38 bytes
+#define TF5_SIG_AUTH_OVERHEAD         (1 + TF5_TESLA_PARAMS_PACKED_SIZE + TF5_IBS_VALIDITY_PERIOD_LEN + 3)  // 18 bytes: version(1) + params(11) + validity(3) + timestamp(3)
 
 /**
  * Generic PHY Timing (SFN/slot)
@@ -117,6 +119,27 @@ typedef struct {
     uint8_t                    signature[TF5_IBS_SIG_LEN]; // 96B - GG09 Schnorr IBS signature (R[32] || sigma[32] || pk[32])
     uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
 } tf5_extension_t;
+
+/*
+ * SIB1 extension: per-interval data (MAC tag + key disclosure)
+ */
+typedef struct {
+    uint8_t  te_version;
+    uint32_t i;                                    // interval index
+    uint8_t  key_disclosure[TF5_TESLA_KEY_LEN];    // 16B
+    uint8_t  tesla_tag[TF5_TESLA_TAG_LEN];         // 16B
+} tf5_sib1_ext_t;
+
+/*
+ * SIB9 extension: TESLA params + IBS signature
+ */
+typedef struct {
+    uint8_t            te_version;
+    tf5_tesla_params_t tesla_params;                  // 11B
+    uint32_t           validity_end;                  // 3B wire
+    uint32_t           timestamp_ms;                  // 3B wire
+    uint8_t            signature[TF5_IBS_SIG_LEN];    // 96B
+} tf5_sib9_ext_t;
 
 /*
  * gNB-side TESLA State
@@ -222,52 +245,46 @@ void tf5_gnb_free(tf5_gnb_state_t *state);
 /**
  * Build MAC authentication input buffer
  *
- * Constructs the data to be MAC'd (per RFC 4082):
- * original_SIB1 || gnb_key_validity_end
+ * Constructs the data to be MAC'd:
+ * original_SIB1 || te_version
  *
- * Note: interval_index and key_disclosure are NOT included in MAC input.
- * Note: tesla_params excluded - authenticated by signature.
+ * SIB1 content is the sole TESLA MAC authentication target.
+ * TESLA params are authenticated separately by IBS signature in SIB9.
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
  * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
  * @param sib1_len      Length of original SIB1 data
- * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
+ * @param te_version    TESLA protocol version
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_build_mac_auth_input(uint8_t *out,
                                    size_t *out_len,
                                    const uint8_t *original_sib1,
                                    size_t sib1_len,
-                                   uint32_t gnb_key_validity_end);
+                                   uint8_t te_version);
 
 /**
  * Build signature authentication input buffer
  *
- * Constructs the data to be signed:
- * original_SIB1 || tesla_params || gnb_key_validity_end || interval_index || key_disclosure || timestamp_ms
+ * Constructs the data to be signed (SIB9 data only, no SIB1 content):
+ * te_version || tesla_params || validity_end || timestamp_ms
+ *
+ * IBS authenticates TESLA params only. SIB1 content is authenticated by TESLA MAC.
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
- * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
- * @param sib1_len      Length of original SIB1 data
- * @param te_version   TESLA protocol version
- * @param tesla_params TESLA parameters (includes T_0)
- * @param gnb_key_validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
- * @param interval_index Current interval index
- * @param disclosed_key Disclosed key K_{i-d}
+ * @param te_version    TESLA protocol version
+ * @param tesla_params  TESLA parameters (includes T_0)
+ * @param validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @param timestamp_ms  Wall-clock timestamp LSB (ms since Unix epoch) for replay protection (24-bit)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_build_sig_auth_input(uint8_t *out,
                                    size_t *out_len,
-                                   const uint8_t *original_sib1,
-                                   size_t sib1_len,
                                    uint8_t te_version,
                                    const tf5_tesla_params_t *tesla_params,
-                                   uint32_t gnb_key_validity_end,
-                                   uint32_t interval_index,
-                                   const uint8_t disclosed_key[TF5_TESLA_KEY_LEN],
+                                   uint32_t validity_end,
                                    uint32_t timestamp_ms);
 
 /**
@@ -302,6 +319,46 @@ int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
 int tf5_pack_extension(const tf5_extension_t *ext,
                              uint8_t *buf,
                              size_t buf_len);
+
+/**
+ * Pack SIB1 extension (per-interval data) into binary format
+ *
+ * @param ext       SIB1 extension structure
+ * @param buf       Output buffer
+ * @param buf_len   Size of output buffer
+ * @return Number of bytes written on success, or negative error code
+ */
+int tf5_pack_sib1_ext(const tf5_sib1_ext_t *ext, uint8_t *buf, size_t buf_len);
+
+/**
+ * Unpack SIB1 extension from binary format
+ *
+ * @param buf       Input buffer
+ * @param buf_len   Length of input buffer
+ * @param ext       Output: unpacked SIB1 extension
+ * @return TF5_OK on success, or negative error code
+ */
+int tf5_unpack_sib1_ext(const uint8_t *buf, size_t buf_len, tf5_sib1_ext_t *ext);
+
+/**
+ * Pack SIB9 extension (TESLA params + IBS signature) into binary format
+ *
+ * @param ext       SIB9 extension structure
+ * @param buf       Output buffer
+ * @param buf_len   Size of output buffer
+ * @return Number of bytes written on success, or negative error code
+ */
+int tf5_pack_sib9_ext(const tf5_sib9_ext_t *ext, uint8_t *buf, size_t buf_len);
+
+/**
+ * Unpack SIB9 extension from binary format
+ *
+ * @param buf       Input buffer
+ * @param buf_len   Length of input buffer
+ * @param ext       Output: unpacked SIB9 extension
+ * @return TF5_OK on success, or negative error code
+ */
+int tf5_unpack_sib9_ext(const uint8_t *buf, size_t buf_len, tf5_sib9_ext_t *ext);
 
 /*
  * =============================================================================
