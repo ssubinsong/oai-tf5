@@ -115,12 +115,14 @@ This maintains the security property from RFC 4082 Section 3.3: "One authenticat
 
 TF5 implements **two authentication mechanisms**:
 
-### 1. GG09 Schnorr IBS Signature (Immediate)
+### 1. GG09 Schnorr IBS Signature (Immediate) — First-time UE
 - gNB signs the authentication input with its IBS secret key (sk_ID)
 - UE verifies immediately using the pre-provisioned Core Master Public Key (MPK)
-- Provides strong authentication without waiting
+- Establishes trust anchor for subsequent TESLA MAC verification
+- Upon successful verification, RACH proceeds immediately
 
-### 2. TESLA MAC (Delayed)
+### 2. TESLA MAC (Delayed) — Returning UE
 - gNB computes HMAC using the current interval's key
-- UE buffers the message and verifies when key is disclosed
-- Provides authentication even without pre-provisioned keys
+- UE buffers the message and verifies when key is disclosed in the next interval
+- **RACH is blocked until verification completes**: the UE does not initiate random access until the TESLA MAC is successfully verified, ensuring SIB1 authenticity before any NAS messages (containing SUCI) are sent
+- Provides lightweight re-authentication without expensive IBS signature verification

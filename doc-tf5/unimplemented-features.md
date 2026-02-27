@@ -114,13 +114,11 @@ TESLA uses a finite key chain of length N. When the chain is exhausted, the gNB 
 
 ---
 
-## TESLA key recovery
+## ~~TESLA key recovery~~
 
-**Status:** By design (removed for delay measurement simplification)
+**Status:** Implemented (commit `609bcc687e`)
 
-Multi-step TESLA key chain recovery (RFC 4082 §3: "if intermediate values
-of the one-way chain are lost, they can be recomputed using subsequent values
-in the chain") is not implemented. If the UE misses a key disclosure interval,
-the buffered SIB1 from that interval cannot be verified. Only consecutive
-(1-step) key chain verification is supported.
+Multi-step TESLA key chain recovery (RFC 4082 §3) is now supported. If the UE
+misses a key disclosure interval, it can recover by verifying the chain from the
+latest disclosed key back to the trust anchor in multiple hash steps.
 
