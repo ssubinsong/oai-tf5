@@ -26,9 +26,9 @@ Time is divided into discrete intervals:
 
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
-| T_int | 20 ms | Interval duration (fixed) |
+| T_int | 160 ms | Interval duration (fixed) |
 | chain_len | 65536 | Number of intervals (configurable) |
-| Duration | Depends on T_int (e.g., ~21.8 min for T_int=20ms) | Total key chain lifetime |
+| Duration | Depends on T_int (e.g., ~174.8 min for T_int=160ms) | Total key chain lifetime |
 
 **Interval Index Calculation**:
 
@@ -38,11 +38,11 @@ i = floor((current_time - T_0) / T_int)
 
 Where `T_0` is the start time of interval 0, aligned with the first SIB1 transmission occasion.
 
-### T_int Alignment with SIB1 Repetition Period
+### T_int Alignment with SIB1 Broadcast Period
 
-Per **3GPP TS 38.331 Section 5.2.1.2**, the TESLA interval duration (T_int) is aligned with the SIB1 repetition transmission period.
+Per **3GPP TS 38.331 Section 5.2.1.2**, the TESLA interval duration (T_int) is aligned with the SIB1 broadcast period.
 
-**Current implementation**: T_int is fixed at **20 ms**, assuming CORESET mux pattern 1. The gNB will abort if a different pattern is detected.
+**Current implementation**: T_int is fixed at **160 ms**, matching the SIB1 broadcast period (8 repetitions at 20ms SSB periodicity, CORESET mux pattern 1). The gNB will abort if a different pattern is detected.
 
 ### T_0 Alignment with First SIB1 Transmission
 
@@ -51,7 +51,7 @@ T_0 is set to the first SIB1 transmission occasion (SSB index 0):
 
 ### Chain Length
 
-The default chain length is 65536 intervals. With T_int = 20 ms, this gives a key chain lifetime of ~21.8 minutes.
+The default chain length is 65536 intervals. With T_int = 160 ms, this gives a key chain lifetime of ~174.8 minutes (~2.9 hours).
 
 The chain length can be configured by the user if a different lifetime is needed.
 
@@ -79,7 +79,7 @@ RFC 4082 Section 3.6 states that d=1 "does not work" for packets sent near inter
 
 1. **Deterministic broadcast scheduling**: SIB1 is transmitted at the **beginning** of each TESLA interval (aligned with SSB/SIB1 timing per 3GPP TS 38.331)
 
-2. **Full propagation margin**: Packets have the entire interval duration (~20ms) to reach receivers before key disclosure in the next interval
+2. **Full propagation margin**: Packets have the entire interval duration (~160ms) to reach receivers before key disclosure in the next interval
 
 3. **No boundary timing issue**: Unlike generic TESLA deployments where packets may be sent at arbitrary times within an interval, 5G broadcast scheduling ensures packets never approach interval boundaries
 

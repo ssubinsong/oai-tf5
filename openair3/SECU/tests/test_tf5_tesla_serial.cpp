@@ -344,7 +344,7 @@ TEST_F(TF5SerialTest, BuildSigAuthInput_FixedSize) {
     size_t out_len = 0;
 
     tf5_tesla_params_t params = {};
-    params.t_int_ms = 20;
+    params.t_int_ms = 160;
     params.d = 1;
     params.chain_len = 100;
 

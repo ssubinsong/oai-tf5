@@ -147,8 +147,8 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
     tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
-    // gNB: Prepare extension at interval 5 (SFN=10, slot=0 = 200 slots = 5 intervals)
-    int ret = gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    // gNB: Prepare extension at interval 5 (SFN=80, slot=0 = 1600 slots = 5 intervals)
+    int ret = gnbPrepareAndPack(80, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
     ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, ret);
 
     // UE: Receive and unpack
@@ -174,7 +174,7 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
                                    (const uint8_t*)sib1, strlen(sib1),
                                    TF5_VERSION);
 
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
     ret = tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, rx_ext.i, rx_ext.tesla_tag);
     ASSERT_EQ(0, ret);
 
@@ -203,8 +203,8 @@ TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
     tf5_extension_t ext5, ext6;
     uint8_t packed5[TF5_EXTENSION_PACKED_SIZE], packed6[TF5_EXTENSION_PACKED_SIZE];
 
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5, packed5, sizeof(packed5));
-    gnbPrepareAndPack(12, 0, (const uint8_t*)sib1_6, strlen(sib1_6), &ext6, packed6, sizeof(packed6));
+    gnbPrepareAndPack(80, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5, packed5, sizeof(packed5));
+    gnbPrepareAndPack(96, 0, (const uint8_t*)sib1_6, strlen(sib1_6), &ext6, packed6, sizeof(packed6));
 
     // UE: Setup
     bootstrapUe(&ext5);
@@ -266,7 +266,7 @@ TEST_F(TF5E2ETest, E2E_BootstrapThenNormal) {
     tf5_extension_t ext5;
     uint8_t packed5[TF5_EXTENSION_PACKED_SIZE];
 
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5, packed5, sizeof(packed5));
+    gnbPrepareAndPack(80, 0, (const uint8_t*)sib1_5, strlen(sib1_5), &ext5, packed5, sizeof(packed5));
 
     EXPECT_EQ(5u, ext5.i) << "Should be at interval 5";
     EXPECT_EQ(0, memcmp(ext5.key_disclosure, gnb_state.key_chain[tf5_key_interval_to_index(4)], TF5_TESLA_KEY_LEN))
@@ -286,7 +286,7 @@ TEST_F(TF5E2ETest, E2E_TamperedTag_Rejected) {
     tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    gnbPrepareAndPack(80, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
 
     // UE: Setup
     bootstrapUe(&ext);
@@ -304,7 +304,7 @@ TEST_F(TF5E2ETest, E2E_TamperedTag_Rejected) {
     tampered_tag[0] ^= 0xFF;  // Flip bits
 
     // Buffer with tampered tag
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag);
 
     // Try to verify - first verify key chain
@@ -326,7 +326,7 @@ TEST_F(TF5E2ETest, E2E_TamperedSib1_Rejected) {
     tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    gnbPrepareAndPack(80, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
 
     // UE: Setup
     bootstrapUe(&ext);
@@ -340,7 +340,7 @@ TEST_F(TF5E2ETest, E2E_TamperedSib1_Rejected) {
                                    TF5_VERSION);
 
     // Buffer with original tag but tampered content
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // Try to verify - should fail because MAC auth input doesn't match tag
@@ -363,7 +363,7 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
     tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    gnbPrepareAndPack(80, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
 
     // UE: Setup
     bootstrapUe(&ext);
@@ -375,7 +375,7 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
                                    (const uint8_t*)sib1, strlen(sib1),
                                    TF5_VERSION);
 
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // Try to verify with WRONG key
@@ -398,7 +398,7 @@ TEST_F(TF5E2ETest, E2E_PackUnpack_PreservesAllFields) {
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
     // gNB prepares extension
-    tf5_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1, strlen(sib1), &original);
+    tf5_gnb_prepare_extension(&gnb_state, 80, 0, (const uint8_t*)sib1, strlen(sib1), &original);
 
     // Pack
     int pack_ret = tf5_pack_extension(&original, packed, sizeof(packed));
@@ -441,7 +441,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
     tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    gnbPrepareAndPack(80, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
 
     // Verify the validity_end is in the future
     uint64_t validity_unix = tf5_gnb_key_validity_to_unix(ext.validity_end);
@@ -457,7 +457,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
                                    (const uint8_t*)sib1, strlen(sib1),
                                    TF5_VERSION);
 
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // First verify key chain
@@ -482,7 +482,7 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ApplicationLevelExpirationCheck) {
     tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    gnbPrepareAndPack(80, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
 
     // Simulate application-level expiration check
     uint64_t validity_unix = tf5_gnb_key_validity_to_unix(ext.validity_end);
@@ -525,7 +525,7 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
     tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
+    gnbPrepareAndPack(80, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
     bootstrapUe(&ext);
 
     // Buffer SIB1
@@ -535,7 +535,7 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
                                    (const uint8_t*)sib1, strlen(sib1),
                                    TF5_VERSION);
 
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
+    tf5_slot_time_t rx_time = tf5_slot_time_make(80, 0);
     tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // First verify key chain
@@ -561,7 +561,7 @@ TEST_F(TF5E2ETest, E2E_TimestampReplay_ValidTimestampAccepted) {
     tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
-    int ret = gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1),
+    int ret = gnbPrepareAndPack(80, 0, (const uint8_t*)sib1, strlen(sib1),
                                 &ext, packed, sizeof(packed));
     ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, ret);
     ASSERT_NE(0u, ext.timestamp_ms) << "Extension should have a non-zero timestamp";
@@ -586,7 +586,7 @@ TEST_F(TF5E2ETest, E2E_TimestampReplay_StaleTimestampRejected) {
     tf5_extension_t ext;
     uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
 
-    int ret = gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1),
+    int ret = gnbPrepareAndPack(80, 0, (const uint8_t*)sib1, strlen(sib1),
                                 &ext, packed, sizeof(packed));
     ASSERT_EQ(TF5_EXTENSION_PACKED_SIZE, ret);
 

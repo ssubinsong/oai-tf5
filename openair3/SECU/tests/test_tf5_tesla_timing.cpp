@@ -21,7 +21,7 @@ class TF5TimingTest : public ::testing::Test {
 protected:
     // Standard NR FR1 numerology 1: 2 slots per subframe = 20 slots per frame
     static constexpr uint16_t SLOTS_PER_FRAME = 20;
-    static constexpr uint16_t T_INT_MS = 20;  // 20ms interval
+    static constexpr uint16_t T_INT_MS = 160;  // 160ms interval (= SIB1 broadcast period)
 
     void SetUp() override {
         // No setup needed

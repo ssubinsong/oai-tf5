@@ -109,7 +109,7 @@ TESLA uses a finite key chain of length N. When the chain is exhausted, the gNB 
 
 **Rationale for Deferral**:
 - Requires neighbor broadcast infrastructure for optimal benefit
-- Current chain length (65536 intervals = ~21.8 minutes) is sufficient for evaluation
+- Current chain length (65536 intervals = ~174.8 minutes) is sufficient for evaluation
 - Lower priority than core authentication
 
 ---

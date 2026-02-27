@@ -425,7 +425,7 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_Success) {
     uint8_t out[TF5_MAX_AUTH_INPUT];
     size_t out_len;
     tf5_tesla_params_t params = {
-        .t_int_ms = 20,
+        .t_int_ms = 160,
         .d = 1,
         .t0 = {.sfn = 100, .slot = 0},
         .chain_len = 65536
@@ -443,7 +443,7 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_Layout) {
     uint8_t out[TF5_MAX_AUTH_INPUT];
     size_t out_len;
     tf5_tesla_params_t params = {
-        .t_int_ms = 20,
+        .t_int_ms = 160,
         .d = 1,
         .t0 = {.sfn = 100, .slot = 5},
         .chain_len = 1000
@@ -495,7 +495,7 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_FixedSize) {
     uint8_t out[TF5_MAX_AUTH_INPUT];
     size_t out_len;
     tf5_tesla_params_t params = {
-        .t_int_ms = 20,
+        .t_int_ms = 160,
         .d = 1,
         .t0 = {.sfn = 0, .slot = 0},
         .chain_len = 1000

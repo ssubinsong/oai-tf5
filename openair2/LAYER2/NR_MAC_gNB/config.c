@@ -1114,10 +1114,10 @@ void prepare_du_configuration_update(gNB_MAC_INST *mac,
 /**
  * Compute TESLA T_0 reference point from SIB1 occasion pattern
  *
- * T_0 is NOT the actual first SIB1 frame, but a reference point that aligns
- * with the SIB1 transmission pattern. With sfn_c determining frame parity
- * (0=even, 1=odd) and n_0 as the slot, every SIB1 transmission falls exactly
- * on a TESLA interval boundary (since SIB1 period = TESLA interval = 20ms).
+ * T_0 is the reference point for TESLA interval 0, aligned with the start of
+ * the first SIB1 broadcast period. With T_int=160ms (= SIB1 broadcast period),
+ * each TESLA interval spans 8 SIB1 repetitions (at 20ms SSB periodicity).
+ * sfn_c determines frame parity (0=even, 1=odd), n_0 is the slot.
  *
  * Example: If sfn_c=0 and n_0=0, T_0=(0,0). A gNB starting at frame 67 will
  * transmit first SIB1 at frame 68, which is interval 34 - not interval 0.
@@ -1167,7 +1167,7 @@ static void tf5_compute_t0_reference(gNB_MAC_INST *nrmac, uint16_t *out_sfn, uin
               type0_PDCCH_CSS_config.type0_pdcch_ss_mux_pattern);
 
   // T_0 reference point: sfn_c sets frame parity alignment, n_0 sets slot
-  // This ensures every SIB1 TX (on frames matching parity) aligns with interval start
+  // T_0 = start of first broadcast period; interval boundaries align with broadcast period starts
   *out_sfn = type0_PDCCH_CSS_config.sfn_c;  // 0 or 1 (even or odd frame parity)
   *out_slot = type0_PDCCH_CSS_config.n_0;
 }
@@ -1232,25 +1232,25 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   LOG_I(TF5, "Loaded sk_ID from: %s\n", tf5_privkey_file);
   LOG_I(TF5, "Cell ID: 0x%09llx (36 bits)\n", (unsigned long long)cellID);
 
-  // T_int = 20ms (CORESET pattern 1, per 3GPP TS 38.331)
-  uint16_t t_int_ms = 20;
+  // T_int = SIB1 broadcast period (8 repetitions per interval at 20ms SSB periodicity)
+  uint16_t t_int_ms = 160;
 
   // Compute T_0 reference point (aligns with SIB1 occasion pattern)
   uint16_t t0_sfn = 0, t0_slot = 0;
   tf5_compute_t0_reference(nrmac, &t0_sfn, &t0_slot);
 
   // Use configurable chain length (set via --tf5-chain-len command-line parameter)
-  // Default: 65536 keys (~21.8 min with T_int=20ms)
+  // Default: 65536 keys (~174.8 min with T_int=160ms)
   uint32_t chain_len = (uint32_t)tf5_tesla_chain_len;
 
-  LOG_I(TF5, "T_int=%u ms (aligned with SIB1 repetition period)\n", t_int_ms);
+  LOG_I(TF5, "T_int=%u ms (aligned with SIB1 broadcast period)\n", t_int_ms);
   LOG_I(TF5, "T_0=(SFN=%u, slot=%u) (reference point, aligns with SIB1 pattern)\n", t0_sfn, t0_slot);
   LOG_I(TF5, "chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
 
   // Initialize TESLA with computed parameters
   tf5_slot_time_t t0 = tf5_slot_time_make(t0_sfn, t0_slot);
   rc = tf5_gnb_init(cc->tf5_state,
-                          t_int_ms,    // T_int (aligned with SIB1 repetition)
+                          t_int_ms,    // T_int (aligned with SIB1 broadcast period)
                           1,           // d = 1 (disclosure delay)
                           chain_len,   // Chain length
                           private_key,

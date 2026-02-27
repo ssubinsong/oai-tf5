@@ -216,7 +216,7 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectInterval) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 32, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_EQ(2u, ext.i) << "Interval index should match calculation";
 }
@@ -227,7 +227,7 @@ TEST_F(TF5GnbTest, PrepareExtension_CorrectKeyDisclosure_NormalInterval) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    tf5_gnb_prepare_extension(&gnb_state, 10, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 80, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_EQ(0, memcmp(ext.key_disclosure, gnb_state.key_chain[tf5_key_interval_to_index(4)], TF5_TESLA_KEY_LEN))
         << "At interval 5 with d=1, should disclose K_4";
@@ -251,7 +251,7 @@ TEST_F(TF5GnbTest, PrepareExtension_TagComputed) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 32, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_FALSE(is_all_zeros(ext.tesla_tag, TF5_TESLA_TAG_LEN))
         << "TESLA tag should be computed (not all zeros)";
@@ -263,7 +263,7 @@ TEST_F(TF5GnbTest, PrepareExtension_SignatureComputed) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 32, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_FALSE(is_all_zeros(ext.signature, TF5_IBS_SIG_LEN))
         << "GG09 Schnorr IBS signature should be computed (not all zeros)";
@@ -275,7 +275,7 @@ TEST_F(TF5GnbTest, PrepareExtension_ParamsIncluded) {
     tf5_extension_t ext;
     const char sib1[] = "Test SIB1 content";
 
-    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
+    tf5_gnb_prepare_extension(&gnb_state, 32, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
 
     EXPECT_EQ(gnb_state.tesla_params.t_int_ms, ext.tesla_params.t_int_ms);
     EXPECT_EQ(gnb_state.tesla_params.d, ext.tesla_params.d);
@@ -289,7 +289,7 @@ TEST_F(TF5GnbTest, PrepareExtension_IntervalExceedsChain_ReturnsError) {
     const char sib1[] = "Test SIB1 content";
 
     int ret = tf5_gnb_prepare_extension(
-        &gnb_state, 20, 0,
+        &gnb_state, 160, 0,
         (const uint8_t*)sib1, strlen(sib1), &ext
     );
 
@@ -338,7 +338,7 @@ TEST_F(TF5GnbTest, PrepareExtension_ChainExhausted_ExactBoundary) {
     const char sib1[] = "Test SIB1 content";
 
     int ret = tf5_gnb_prepare_extension(
-        &gnb_state, 10, 0,
+        &gnb_state, 80, 0,
         (const uint8_t*)sib1, strlen(sib1), &ext
     );
 
@@ -352,7 +352,7 @@ TEST_F(TF5GnbTest, PrepareExtension_LastValidInterval) {
     const char sib1[] = "Test SIB1 content";
 
     int ret = tf5_gnb_prepare_extension(
-        &gnb_state, 8, 0,
+        &gnb_state, 64, 0,
         (const uint8_t*)sib1, strlen(sib1), &ext
     );
 

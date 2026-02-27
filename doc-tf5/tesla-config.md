@@ -44,7 +44,7 @@ Per TS 38.213 Table 13-4 (CORESET0 configuration for 30 kHz SSB + 30 kHz PDCCH):
 | 12 | 24 | 2 | 48 PRB BWP, ~16 RBs available for PDSCH |
 | 11 | 48 | 1 | Larger BWP, more RBs available for PDSCH |
 
-The CORESET0 configuration determines the BWP used for SIB1 PDCCH and PDSCH scheduling. With TESLA, SIB1 grows by ~122 bytes (static params, signature, key, tag). The original CORESET0 index 12 leaves only ~16 contiguous RBs for SIB1 PDSCH after CORESET0 occupies its resources, which is insufficient for the ~234 byte TESLA-extended SIB1.
+The CORESET0 configuration determines the BWP used for SIB1 PDCCH and PDSCH scheduling. With TESLA, SIB1 grows by 37 bytes (version, interval index, disclosed key, TESLA tag in the `lateNonCriticalExtension`). Although the SIB1 extension is relatively compact, the base SIB1 plus 37 bytes plus ASN.1 OCTET STRING overhead still exceeds the capacity of the original CORESET0 index 12, which leaves only ~16 contiguous RBs for SIB1 PDSCH.
 
 CORESET0 index 11 uses only 1 OFDM symbol (vs 2 for index 12), leaving more time-domain resources for PDSCH. Combined with the 48 PRB CORESET0 bandwidth, this provides sufficient resources for the larger SIB1.
 
@@ -72,16 +72,16 @@ Setting `min_rxtxtime = 6` in the config eliminates the need to pass `--gNBs.[0]
 
 **Why this matters**:
 
-SSB occupies symbols 2-5 in the SIB1 slot. The default TDA (index 1) places SIB1 PDSCH in symbols 2-11, causing time-domain overlap with SSB. During this overlap, SSB's 20 RBs are unavailable in the vrb_map, leaving only 14 contiguous RBs on each side of SSB - insufficient for the 234-byte TESLA SIB1.
+SSB occupies symbols 2-5 in the SIB1 slot. The default TDA (index 1) places SIB1 PDSCH in symbols 2-11, causing time-domain overlap with SSB. During this overlap, SSB's 20 RBs are unavailable in the vrb_map, leaving only 14 contiguous RBs on each side of SSB - insufficient for the TESLA-extended SIB1.
 
 TDA index 5 places SIB1 PDSCH in symbols 9-12, completely avoiding SSB overlap:
 - Symbols 9-12: 4 OFDM symbols for PDSCH
 - All 48 RBs available (no SSB conflict)
-- Capacity: ~500+ bytes (sufficient for 234-byte TESLA SIB1)
+- Capacity: ~500+ bytes (sufficient for TESLA-extended SIB1)
 
 Without this parameter, the gNB fails with:
 ```
-Couldn't allocate enough resources for 234 bytes in SIB PDSCH (rbStart 0, rbSize 14, bwpSize 48)
+Couldn't allocate enough resources for X bytes in SIB PDSCH (rbStart 0, rbSize 14, bwpSize 48)
 ```
 
 ---

@@ -247,8 +247,8 @@ TEST_F(TF5UeTest, SafePacketTest_SafePacket_ReturnsTrue) {
     ext.tesla_params = ue_state.tesla_params;
 
     // Receive at interval 5 (same interval) - should be safe
-    // 5 intervals = 200 slots (at 40 slots/interval) = SFN 10, slot 0
-    bool safe = tf5_ue_safe_packet_test(&ue_state, &ext, 10, 0);
+    // 5 intervals = 1600 slots (at 320 slots/interval) = SFN 80, slot 0
+    bool safe = tf5_ue_safe_packet_test(&ue_state, &ext, 80, 0);
 
     EXPECT_TRUE(safe) << "Packet received in same interval should be safe";
 }
@@ -266,9 +266,9 @@ TEST_F(TF5UeTest, SafePacketTest_UnsafePacket_ReturnsFalse) {
     ext.i = 5;
     ext.tesla_params = ue_state.tesla_params;
 
-    // Receive much later - at interval 10 (400 slots = SFN 20)
+    // Receive much later - at interval 10 (3200 slots = SFN 160)
     // Safe if: x < i + d, i.e., 10 < 5 + 1 = 6? NO -> unsafe
-    bool safe = tf5_ue_safe_packet_test(&ue_state, &ext, 20, 0);
+    bool safe = tf5_ue_safe_packet_test(&ue_state, &ext, 160, 0);
 
     EXPECT_FALSE(safe) << "Packet received too late should be unsafe";
 }
@@ -287,9 +287,9 @@ TEST_F(TF5UeTest, SafePacketTest_BoundaryExact_ReturnsFalse) {
     ext.tesla_params = ue_state.tesla_params;
 
     // Receive at exactly interval 6 (i + d boundary)
-    // 6 intervals = 240 slots = SFN 12
+    // 6 intervals = 1920 slots = SFN 96
     // Safe if: x < i + d, i.e., 6 < 6? NO -> unsafe
-    bool safe = tf5_ue_safe_packet_test(&ue_state, &ext, 12, 0);
+    bool safe = tf5_ue_safe_packet_test(&ue_state, &ext, 96, 0);
 
     EXPECT_FALSE(safe) << "Packet received exactly at boundary should be unsafe";
 }

@@ -99,7 +99,7 @@ static inline uint32_t tf5_key_interval_to_index(int32_t interval)
  * TESLA Parameters
  */
 typedef struct {
-    uint16_t t_int_ms;             // 2B - Interval duration in ms (e.g., 20ms)
+    uint16_t t_int_ms;             // 2B - Interval duration in ms (e.g., 160ms)
     uint8_t  d;     // 1B - Key disclosure delay d (e.g., 1)
     tf5_slot_time_t t0;      // 4B - T_0: interval 0 start (transmitted in wire format)
     uint32_t chain_len;            // 4B - Number of intervals N
@@ -219,7 +219,7 @@ typedef struct {
  * Generates the key chain and sets up static parameters.
  *
  * @param state         Pointer to gNB TESLA state structure
- * @param t_int_ms      Interval duration in milliseconds (e.g., 20)
+ * @param t_int_ms      Interval duration in milliseconds (e.g., 160)
  * @param d             Key disclosure delay (e.g., 1)
  * @param chain_len     Number of intervals in key chain
  * @param private_key   GG09 Schnorr IBS secret key (64 bytes: y[32] + pk[32])

@@ -85,7 +85,7 @@ static const uint32_t TV_IBS_VALIDITY_END = 525600;
  * ========================================================================== */
 
 // Test TESLA parameters
-static const uint16_t TV_EXT_T_INT_MS = 20;
+static const uint16_t TV_EXT_T_INT_MS = 160;
 static const uint8_t  TV_EXT_D = 1;
 static const uint16_t TV_EXT_T0_SFN = 100;
 static const uint16_t TV_EXT_T0_SLOT = 5;

@@ -12,7 +12,7 @@
 /***************************************************************************************************************************************/
 #ifdef ENABLE_TF5
 #define CONFIG_HLP_TF5_PRIVKEY    "TESLA-for-5G TESLA secret key file. REQUIRED.\n"
-#define CONFIG_HLP_TF5_TESLA_CHAINLEN   "TESLA-for-5G key chain length (default: 65536, approx. 21.8 min with T_int=20ms)\n"
+#define CONFIG_HLP_TF5_TESLA_CHAINLEN   "TESLA-for-5G key chain length (default: 65536, approx. 174.8 min with T_int=160ms)\n"
 #define TF5_DEFAULT_CHAIN_LEN       65536
 #endif
 
