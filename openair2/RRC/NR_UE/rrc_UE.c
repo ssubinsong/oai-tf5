@@ -488,9 +488,6 @@ static void get_sib19_schedinfo(NR_UE_RRC_SI_INFO *SI_info, NR_SI_SchedulingInfo
 }
 
 #ifdef ENABLE_TF5
-/* Forward declarations for TESLA parallel authentication */
-static void rrc_ue_generate_RRCSetupComplete(const NR_UE_RRC_INST_t *rrc, uint8_t Transaction_id);
-
 /*
  * Extract NR Cell ID (36 bits) from SIB1's cellAccessRelatedInfo.
  * Per TS 38.331, cellIdentity is a BIT STRING of 36 bits stored in 5 bytes.
@@ -526,15 +523,6 @@ typedef enum {
     TF5_VERIFY_FAIL_MAC = -7,           // All TESLA MAC verifications failed
     TF5_VERIFY_FAIL_KEYCHAIN = -8,      // Key chain verification failed (RFC 4082 3.5 step 3)
 } tf5_verify_result_t;
-
-static void tf5_send_deferred_rrcsetupcomplete(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info)
-{
-    tf5_ue_state_t *state = SI_info->tf5_state;
-    DevAssert(state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED);
-    LOG_I(TF5, "Auth complete - sending deferred RRCSetupComplete\n");
-  state->curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
-    rrc_ue_generate_RRCSetupComplete(rrc, state->rrcsetup_transaction_id);
-}
 
 /**
  * Re-encode SIB1 without lateNonCriticalExtension for authentication.
@@ -718,38 +706,30 @@ static tf5_verify_result_t tf5_verify_returning(NR_UE_RRC_INST_t *rrc,
   size_t mac_auth_len = 0;
   tf5_build_mac_auth_input(mac_auth_input, &mac_auth_len, sib1_buf, sib1_len, tf5_ext->validity_end);
 
-  DevAssert(ue_state->curr_phase == TF5_PHASE_INITIAL || ue_state->curr_phase == TF5_PHASE_BUFFERED || ue_state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED);
+  DevAssert(ue_state->curr_phase == TF5_PHASE_INITIAL || ue_state->curr_phase == TF5_PHASE_BUFFERED);
 
   /* Buffer current SIB1 */
-  bool should_trigger_rrc = ue_state->curr_phase == TF5_PHASE_INITIAL;
-  tf5_ue_buffer_msg(ue_state, mac_auth_input, mac_auth_len, tf5_ext->i, tf5_ext->tesla_tag, should_trigger_rrc);
+  tf5_ue_buffer_msg(ue_state, mac_auth_input, mac_auth_len, tf5_ext->i, tf5_ext->tesla_tag);
   if (ue_state->curr_phase == TF5_PHASE_INITIAL) {
     ue_state->curr_phase = TF5_PHASE_BUFFERED;
   }
 
-  if (has_key_disclosure) {
-    /*  Message verification tests */
-    if (ue_state->buffer_queue_count > 0) {
-      bool rrc_trigger_verified;
-      int verify_rc = tf5_tesla_ue_verify_buffered_msgs(ue_state,
-                                                                       tf5_ext->key_disclosure,
-                                                                       key_disclosure_interval,
-                                                                       &rrc_trigger_verified);
+  if (has_key_disclosure && ue_state->buffer_queue_count > 0) {
+    int verify_rc = tf5_tesla_ue_verify_buffered_msgs(ue_state,
+                                                                     tf5_ext->key_disclosure,
+                                                                     key_disclosure_interval);
 
-      if (verify_rc == 0) {
-        LOG_I(TF5, "Verified buffered SIB1 packets using K_%u\n", key_disclosure_interval);
-        if (ue_state->curr_phase == TF5_PHASE_BUFFERED && rrc_trigger_verified) {
-          ue_state->curr_phase = TF5_PHASE_AUTHENTICATED;
-        }
-        if (ue_state->curr_phase == TF5_PHASE_RRCSETUP_DEFERRED && rrc_trigger_verified) {
-          tf5_send_deferred_rrcsetupcomplete(rrc, SI_info);
-        }
-        /* Returning UE simulation: deferred TESLA MAC verification complete */
-        if (ue_state->returning_auth_pending) {
-          ue_state->returning_auth_pending = false;
-          LOG_A(TF5, "Returning UE: auth complete\n");
-        }
+    if (verify_rc == 0) {
+      LOG_I(TF5, "Verified buffered SIB1 packets using K_%u\n", key_disclosure_interval);
+      if (ue_state->curr_phase == TF5_PHASE_BUFFERED) {
+        ue_state->curr_phase = TF5_PHASE_AUTHENTICATED;
       }
+      /* Returning UE simulation: deferred TESLA MAC verification complete */
+      if (ue_state->returning_auth_pending) {
+        ue_state->returning_auth_pending = false;
+        LOG_A(TF5, "Returning UE: auth complete\n");
+      }
+      return TF5_VERIFY_OK;
     }
   }
 
@@ -776,8 +756,7 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
         return TF5_VERIFY_SKIP_NO_STATE;
     }
 
-    if (SI_info->tf5_state->curr_phase == TF5_PHASE_RRCSETUP_COMPLETE
-        || SI_info->tf5_state->curr_phase == TF5_PHASE_AUTHENTICATED) {
+    if (SI_info->tf5_state->curr_phase == TF5_PHASE_AUTHENTICATED) {
         SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
     }
 
@@ -806,10 +785,11 @@ static tf5_verify_result_t tf5_verify_sib1(NR_UE_RRC_INST_t *rrc,
     tf5_verify_result_t ret = tf5_verify_returning(rrc, SI_info, &ext, sib1_buf, sib1_len, rx_frame, rx_slot);
 
     /* Detect first returning SIB1 after simulated re-acquisition */
-    if (ret == TF5_VERIFY_BUFFERED
+    if ((ret == TF5_VERIFY_BUFFERED || ret == TF5_VERIFY_OK)
         && SI_info->tf5_state->returning_idle_phase) {
         SI_info->tf5_state->returning_idle_phase = false;
-        LOG_A(TF5, "Returning UE: first SIB1 buffered\n");
+        LOG_A(TF5, "Returning UE: first SIB1 %s\n",
+              ret == TF5_VERIFY_OK ? "verified" : "buffered");
     }
     return ret;
 }
@@ -839,7 +819,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
       AssertFatal(false, "TF5: No TESLA state configured - unexpected in this setup\n");
       break;
     case TF5_VERIFY_BUFFERED:
-      LOG_I(TF5, "SIB1 buffered - waiting for key disclosure; RACH already in progress\n");
+      LOG_I(TF5, "SIB1 buffered - waiting for key disclosure\n");
       return;
     case TF5_VERIFY_SKIP_UNSAFE:
       LOG_W(TF5, "Packet unsafe - discarding packet\n");
@@ -2360,34 +2340,6 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
       SI_info->tf5_state->returning_release_done = true;
       nr_timer_setup(&rrc->tf5_returning_release_timer, 2000, 10); // 2000ms target, 10ms step
       nr_timer_start(&rrc->tf5_returning_release_timer);
-    }
-  }
-
-  /* NAS Gating: Check TESLA authentication status before sending NAS (SUCI protection)
-   * Security: NAS Registration Request must NOT be sent until SIB1 is authenticated */
-  {
-    /* During initial RRC setup (CCCH/SRB0), UE connects to exactly one gNB.
-     * By convention, perNB[0] is always used for the initial/serving cell.
-     * Multi-gNB scenarios (DC, handover) only occur after RRC_CONNECTED. */
-    const int gNB_index = 0;
-
-    NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
-
-    if (SI_info->tf5_state) {
-      switch (SI_info->tf5_state->curr_phase) {
-        case TF5_PHASE_AUTHENTICATED:
-          /* Already authenticated (IBS or TESLA MAC) */
-          SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
-          break;  // proceed to send RRCSetupComplete
-        case TF5_PHASE_BUFFERED:
-          /* Authentication pending - defer RRCSetupComplete until verified */
-          LOG_I(TF5, "Auth in progress - deferring RRCSetupComplete until verified\n");
-          SI_info->tf5_state->curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
-          SI_info->tf5_state->rrcsetup_transaction_id = rrcSetup->rrc_TransactionIdentifier;
-          return;
-        default:
-          DevAssert(false);
-      }
     }
   }
 #endif

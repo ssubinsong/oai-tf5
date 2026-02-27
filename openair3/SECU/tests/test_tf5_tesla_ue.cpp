@@ -326,8 +326,7 @@ TEST_F(TF5UeTest, BufferSib1_Success) {
                                        (const uint8_t*)auth_input,
                                        strlen(auth_input),
                                        5, // interval_index
-                                       tag,
-                                       false // triggered_rrc_setup
+                                       tag
     );
 
     EXPECT_EQ(0, ret) << "Buffer SIB1 should return 0 on success";
@@ -342,7 +341,7 @@ TEST_F(TF5UeTest, BufferSib1_QueueCountIncremented) {
 
     EXPECT_EQ(0, ue_state.buffer_queue_count);
 
-    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag);
 
     EXPECT_EQ(1, ue_state.buffer_queue_count);
 }
@@ -354,7 +353,7 @@ TEST_F(TF5UeTest, BufferSib1_DataStored) {
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0xde, 0xad, 0xbe, 0xef};
     tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, false);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag);
 
     // Find the entry in the queue
     bool found = false;
@@ -371,24 +370,6 @@ TEST_F(TF5UeTest, BufferSib1_DataStored) {
     EXPECT_TRUE(found) << "Entry should be stored in buffer queue";
 }
 
-TEST_F(TF5UeTest, BufferSib1_RrcTriggerFlagSet) {
-    ASSERT_EQ(0, initUeDefault());
-
-    const char auth_input[] = "test auth input";
-    uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
-    tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
-
-    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), 5, tag, true);  // triggered_rrc_setup = true
-
-    // Find the entry
-    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
-        if (ue_state.buffer_queue[i].valid) {
-            EXPECT_TRUE(ue_state.buffer_queue[i].triggered_rrc_setup);
-            break;
-        }
-    }
-}
-
 TEST_F(TF5UeTest, BufferSib1_MultipleEntries) {
     ASSERT_EQ(0, initUeDefault());
 
@@ -398,8 +379,8 @@ TEST_F(TF5UeTest, BufferSib1_MultipleEntries) {
     uint8_t tag2[TF5_TESLA_TAG_LEN] = {0x02};
     tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input1, strlen(auth_input1), 5, tag1, false);
-    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input2, strlen(auth_input2), 6, tag2, false);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input1, strlen(auth_input1), 5, tag1);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input2, strlen(auth_input2), 6, tag2);
 
     EXPECT_EQ(2, ue_state.buffer_queue_count);
 }
@@ -414,14 +395,14 @@ TEST_F(TF5UeTest, BufferSib1_FullQueue_DropsOldest) {
     for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
         char auth_input[32];
         snprintf(auth_input, sizeof(auth_input), "auth input %d", i);
-        tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), i, tag, false);
+        tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_input, strlen(auth_input), i, tag);
     }
 
     EXPECT_EQ(TF5_TESLA_BUFFER_QUEUE_SIZE, ue_state.buffer_queue_count);
 
     // Add one more - should replace oldest
     const char new_auth[] = "new auth input";
-    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)new_auth, strlen(new_auth), 99, tag, false);
+    tf5_ue_buffer_msg(&ue_state, (const uint8_t*)new_auth, strlen(new_auth), 99, tag);
 
     // Queue should still be at max size
     EXPECT_EQ(TF5_TESLA_BUFFER_QUEUE_SIZE, ue_state.buffer_queue_count);
@@ -433,13 +414,13 @@ TEST_F(TF5UeTest, BufferSib1_NullInputs_ReturnsError) {
     uint8_t tag[TF5_TESLA_TAG_LEN] = {0};
     tf5_slot_time_t rx_time = tf5_slot_time_make(0, 0);
 
-    int ret = tf5_ue_buffer_msg(nullptr, (const uint8_t*)"test", 4, 5, tag, false);
+    int ret = tf5_ue_buffer_msg(nullptr, (const uint8_t*)"test", 4, 5, tag);
     EXPECT_LT(ret, 0) << "Null state should return error";
 
-    ret = tf5_ue_buffer_msg(&ue_state, nullptr, 4, 5, tag, false);
+    ret = tf5_ue_buffer_msg(&ue_state, nullptr, 4, 5, tag);
     EXPECT_LT(ret, 0) << "Null auth_input should return error";
 
-    ret = tf5_ue_buffer_msg(&ue_state, (const uint8_t*)"test", 4, 5, nullptr, false);
+    ret = tf5_ue_buffer_msg(&ue_state, (const uint8_t*)"test", 4, 5, nullptr);
     EXPECT_LT(ret, 0) << "Null tag should return error";
 }
 
@@ -533,9 +514,8 @@ TEST_F(TF5UeTest, VerifyKeyChain_NullInputs_ReturnsFalse) {
 
 TEST_F(TF5UeTest, VerifyBuffered_NullState_ReturnsError) {
     uint8_t key[TF5_TESLA_KEY_LEN] = {0};
-    bool rrc_trigger = false;
 
-    int ret = tf5_tesla_ue_verify_buffered_msgs(nullptr, key, 1, &rrc_trigger);
+    int ret = tf5_tesla_ue_verify_buffered_msgs(nullptr, key, 1);
 
     EXPECT_EQ(TF5_ERR_INVALID_PARAM, ret)
         << "NULL ue_state should return TF5_ERR_INVALID_PARAM";
@@ -543,30 +523,18 @@ TEST_F(TF5UeTest, VerifyBuffered_NullState_ReturnsError) {
 
 TEST_F(TF5UeTest, VerifyBuffered_NullKeyDisclosure_ReturnsError) {
     ASSERT_EQ(0, initUeDefault());
-    bool rrc_trigger = false;
 
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, nullptr, 1, &rrc_trigger);
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, nullptr, 1);
 
     EXPECT_EQ(TF5_ERR_INVALID_PARAM, ret)
         << "NULL key_disclosure should return TF5_ERR_INVALID_PARAM";
 }
 
-TEST_F(TF5UeTest, VerifyBuffered_NullRrcTrigger_ReturnsError) {
-    ASSERT_EQ(0, initUeDefault());
-    uint8_t key[TF5_TESLA_KEY_LEN] = {0};
-
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, key, 1, nullptr);
-
-    EXPECT_EQ(TF5_ERR_INVALID_PARAM, ret)
-        << "NULL rrc_trigger_verified should return TF5_ERR_INVALID_PARAM";
-}
-
 TEST_F(TF5UeTest, VerifyBuffered_UninitializedState_ReturnsError) {
     // ue_state is memset(0) in SetUp() — initialized == false
     uint8_t key[TF5_TESLA_KEY_LEN] = {0};
-    bool rrc_trigger = false;
 
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, key, 1, &rrc_trigger);
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, key, 1);
 
     EXPECT_EQ(TF5_ERR_INVALID_PARAM, ret)
         << "Uninitialized state should return TF5_ERR_INVALID_PARAM";
@@ -575,10 +543,9 @@ TEST_F(TF5UeTest, VerifyBuffered_UninitializedState_ReturnsError) {
 TEST_F(TF5UeTest, VerifyBuffered_EmptyBuffer_ReturnsNoData) {
     ASSERT_EQ(0, initUeDefault());
     uint8_t key[TF5_TESLA_KEY_LEN] = {0};
-    bool rrc_trigger = false;
 
     // No entries buffered — buffer_queue_count == 0
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, key, 1, &rrc_trigger);
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, key, 1);
 
     EXPECT_EQ(TF5_ERR_NO_DATA, ret)
         << "Empty buffer should return TF5_ERR_NO_DATA";
@@ -862,43 +829,7 @@ TEST_F(TF5UeTest, AuthState_CanBeSetToBuffered) {
         << "Auth state should be settable to BUFFERED";
 }
 
-TEST_F(TF5UeTest, AuthState_RrcTriggerTrackedInBuffer) {
-    ASSERT_EQ(0, initUeDefault());
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // Generate valid extension
-    tf5_extension_t ext;
-    const char sib1[] = "SIB1 that triggers RRC setup";
-    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
-
-    // Set up UE
-    ue_state.tesla_params = ext.tesla_params;
-    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(0)], 0);
-
-    // Buffer with triggered_rrc_setup = true
-    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_input_len;
-    tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
-                                   (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
-
-    tf5_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    int ret = tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, true);  // RRC trigger!
-
-    EXPECT_EQ(0, ret);
-
-    // Verify the flag is tracked in buffer
-    bool found_rrc_trigger = false;
-    for (int i = 0; i < TF5_TESLA_BUFFER_QUEUE_SIZE; i++) {
-        if (ue_state.buffer_queue[i].valid && ue_state.buffer_queue[i].triggered_rrc_setup) {
-            found_rrc_trigger = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(found_rrc_trigger) << "Buffer should track RRC trigger flag";
-}
-
-TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
+TEST_F(TF5UeTest, AuthState_VerifyBufferedSuccess) {
     ASSERT_EQ(0, initUeDefault());
     ASSERT_EQ(0, initGnbDefault(100));
 
@@ -912,18 +843,13 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
     int32_t anchor_idx = (int32_t)ext.i - ext.tesla_params.d;
     setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(anchor_idx)], anchor_idx);
 
-    // Buffer with triggered_rrc_setup = true
     uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_input_len;
     tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
                                    (const uint8_t*)sib1, strlen(sib1),
                                    gnb_state.key_validity_end);
 
-    tf5_slot_time_t rx_time = tf5_slot_time_make(5, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag, true);  // RRC trigger!
-
-    // Verify and check rrc_trigger_verified
-    bool rrc_trigger_verified = false;
+    tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag);
 
     // First verify key chain
     bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
@@ -931,26 +857,9 @@ TEST_F(TF5UeTest, AuthState_RrcTriggerVerifiedOnSuccess) {
 
     // Then verify buffered entries
     int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                                ext.i, &rrc_trigger_verified);
+                                                                ext.i);
 
     EXPECT_EQ(0, ret) << "Verification should succeed";
-    EXPECT_TRUE(rrc_trigger_verified) << "rrc_trigger_verified should be true when RRC-triggering SIB1 verifies";
-}
-
-TEST_F(TF5UeTest, AuthState_RrcSetupDeferredCanBeSet) {
-    ASSERT_EQ(0, initUeDefault());
-
-    // Simulate RRC layer setting RRCSETUP_DEFERRED state
-    ue_state.curr_phase = TF5_PHASE_BUFFERED;
-    ue_state.rrcsetup_transaction_id = 42;  // Save transaction ID
-
-    // RRCSetup received while auth pending
-    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
-
-    EXPECT_EQ(TF5_PHASE_RRCSETUP_DEFERRED, ue_state.curr_phase)
-        << "Auth state should be settable to RRCSETUP_DEFERRED";
-    EXPECT_EQ(42, ue_state.rrcsetup_transaction_id)
-        << "Transaction ID should be preserved";
 }
 
 // ============================================================================

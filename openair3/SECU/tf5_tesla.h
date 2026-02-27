@@ -69,7 +69,6 @@ typedef struct {
     uint32_t rx_interval_index;
     uint8_t  tag[TF5_TESLA_TAG_LEN];
     bool     valid;                  // Entry contains valid data
-    bool     triggered_rrc_setup;    // This SIB1 triggered the current RRC session
 } tf5_buffer_entry_t;
 
 /* Helper to construct slot_time_t inline */
@@ -152,8 +151,6 @@ typedef enum {
   TF5_PHASE_INITIAL = 0,           // No SIB1 has been buffered & marked for RRC
   TF5_PHASE_AUTHENTICATED,        // Authenticated via IBS signature or TESLA MAC
   TF5_PHASE_BUFFERED,              // SIB1 buffered, pending TESLA verification
-  TF5_PHASE_RRCSETUP_DEFERRED,    // RRCSetup arrived, verification pending
-  TF5_PHASE_RRCSETUP_COMPLETE,    // Connection established
 } tf5_ue_phase_t;
 
 /*
@@ -178,7 +175,6 @@ typedef struct {
     bool initialized; // Initialization flag
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
     tf5_ue_phase_t curr_phase; // Current authentication state
-    uint8_t  rrcsetup_transaction_id; // Saved transaction ID for deferred RRCSetupComplete (used when phase == RRCSETUP_DEFERRED)
     uint64_t rp_timestamp_window_ms;     // Timestamp window for signature replay protection (default 60000ms)
 
     // Returning UE simulation fields (--tf5-returning-ue mode)
@@ -384,15 +380,13 @@ bool tf5_ue_safe_packet_test(tf5_ue_state_t *ue_state,
  * @param auth_input_len     Length of auth input
  * @param interval_index     Interval index of this SIB1
  * @param tag                TESLA tag from SIB1
- * @param triggered_rrc_setup True if this SIB1 triggered the current RRC session
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_ue_buffer_msg(tf5_ue_state_t *state,
                              const uint8_t *auth_input,
                              size_t auth_input_len,
                              uint32_t interval_index,
-                             const uint8_t tag[TF5_TESLA_TAG_LEN],
-                             bool triggered_rrc_setup);
+                             const uint8_t tag[TF5_TESLA_TAG_LEN]);
 
 /**
  * Verify key chain integrity
@@ -418,14 +412,12 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
  * @param ue_state              Pointer to UE TESLA state structure
  * @param key_disclosure          Key that has been verified via key chain
  * @param key_disclosure_interval Interval index of verified key
- * @param rrc_trigger_verified    Output: true if any buffered RRC-trigger SIB1 was verified
  * @return TF5_OK on success, TF5_ERR_VERIFY if any MAC verification failed,
  *         or TF5_ERR_INVALID_PARAM, TF5_ERR_NO_DATA
  */
 int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
                                                      const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
-                                                     uint32_t key_disclosure_interval,
-                                                     bool *rrc_trigger_verified);
+                                                     uint32_t key_disclosure_interval);
 
 /*
  * =============================================================================

@@ -175,17 +175,16 @@ TEST_F(TF5E2ETest, E2E_SingleSib1_Verified) {
                                    gnb_state.key_validity_end);
 
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    ret = tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, rx_ext.i, rx_ext.tesla_tag, false);
+    ret = tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, rx_ext.i, rx_ext.tesla_tag);
     ASSERT_EQ(0, ret);
 
     // bootstrapUe already set anchor to K_{i-d} (= K_4 for i=5, d=1)
     // Verify K_i (= K_5) against anchor K_4 (1 step)
-    bool rrc_trigger = false;
     bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(rx_ext.i)], rx_ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
     ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(rx_ext.i)],
-                                                            rx_ext.i, &rrc_trigger);
+                                                            rx_ext.i);
 
     EXPECT_EQ(0, ret) << "Buffered SIB1 verification should succeed";
 }
@@ -221,18 +220,17 @@ TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
                                    (const uint8_t*)sib1_6, strlen(sib1_6),
                                    gnb_state.key_validity_end);
 
-    tf5_ue_buffer_msg(&ue_state, mac_auth5, mac_auth5_len, ext5.i, ext5.tesla_tag, false);
-    tf5_ue_buffer_msg(&ue_state, mac_auth6, mac_auth6_len, ext6.i, ext6.tesla_tag, false);
+    tf5_ue_buffer_msg(&ue_state, mac_auth5, mac_auth5_len, ext5.i, ext5.tesla_tag);
+    tf5_ue_buffer_msg(&ue_state, mac_auth6, mac_auth6_len, ext6.i, ext6.tesla_tag);
 
     EXPECT_EQ(2, ue_state.buffer_queue_count);
 
     // UE: Verify interval 5 with K_5
-    bool rrc_trigger = false;
     bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext5.i)], ext5.i);
     EXPECT_TRUE(key_valid) << "Key chain for interval 5 should verify";
 
     int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext5.i)],
-                                                                ext5.i, &rrc_trigger);
+                                                                ext5.i);
     EXPECT_EQ(0, ret) << "Interval 5 verification should succeed";
     EXPECT_EQ(1, ue_state.buffer_queue_count) << "One entry should remain after first verification";
 
@@ -241,7 +239,7 @@ TEST_F(TF5E2ETest, E2E_MultipleSib1s_AllVerified) {
     EXPECT_TRUE(key_valid) << "Key chain for interval 6 should verify";
 
     ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext6.i)],
-                                                            ext6.i, &rrc_trigger);
+                                                            ext6.i);
     EXPECT_EQ(0, ret) << "Interval 6 verification should succeed";
     EXPECT_EQ(0, ue_state.buffer_queue_count) << "Buffer should be empty after verification";
 }
@@ -307,15 +305,14 @@ TEST_F(TF5E2ETest, E2E_TamperedTag_Rejected) {
 
     // Buffer with tampered tag
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag, false);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag);
 
     // Try to verify - first verify key chain
-    bool rrc_trigger = false;
     bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify (key is valid, tag is tampered)";
 
     int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                                ext.i, &rrc_trigger);
+                                                                ext.i);
 
     EXPECT_LT(ret, 0) << "Verification should fail with tampered tag";
 }
@@ -344,17 +341,15 @@ TEST_F(TF5E2ETest, E2E_TamperedSib1_Rejected) {
 
     // Buffer with original tag but tampered content
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // Try to verify - should fail because MAC auth input doesn't match tag
-    bool rrc_trigger = false;
-
     // First verify key chain
     bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify (key is valid, content is tampered)";
 
     int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                                ext.i, &rrc_trigger);
+                                                                ext.i);
 
     EXPECT_LT(ret, 0) << "Verification should fail with tampered SIB1";
 }
@@ -381,7 +376,7 @@ TEST_F(TF5E2ETest, E2E_WrongKey_Rejected) {
                                    gnb_state.key_validity_end);
 
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // Try to verify with WRONG key
     uint8_t wrong_key[TF5_TESLA_KEY_LEN] = {0xba, 0xad, 0xf0, 0x0d};
@@ -463,16 +458,14 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ValidKeyAccepted) {
                                    gnb_state.key_validity_end);
 
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
-
-    bool rrc_trigger = false;
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // First verify key chain
     bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
     int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                                ext.i, &rrc_trigger);
+                                                                ext.i);
 
     EXPECT_EQ(0, ret) << "Valid key should pass verification";
 }
@@ -523,157 +516,6 @@ TEST_F(TF5E2ETest, E2E_KeyValidity_ConversionRoundTrip) {
 // RRC Integration Tests (phase and RRC trigger handling)
 // ============================================================================
 
-TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_WhileAuthPending) {
-    // Scenario: SIB1 received, buffered, RACH initiated, RRCSetup arrives before auth completes
-    ASSERT_EQ(0, initGnb(100));
-    ASSERT_EQ(0, initUe());
-
-    const char sib1[] = "SIB1 that triggers RRC setup";
-    tf5_extension_t ext;
-    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
-
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
-    bootstrapUe(&ext);
-
-    // Buffer SIB1 with RRC trigger flag
-    uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_len;
-    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
-                                   (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
-
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, true);
-
-    // Simulate RRC state transitions
-    ue_state.curr_phase = TF5_PHASE_BUFFERED;
-
-    // RRCSetup arrives while auth pending
-    ue_state.rrcsetup_transaction_id = 7;  // Save for later
-    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
-
-    EXPECT_EQ(TF5_PHASE_RRCSETUP_DEFERRED, ue_state.curr_phase);
-    EXPECT_EQ(7, ue_state.rrcsetup_transaction_id);
-
-    // Auth succeeds
-    bool rrc_trigger_verified = false;
-
-    // First verify key chain
-    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
-    EXPECT_TRUE(key_valid) << "Key chain should verify";
-
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                                ext.i, &rrc_trigger_verified);
-
-    EXPECT_EQ(0, ret) << "Verification should succeed";
-    EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 should be verified";
-
-    // RRC layer would now send deferred RRCSetupComplete and transition to RRCSETUP_COMPLETE
-    ue_state.curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
-    EXPECT_EQ(TF5_PHASE_RRCSETUP_COMPLETE, ue_state.curr_phase);
-}
-
-TEST_F(TF5E2ETest, E2E_RrcSetupDeferred_AbortedOnAuthFailure) {
-    // Scenario: SIB1 received but auth fails -> RRC setup should be aborted
-    ASSERT_EQ(0, initGnb(100));
-    ASSERT_EQ(0, initUe());
-
-    const char sib1[] = "SIB1 that triggers RRC setup";
-    tf5_extension_t ext;
-    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
-
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
-    bootstrapUe(&ext);
-
-    // Buffer SIB1 with TAMPERED tag (simulating attack)
-    uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_len;
-    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
-                                   (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
-
-    uint8_t tampered_tag[TF5_TESLA_TAG_LEN];
-    memcpy(tampered_tag, ext.tesla_tag, TF5_TESLA_TAG_LEN);
-    tampered_tag[0] ^= 0xFF;  // Tamper!
-
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, tampered_tag, true);
-
-    // Simulate state transitions
-    ue_state.curr_phase = TF5_PHASE_BUFFERED;
-    ue_state.rrcsetup_transaction_id = 7;
-    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
-
-    // Auth fails
-    bool rrc_trigger_verified = false;
-
-    // First verify key chain (should succeed, key is valid)
-    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
-    EXPECT_TRUE(key_valid) << "Key chain should verify (key is valid, tag is tampered)";
-
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                                ext.i, &rrc_trigger_verified);
-
-    EXPECT_LT(ret, 0) << "Verification should fail with tampered tag";
-    EXPECT_FALSE(rrc_trigger_verified) << "RRC trigger should NOT be verified";
-}
-
-TEST_F(TF5E2ETest, E2E_NasMustWaitForAuth) {
-    // Scenario: Verify that RRC provides mechanism to gate NAS message
-    // (NAS containing SUCI must not be sent until auth completes)
-    ASSERT_EQ(0, initGnb(100));
-    ASSERT_EQ(0, initUe());
-
-    const char sib1[] = "SIB1 content";
-    tf5_extension_t ext;
-    uint8_t packed[TF5_EXTENSION_PACKED_SIZE];
-
-    gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
-    bootstrapUe(&ext);
-
-    // Buffer SIB1 (RACH has started)
-    uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_len;
-    tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
-                                   (const uint8_t*)sib1, strlen(sib1),
-                                   gnb_state.key_validity_end);
-
-    tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, true);
-    ue_state.curr_phase = TF5_PHASE_BUFFERED;
-
-    // At this point:
-    // - SIB1 is buffered, auth pending
-    // - NAS message (with SUCI) MUST NOT be sent yet
-    EXPECT_NE(TF5_PHASE_RRCSETUP_COMPLETE, ue_state.curr_phase)
-        << "Auth not complete - NAS must wait";
-
-    // RRCSetup arrives
-    ue_state.curr_phase = TF5_PHASE_RRCSETUP_DEFERRED;
-    ue_state.rrcsetup_transaction_id = 3;
-
-    // Still must not send NAS
-    EXPECT_NE(TF5_PHASE_RRCSETUP_COMPLETE, ue_state.curr_phase)
-        << "Still auth pending - NAS must wait";
-
-    // Auth succeeds
-    bool rrc_trigger_verified = false;
-
-    // First verify key chain
-    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
-    EXPECT_TRUE(key_valid) << "Key chain should verify";
-
-    tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                      ext.i, &rrc_trigger_verified);
-
-    ue_state.curr_phase = TF5_PHASE_RRCSETUP_COMPLETE;
-
-    // NOW NAS can be sent (RRC layer checks phase == RRCSETUP_COMPLETE)
-    EXPECT_EQ(TF5_PHASE_RRCSETUP_COMPLETE, ue_state.curr_phase)
-        << "Auth complete - NAS can proceed";
-    EXPECT_TRUE(rrc_trigger_verified) << "RRC trigger SIB1 verified";
-}
-
 TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
     // Scenario: SIB1 received that does NOT trigger RRC setup (e.g., refresh)
     ASSERT_EQ(0, initGnb(100));
@@ -686,7 +528,7 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
     gnbPrepareAndPack(10, 0, (const uint8_t*)sib1, strlen(sib1), &ext, packed, sizeof(packed));
     bootstrapUe(&ext);
 
-    // Buffer SIB1 WITHOUT RRC trigger flag
+    // Buffer SIB1
     uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
     size_t mac_auth_len;
     tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
@@ -694,20 +536,16 @@ TEST_F(TF5E2ETest, E2E_NonRrcTriggerSib1) {
                                    gnb_state.key_validity_end);
 
     tf5_slot_time_t rx_time = tf5_slot_time_make(10, 0);
-    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag, false);
-
-    // Verify
-    bool rrc_trigger_verified = false;
+    tf5_ue_buffer_msg(&ue_state, mac_auth, mac_auth_len, ext.i, ext.tesla_tag);
 
     // First verify key chain
     bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
     EXPECT_TRUE(key_valid) << "Key chain should verify";
 
     int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                                ext.i, &rrc_trigger_verified);
+                                                                ext.i);
 
     EXPECT_EQ(0, ret) << "Verification should succeed";
-    EXPECT_FALSE(rrc_trigger_verified) << "No RRC trigger flag set";
 }
 
 // ============================================================================

@@ -691,8 +691,7 @@ int tf5_ue_buffer_msg(tf5_ue_state_t *state,
                              const uint8_t *auth_input,
                              size_t auth_input_len,
                              uint32_t interval_index,
-                             const uint8_t tag[TF5_TESLA_TAG_LEN],
-                             bool triggered_rrc_setup)
+                             const uint8_t tag[TF5_TESLA_TAG_LEN])
 {
     if (!state || !state->initialized || !auth_input || !tag) {
         return TF5_ERR_INVALID_PARAM;
@@ -734,13 +733,12 @@ int tf5_ue_buffer_msg(tf5_ue_state_t *state,
     entry->rx_interval_index = interval_index;
     memcpy(entry->tag, tag, TF5_TESLA_TAG_LEN);
     entry->valid = true;
-    entry->triggered_rrc_setup = triggered_rrc_setup;
 
     // Update queue count
     tf5_ue_recount_buffer(state);
 
-    LOG_D(TF5, "Buffered SIB1 for interval %u (slot %d, queue count %u, rrc_trigger=%d)\n",
-          interval_index, target_slot, state->buffer_queue_count, triggered_rrc_setup);
+    LOG_D(TF5, "Buffered SIB1 for interval %u (slot %d, queue count %u)\n",
+          interval_index, target_slot, state->buffer_queue_count);
 
     return TF5_OK;
 }
@@ -794,13 +792,11 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
 
 int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
                                                      const uint8_t key_disclosure[TF5_TESLA_KEY_LEN],
-                                                     uint32_t key_disclosure_interval,
-                                                     bool *rrc_trigger_verified)
+                                                     uint32_t key_disclosure_interval)
 {
-    if (!ue_state || !ue_state->initialized || !key_disclosure || !rrc_trigger_verified) {
+    if (!ue_state || !ue_state->initialized || !key_disclosure) {
         return TF5_ERR_INVALID_PARAM;
     }
-    *rrc_trigger_verified = false;
 
     // Verify entries with rx_interval_index <= key_disclosure_interval by deriving
     // the correct key via chain function: K_j = F^(kdi - j)(K_kdi)
@@ -843,22 +839,14 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
         }
 
         if (memcmp(expected_tag, entry->tag, TF5_TESLA_TAG_LEN) == 0) {
-            LOG_I(TF5, "MAC verified for interval %u (steps=%u, rrc_trigger=%d)\n",
-                  entry->rx_interval_index, steps, entry->triggered_rrc_setup);
-
-            if (entry->triggered_rrc_setup) {
-              *rrc_trigger_verified = true;
-            }
-
+            LOG_I(TF5, "MAC verified for interval %u (steps=%u)\n",
+                  entry->rx_interval_index, steps);
             entry->valid = false;
         } else {
             LOG_E(TF5, "MAC verification FAILED for interval %u (steps=%u)\n",
                   entry->rx_interval_index, steps);
             entry->valid = false;
             mac_failed = true;
-            if (entry->triggered_rrc_setup) {
-              *rrc_trigger_verified = false;
-            }
         }
     }
 
