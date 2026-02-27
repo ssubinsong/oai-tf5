@@ -141,7 +141,7 @@ tesla_tag       (16 B)   HMAC tag over original SIB1
 te_version       (1 B)   Protocol version
 tesla_params    (11 B)   t_int(2) + d(1) + t0(4) + chain_len(4)
 validity_end     (3 B)   gNB key expiration (minutes since epoch)
-timestamp_ms     (3 B)   Signature timestamp for replay protection
+timestamp_s      (3 B)   Signature timestamp for replay protection (seconds)
 signature       (96 B)   GG09 Schnorr IBS signature (R[32] + σ[32] + pk[32])
 ```
 
@@ -162,7 +162,7 @@ te_version       (1 B)        Protocol version
 te_version       (1 B)    Protocol version
 tesla_params    (11 B)    Packed TESLA parameters
 validity_end     (3 B)    gNB key validity period
-timestamp_ms     (3 B)    Signature timestamp
+timestamp_s      (3 B)    Signature timestamp (seconds)
                 ------
 Total:           18 B
 ```
