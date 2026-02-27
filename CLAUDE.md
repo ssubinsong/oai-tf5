@@ -31,7 +31,6 @@ cmake --build --preset 5gdefault
 
 ### Build tests
 ```bash
-cd cmake_targets
 cmake --preset tests
 cmake --build --preset tf5_tests
 ```
