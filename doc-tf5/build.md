@@ -88,11 +88,6 @@ Key paths **must** be specified explicitly on the command line (no defaults):
 
 ### Running with TESLA
 
-**IMPORTANT**: Use the TESLA-optimized configuration file `gnb.sa.band78.fr1.106PRB.tesla.conf`.
-This configuration uses CORESET0 index 11 which provides sufficient resources for the larger
-SIB1 message with TESLA extension. The standard config uses CORESET0 index 12 which limits
-the SIB1 BWP to 48 PRBs, insufficient for TESLA.
-
 ```bash
 # From project root
 cd /path/to/oai-tf5
@@ -100,8 +95,9 @@ cd /path/to/oai-tf5
 # Run gNB with IBS secret key (validity embedded in key file)
 cd cmake_targets/ran_build/build
 sudo ./nr-softmodem \
-    -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf \
+    -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf \
     --rfsim \
+    --gNBs.[0].min_rxtxtime 6 \
     --tf5-privkey /path/to/gnb_keys/sk_gnb.bin
 
 # Run UE with Core's MPK (in another terminal)
@@ -109,6 +105,8 @@ sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --uicc0.imsi
     -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.conf \
     --tf5-core-mpk /path/to/pkg_keys/mpk.bin
 ```
+
+See [gNB Configuration](tesla-config.md) for details on RF simulator settings.
 
 **Key Validity Checks:**
 - **gNB startup**: Refuses to start if the key has expired (current time >= gnb_key_validity_end)

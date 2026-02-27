@@ -28,7 +28,7 @@ The TF5 TESLA implementation protects 5G NR User Equipment (UE) from **Fake Base
 
 ### Build & Configuration
 - [Build Configuration](build.md) - CMake options, build commands, dependencies
-- [TESLA Configuration](tesla-config.md) - TESLA-optimized gNB config file and parameter rationale
+- [gNB Configuration](tesla-config.md) - gNB configuration for RF simulator
 
 ### Roadmap
 - [Unimplemented Features](unimplemented-features.md) - Features described in the paper not yet implemented
