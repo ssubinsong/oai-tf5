@@ -111,18 +111,78 @@ This maintains the security property from RFC 4082 Section 3.3: "One authenticat
 
 ---
 
+## SIB1/SIB9 Data Split
+
+TESLA authentication data is split across two system information messages to minimize SIB1 overhead:
+
+| Message | Content | Size | Update Frequency |
+|---------|---------|------|------------------|
+| SIB1 `lateNonCriticalExtension` | Per-interval data (version, interval index, disclosed key, TESLA tag) | 37 B | Every TESLA interval |
+| SIB9 `lateNonCriticalExtension` | Static data + IBS signature (version, TESLA params, validity, timestamp, signature) | 114 B | Per key chain epoch |
+
+SIB9 is registered in SIB1's `si-SchedulingInfo` and broadcast as a separate SI message on its own schedule.
+
+---
+
+## SIB1/SIB9 Extension Wire Format
+
+### SIB1 Extension (37 bytes)
+
+```
+te_version       (1 B)   Protocol version
+interval_index   (4 B)   Current TESLA interval index
+key_disclosure  (16 B)   Disclosed key K_{i-d}
+tesla_tag       (16 B)   HMAC tag over original SIB1
+```
+
+### SIB9 Extension (114 bytes)
+
+```
+te_version       (1 B)   Protocol version
+tesla_params    (11 B)   t_int(2) + d(1) + t0(4) + chain_len(4)
+validity_end     (3 B)   gNB key expiration (minutes since epoch)
+timestamp_ms     (3 B)   Signature timestamp for replay protection
+signature       (96 B)   GG09 Schnorr IBS signature (R[32] + σ[32] + pk[32])
+```
+
+---
+
+## Authentication Input Formats
+
+### MAC Auth Input (for TESLA tag computation)
+
+```
+original_SIB1    (variable)   SIB1 encoding excluding the lateNonCriticalExtension
+te_version       (1 B)        Protocol version
+```
+
+### Signature Auth Input (for IBS signing/verification)
+
+```
+te_version       (1 B)    Protocol version
+tesla_params    (11 B)    Packed TESLA parameters
+validity_end     (3 B)    gNB key validity period
+timestamp_ms     (3 B)    Signature timestamp
+                ------
+Total:           18 B
+```
+
+---
+
 ## Dual Authentication Mechanism
 
 TF5 implements **two authentication mechanisms**:
 
 ### 1. GG09 Schnorr IBS Signature (Immediate) — First-time UE
-- gNB signs the authentication input with its IBS secret key (sk_ID)
-- UE verifies immediately using the pre-provisioned Core Master Public Key (MPK)
+- gNB signs the signature auth input with its IBS secret key (sk_ID); the signature is carried in **SIB9**
+- First-time UE receives SIB1, stores it, then waits for the next SIB9 broadcast
+- UE verifies the IBS signature immediately using the pre-provisioned Core Master Public Key (MPK)
 - Establishes trust anchor for subsequent TESLA MAC verification
 - Upon successful verification, RACH proceeds immediately
 
 ### 2. TESLA MAC (Delayed) — Returning UE
-- gNB computes HMAC using the current interval's key
+- gNB computes HMAC over the MAC auth input using the current interval's key; the tag is carried in **SIB1**
+- Returning UE already has a TESLA trust anchor, so **SIB9 is not needed**
 - UE buffers the message and verifies when key is disclosed in the next interval
 - **RACH is blocked until verification completes**: the UE does not initiate random access until the TESLA MAC is successfully verified, ensuring SIB1 authenticity before any NAS messages (containing SUCI) are sent
 - Provides lightweight re-authentication without expensive IBS signature verification

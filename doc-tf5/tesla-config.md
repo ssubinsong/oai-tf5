@@ -8,6 +8,8 @@
 
 The TESLA-optimized configuration file `gnb.sa.band78.fr1.106PRB.tesla.conf` provides gNB settings suitable for running with TESLA broadcast authentication enabled. This configuration ensures sufficient PDSCH resources for the larger SIB1 message that includes the TESLA extension.
 
+**Note**: TESLA data is split across SIB1 (37 B per-interval data) and SIB9 (114 B static + IBS signature). SIB9 is registered in SIB1's `si-SchedulingInfo` and broadcast as a separate SI message. See [Protocol Design](protocol.md#sib1sib9-data-split) for details.
+
 **Location**: `targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.tesla.conf`
 
 ---

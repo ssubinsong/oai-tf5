@@ -17,8 +17,6 @@ cmake --build --preset 5gdefault
 ## Key Management (IBS)
 
 TF5 uses **Identity-Based Signatures (IBS)** where the 5G Core acts as a Private Key Generator (PKG).
-See [pkg-cryptography.md](pkg-cryptography.md) for the full cryptographic specification
-(key hierarchy, algorithms, domain separation tags, security analysis).
 
 ### Step 1: Generate Master Keypair (One-time)
 
@@ -128,5 +126,5 @@ The gNB's secret key is cryptographically bound to both its Cell ID and validity
 **Validity binding:**
 - The validity period is embedded in the 67-byte key file (bytes 64-66, big-endian)
 - Both Cell ID and gnb_key_validity_end are hashed together: `H(Cell_ID || gnb_key_validity_end || mpk)`
-- UE extracts gnb_key_validity_end from the TESLA extension in SIB1
+- UE extracts gnb_key_validity_end from the TESLA extension in SIB9
 - UE checks if the key has expired before attempting verification

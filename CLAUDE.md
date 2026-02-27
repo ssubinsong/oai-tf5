@@ -57,3 +57,9 @@ TF5 uses **GG09 Schnorr IBS** (Ed25519/libsodium) for SIB1 broadcast authenticat
 - Algorithm: Extract(cid=H(id‖pk‖mpk), y=cid·z+b), Sign(σ=h·y+r), Verify(R'=σ·B−h·Q)
 - Key sizes: mpk=32B, sk_id=64B(y[32]+pk[32]), sig=96B(R[32]+σ[32]+pk[32])
 - `openair3/SECU/ed25519_precomp.h` contains local reimplementations of libsodium internal `ge25519_*` functions (they are `static` in libsodium source and not exported)
+
+## Data Split: SIB1 / SIB9
+- SIB1 `lateNonCriticalExtension`: per-interval (version + interval + key + tag = 37B)
+- SIB9 `lateNonCriticalExtension`: static + IBS sig (version + params + validity + timestamp + sig = 114B)
+- First-time UE: SIB1 저장 → SIB9 IBS 검증 → chain bootstrap
+- Returning UE: SIB1 MAC만 검증 (SIB9 불필요)
