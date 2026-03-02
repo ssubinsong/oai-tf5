@@ -483,6 +483,7 @@ static void tf5_chain_key_inplace(uint8_t key[TF5_TESLA_KEY_LEN])
     uint8_t tmp[TF5_TESLA_KEY_LEN];
     tf5_chain_key(key, tmp);
     memcpy(key, tmp, TF5_TESLA_KEY_LEN);
+    OPENSSL_cleanse(tmp, TF5_TESLA_KEY_LEN);
 }
 
 int tf5_ue_buffer_msg(tf5_ue_state_t *state,
@@ -575,7 +576,10 @@ bool tf5_ue_verify_key_disclosure(tf5_ue_state_t *ue_state,
         tf5_chain_key_inplace(computed_key);
     }
 
-    if (CRYPTO_memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0) {
+    bool match = (CRYPTO_memcmp(computed_key, ue_state->trust_anchor_key, TF5_TESLA_KEY_LEN) == 0);
+    OPENSSL_cleanse(computed_key, TF5_TESLA_KEY_LEN);
+
+    if (match) {
       LOG_D(TF5,
             "Key chain verified K_%u -> K_%d (%u hash ops)\n",
             disclosed_key_interval,
@@ -651,6 +655,8 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
             entry->valid = false;
             mac_failed = true;
         }
+        OPENSSL_cleanse(derived_key, TF5_TESLA_KEY_LEN);
+        OPENSSL_cleanse(expected_tag, TF5_TESLA_TAG_LEN);
     }
 
     tf5_ue_recount_buffer(ue_state);

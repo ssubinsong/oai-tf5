@@ -5,9 +5,9 @@
  * Implements the Galindo-Garcia (GG09) Schnorr Identity-Based Signature scheme
  * (1-level, Ed25519/libsodium) for SIB1 broadcast authentication.
  *
- * Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ * Extract: b ← Z_l, pk = b·B, cid = H(pk‖mpk‖id‖validity), y = cid·z + b
  * Sign:    r ← Z_l, R = r·B, h = H(data‖R), σ = h·y + r
- * Verify:  cid = H(id‖pk‖mpk), Q = cid·mpk + pk, R' = σ·B − h·Q
+ * Verify:  cid = H(pk‖mpk‖id‖validity), Q = cid·mpk + pk, R' = σ·B − h·Q
  */
 
 #ifndef TF5_TESLA_SIG_H

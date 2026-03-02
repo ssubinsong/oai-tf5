@@ -170,8 +170,8 @@ typedef struct {
 
 typedef enum {
   TF5_PHASE_INITIAL = 0,           // No SIB1 has been buffered & marked for RRC
-  TF5_PHASE_AUTHENTICATED,        // Authenticated via IBS signature or TESLA MAC
   TF5_PHASE_BUFFERED,              // SIB1 buffered, pending TESLA verification
+  TF5_PHASE_AUTHENTICATED,        // Authenticated via IBS signature or TESLA MAC
 } tf5_ue_phase_t;
 
 /*

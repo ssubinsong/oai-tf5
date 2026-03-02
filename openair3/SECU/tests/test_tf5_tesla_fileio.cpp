@@ -122,7 +122,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_FileNotFound) {
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooSmall) {
-    // Create a file that's too small (40 bytes instead of 51)
+    // Create a file that's too small (40 bytes instead of 67)
     std::string small_file = test_dir + "/small.bin";
     std::ofstream file(small_file, std::ios::binary);
     uint8_t data[40] = {0};
@@ -138,7 +138,7 @@ TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooSmall) {
 }
 
 TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooLarge) {
-    // Create a file that's too large (60 bytes instead of 51)
+    // Create a file that's too large (60 bytes instead of 67)
     std::string large_file = test_dir + "/large.bin";
     std::ofstream file(large_file, std::ios::binary);
     uint8_t data[60] = {0};

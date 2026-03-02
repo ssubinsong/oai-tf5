@@ -552,6 +552,68 @@ TEST_F(TF5UeTest, VerifyBuffered_EmptyBuffer_ReturnsNoData) {
 }
 
 // ============================================================================
+// verify_buffered_msgs Positive Path Tests
+// ============================================================================
+
+TEST_F(TF5UeTest, VerifyBuffered_PositivePath_VerifiesMAC) {
+    ASSERT_EQ(0, initGnbDefault(10));
+    ASSERT_EQ(0, initUeDefault());
+
+    // Use interval 5 for the buffered message
+    uint32_t msg_interval = 5;
+    uint32_t key_disclosure_interval = msg_interval;  // steps=0 (same key disclosed)
+
+    // Get K_5 from gNB key chain
+    const uint8_t *K_msg = gnb_state.key_chain[tf5_key_interval_to_index(msg_interval)];
+
+    // Compute a real MAC tag using K_5
+    const char auth_data[] = "SIB1 test auth input for buffered verify";
+    uint8_t tag[TF5_TESLA_TAG_LEN];
+    ASSERT_EQ(TF5_OK, tf5_compute_tag(K_msg, (const uint8_t*)auth_data, strlen(auth_data), tag));
+
+    // Set up UE trust anchor at interval 4 (K_{i-d} where d=1)
+    uint32_t anchor_interval = msg_interval - gnb_state.tesla_params.d;
+    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(anchor_interval)], anchor_interval);
+
+    // Buffer the message
+    ASSERT_EQ(TF5_OK, tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_data, strlen(auth_data),
+                                          msg_interval, tag));
+
+    // Verify with the correct key disclosure
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, K_msg, key_disclosure_interval);
+    EXPECT_EQ(TF5_OK, ret) << "Correct key should verify buffered MAC";
+}
+
+TEST_F(TF5UeTest, VerifyBuffered_WrongKey_FailsMAC) {
+    ASSERT_EQ(0, initGnbDefault(10));
+    ASSERT_EQ(0, initUeDefault());
+
+    uint32_t msg_interval = 5;
+
+    // Get K_5 from gNB key chain
+    const uint8_t *K_msg = gnb_state.key_chain[tf5_key_interval_to_index(msg_interval)];
+
+    // Compute a real MAC tag using K_5
+    const char auth_data[] = "SIB1 test auth input for buffered verify";
+    uint8_t tag[TF5_TESLA_TAG_LEN];
+    ASSERT_EQ(TF5_OK, tf5_compute_tag(K_msg, (const uint8_t*)auth_data, strlen(auth_data), tag));
+
+    // Set up UE trust anchor
+    uint32_t anchor_interval = msg_interval - gnb_state.tesla_params.d;
+    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(anchor_interval)], anchor_interval);
+
+    // Buffer the message
+    ASSERT_EQ(TF5_OK, tf5_ue_buffer_msg(&ue_state, (const uint8_t*)auth_data, strlen(auth_data),
+                                          msg_interval, tag));
+
+    // Verify with wrong key
+    uint8_t wrong_key[TF5_TESLA_KEY_LEN];
+    memset(wrong_key, 0xFF, TF5_TESLA_KEY_LEN);
+    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, wrong_key, msg_interval);
+    EXPECT_EQ(TF5_ERR_VERIFY, ret) << "Wrong key should fail MAC verification";
+}
+
+// ============================================================================
 // IBS Signature Verification Tests (tf5_ibs_verify)
 // ============================================================================
 

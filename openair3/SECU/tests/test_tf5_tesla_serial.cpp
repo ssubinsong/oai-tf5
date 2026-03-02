@@ -170,6 +170,93 @@ TEST_F(TF5SerialTest, RoundTrip_GnbKeyValidityEnd) {
 }
 
 // ============================================================================
+// SIB1 Extension Pack/Unpack Tests
+// ============================================================================
+
+TEST_F(TF5SerialTest, PackUnpack_Sib1Ext_RoundTrip) {
+    tf5_sib1_ext_t orig = {};
+    orig.te_version = TF5_VERSION;
+    orig.i = tf5_test::TV_EXT_INTERVAL;
+    memcpy(orig.key_disclosure, tf5_test::TV_EXT_DISCLOSED_KEY, TF5_TESLA_KEY_LEN);
+    memcpy(orig.tesla_tag, tf5_test::TV_EXT_TAG, TF5_TESLA_TAG_LEN);
+
+    uint8_t buf[TF5_SIB1_EXT_PACKED_SIZE];
+    int packed = tf5_pack_sib1_ext(&orig, buf, sizeof(buf));
+    ASSERT_EQ(TF5_SIB1_EXT_PACKED_SIZE, packed);
+
+    tf5_sib1_ext_t unpacked = {};
+    int rc = tf5_unpack_sib1_ext(buf, sizeof(buf), &unpacked);
+    ASSERT_EQ(TF5_OK, rc);
+
+    EXPECT_EQ(orig.te_version, unpacked.te_version);
+    EXPECT_EQ(orig.i, unpacked.i);
+    EXPECT_EQ(0, memcmp(orig.key_disclosure, unpacked.key_disclosure, TF5_TESLA_KEY_LEN));
+    EXPECT_EQ(0, memcmp(orig.tesla_tag, unpacked.tesla_tag, TF5_TESLA_TAG_LEN));
+}
+
+TEST_F(TF5SerialTest, PackUnpack_Sib9Ext_RoundTrip) {
+    tf5_sib9_ext_t orig = {};
+    orig.te_version = TF5_VERSION;
+    orig.tesla_params.t_int_ms = tf5_test::TV_EXT_T_INT_MS;
+    orig.tesla_params.d = tf5_test::TV_EXT_D;
+    orig.tesla_params.t0 = tf5_slot_time_make(tf5_test::TV_EXT_T0_SFN, tf5_test::TV_EXT_T0_SLOT);
+    orig.tesla_params.chain_len = tf5_test::TV_EXT_CHAIN_LEN;
+    orig.validity_end = tf5_test::TV_EXT_VALIDITY_END;
+    orig.timestamp_s = tf5_test::TV_EXT_TIMESTAMP_S;
+    memcpy(orig.signature, tf5_test::TV_EXT_SIGNATURE, TF5_IBS_SIG_LEN);
+
+    uint8_t buf[TF5_SIB9_EXT_PACKED_SIZE];
+    int packed = tf5_pack_sib9_ext(&orig, buf, sizeof(buf));
+    ASSERT_EQ(TF5_SIB9_EXT_PACKED_SIZE, packed);
+
+    tf5_sib9_ext_t unpacked = {};
+    int rc = tf5_unpack_sib9_ext(buf, sizeof(buf), &unpacked);
+    ASSERT_EQ(TF5_OK, rc);
+
+    EXPECT_EQ(orig.te_version, unpacked.te_version);
+    EXPECT_EQ(orig.tesla_params.t_int_ms, unpacked.tesla_params.t_int_ms);
+    EXPECT_EQ(orig.tesla_params.d, unpacked.tesla_params.d);
+    EXPECT_EQ(orig.tesla_params.t0.sfn, unpacked.tesla_params.t0.sfn);
+    EXPECT_EQ(orig.tesla_params.t0.slot, unpacked.tesla_params.t0.slot);
+    EXPECT_EQ(orig.tesla_params.chain_len, unpacked.tesla_params.chain_len);
+    EXPECT_EQ(orig.validity_end, unpacked.validity_end);
+    EXPECT_EQ(orig.timestamp_s, unpacked.timestamp_s);
+    EXPECT_EQ(0, memcmp(orig.signature, unpacked.signature, TF5_IBS_SIG_LEN));
+}
+
+TEST_F(TF5SerialTest, PackSib1Ext_BufferTooSmall) {
+    tf5_sib1_ext_t ext = {};
+    uint8_t buf[TF5_SIB1_EXT_PACKED_SIZE - 1];
+
+    int rc = tf5_pack_sib1_ext(&ext, buf, sizeof(buf));
+    EXPECT_LT(rc, 0);
+}
+
+TEST_F(TF5SerialTest, PackSib9Ext_BufferTooSmall) {
+    tf5_sib9_ext_t ext = {};
+    uint8_t buf[TF5_SIB9_EXT_PACKED_SIZE - 1];
+
+    int rc = tf5_pack_sib9_ext(&ext, buf, sizeof(buf));
+    EXPECT_LT(rc, 0);
+}
+
+TEST_F(TF5SerialTest, UnpackSib1Ext_WrongSize) {
+    uint8_t buf[TF5_SIB1_EXT_PACKED_SIZE - 1] = {};
+    tf5_sib1_ext_t ext = {};
+
+    int rc = tf5_unpack_sib1_ext(buf, sizeof(buf), &ext);
+    EXPECT_LT(rc, 0);
+}
+
+TEST_F(TF5SerialTest, UnpackSib9Ext_WrongSize) {
+    uint8_t buf[TF5_SIB9_EXT_PACKED_SIZE - 1] = {};
+    tf5_sib9_ext_t ext = {};
+
+    int rc = tf5_unpack_sib9_ext(buf, sizeof(buf), &ext);
+    EXPECT_LT(rc, 0);
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
