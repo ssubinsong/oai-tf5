@@ -609,9 +609,13 @@ static tf5_verify_result_t tf5_verify_returning(NR_UE_RRC_INST_t *rrc,
   /* Build MAC auth input: SIB1 content + version */
   uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
   size_t mac_auth_len = 0;
-  tf5_build_mac_auth_input(mac_auth_input, &mac_auth_len,
-                           SI_info->tf5_sib1_buf, SI_info->tf5_sib1_len,
-                           sib1_ext->te_version);
+  int mac_rc = tf5_build_mac_auth_input(mac_auth_input, &mac_auth_len,
+                                        SI_info->tf5_sib1_buf, SI_info->tf5_sib1_len,
+                                        sib1_ext->te_version);
+  if (mac_rc != 0) {
+    LOG_E(TF5, "Failed to build MAC auth input (rc=%d, sib1_len=%u)\n", mac_rc, SI_info->tf5_sib1_len);
+    return TF5_VERIFY_FAIL;
+  }
 
   if (ue_state->curr_phase == TF5_PHASE_AUTHENTICATED) {
     ue_state->curr_phase = TF5_PHASE_INITIAL;

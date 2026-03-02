@@ -29,7 +29,7 @@
 #define TF5_DS_PREFIX_MAC_KEY       0x01    // F'(K_i) domain separation
 
 /* ── Buffer & Wire Format Sizes ────────────────────────── */
-#define TF5_MAX_AUTH_INPUT          372     // Max auth input buffer size
+#define TF5_MAX_AUTH_INPUT          373     // Max auth input buffer size (max SIB1 + 1B version)
 #define TF5_EXTENSION_PACKED_SIZE   150     // Wire format size (tf5_extension_t)
 #define TF5_SIB1_EXT_PACKED_SIZE    37      // Wire format: version(1) + interval(4) + key(16) + tag(16)
 #define TF5_SIB9_EXT_PACKED_SIZE    114     // Wire format: version(1) + params(11) + validity(3) + timestamp(3) + sig(96)

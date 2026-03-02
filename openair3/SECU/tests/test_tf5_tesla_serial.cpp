@@ -360,8 +360,8 @@ TEST_F(TF5SerialTest, BuildMacAuthInput_ExceedsMaxAuthInput) {
     uint8_t out[TF5_MAX_AUTH_INPUT + 100];
     size_t out_len = 0;
 
-    // TF5_MAX_AUTH_INPUT = 372, overhead = 1, so > 371 bytes fails
-    uint8_t big_sib1[372];
+    // TF5_MAX_AUTH_INPUT = 373, overhead = 1, so > 372 bytes fails
+    uint8_t big_sib1[373];
     memset(big_sib1, 0xBB, sizeof(big_sib1));
 
     int ret = tf5_build_mac_auth_input(out, &out_len, big_sib1, sizeof(big_sib1), TF5_VERSION);

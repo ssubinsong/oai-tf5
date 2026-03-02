@@ -891,6 +891,7 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
         if (rc != 0) {
             LOG_E(TF5, "Failed to compute tag for interval %u\n", entry->rx_interval_index);
             entry->valid = false;
+            mac_failed = true;
             continue;
         }
 
