@@ -34,7 +34,7 @@
 #define TF5_SIB9_EXT_PACKED_SIZE    114     // Wire format: version(1) + params(11) + validity(3) + timestamp(3) + sig(96)
 
 /* ── Default Configuration ─────────────────────────────── */
-#define TF5_TESLA_BUFFER_QUEUE_SIZE        4       // Max SIB1s buffered per UE
+#define TF5_TESLA_BUFFER_QUEUE_SIZE        16      // Max SIB1s buffered per UE
 #define TF5_RP_DEFAULT_TIME_WINDOW_S        10800   // Replay protection window (3 hours, in seconds)
 
 /* ── NR Radio Timing Constants (3GPP TS 38.211) ──────── */
