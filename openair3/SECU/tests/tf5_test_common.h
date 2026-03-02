@@ -159,10 +159,13 @@ protected:
     }
 
     void loadGeneratedKeys() {
-        int rc = tf5_ibs_load_master_secret(msk_path.c_str(), ibs_msk);
-        ASSERT_EQ(0, rc) << "Failed to load MSK";
+        FILE* f_msk = fopen(msk_path.c_str(), "rb");
+        ASSERT_NE(nullptr, f_msk) << "Failed to open MSK file";
+        size_t n_msk = fread(ibs_msk, 1, TF5_IBS_MASTER_SECRET_LEN, f_msk);
+        fclose(f_msk);
+        ASSERT_EQ(TF5_IBS_MASTER_SECRET_LEN, n_msk) << "Failed to load MSK";
 
-        rc = tf5_load_core_mpk(mpk_path.c_str(), ibs_mpk);
+        int rc = tf5_load_core_mpk(mpk_path.c_str(), ibs_mpk);
         ASSERT_EQ(0, rc) << "Failed to load MPK";
 
         FILE* f = fopen(sk_gnb_path.c_str(), "rb");

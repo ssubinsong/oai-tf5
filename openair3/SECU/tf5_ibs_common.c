@@ -69,43 +69,6 @@ int tf5_ibs_hash_identity(const uint8_t *cell_id,
 }
 
 /*
- * Parse Cell ID from hex string
- *
- * Input: 9 hex characters representing 36 bits (e.g., "123456789")
- * Output: 5 bytes with layout:
- *   byte[0] = bits 35-28
- *   byte[1] = bits 27-20
- *   byte[2] = bits 19-12
- *   byte[3] = bits 11-4
- *   byte[4] = bits 3-0 in upper nibble, lower nibble = 0 (padding)
- */
-/*
- * Load master secret key from file
- */
-int tf5_ibs_load_master_secret(const char *filepath,
-                                uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN])
-{
-    if (!filepath || !msk_out) {
-        return TF5_ERR_INVALID_PARAM;
-    }
-
-    FILE *f = fopen(filepath, "rb");
-    if (!f) {
-        return TF5_ERR_FILE_OPEN;
-    }
-
-    size_t n = fread(msk_out, 1, TF5_IBS_MASTER_SECRET_LEN, f);
-    fclose(f);
-
-    if (n != TF5_IBS_MASTER_SECRET_LEN) {
-        sodium_memzero(msk_out, TF5_IBS_MASTER_SECRET_LEN);
-        return TF5_ERR_FILE_IO;
-    }
-
-    return TF5_OK;
-}
-
-/*
  * Compute GG09 Schnorr IBS gNB secret key via Ed25519 signing
  *
  * Uses crypto_sign_detached to sign the identity message (cell_id ‖ validity)

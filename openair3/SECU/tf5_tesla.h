@@ -30,19 +30,16 @@
 
 /* ── Buffer & Wire Format Sizes ────────────────────────── */
 #define TF5_MAX_AUTH_INPUT          373     // Max auth input buffer size (max SIB1 + 1B version)
-#define TF5_EXTENSION_PACKED_SIZE   150     // Wire format size (tf5_extension_t)
 #define TF5_SIB1_EXT_PACKED_SIZE    37      // Wire format: version(1) + interval(4) + key(16) + tag(16)
 #define TF5_SIB9_EXT_PACKED_SIZE    114     // Wire format: version(1) + params(11) + validity(3) + timestamp(3) + sig(96)
 
 /* ── Default Configuration ─────────────────────────────── */
-#define TF5_TESLA_DEFAULT_D_BOUND_US       1005    // D bound (microseconds)
 #define TF5_TESLA_BUFFER_QUEUE_SIZE        4       // Max SIB1s buffered per UE
 #define TF5_RP_DEFAULT_TIME_WINDOW_S        10800   // Replay protection window (3 hours, in seconds)
 
 /* ── NR Radio Timing Constants (3GPP TS 38.211) ──────── */
 #define TF5_NR_FRAME_DURATION_MS    10      // 1 radio frame = 10ms
 #define TF5_NR_FRAME_DURATION_US    10000   // Frame duration in microseconds
-#define TF5_NR_SFN_MODULUS          1024    // SFN wraps at 1024 (0-1023)
 
 /* ── Replay Protection Timestamp Constants ────────────── */
 #define TF5_RP_TIMESTAMP_BITS       24
@@ -289,39 +286,6 @@ int tf5_build_sig_auth_input(uint8_t *out,
                                    uint32_t timestamp_s);
 
 /**
- * Update dynamic parameters and compute signature/tag
- *
- * This should be called before each SIB1 transmission.
- *
- * @param state         Pointer to gNB TESLA state structure
- * @param sfn           Current SFN
- * @param slot          Current slot
- * @param original_sib1 Original SIB1 encoded data
- * @param sib1_len      Length of original SIB1 data
- * @param ext           Output: complete TESLA extension
- * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_CHAIN_EXHAUSTED,
- *         TF5_ERR_SIGN, TF5_ERR_CRYPTO, or propagated error from sub-operations
- */
-int tf5_gnb_prepare_extension(tf5_gnb_state_t *state,
-                                    uint16_t sfn,
-                                    uint16_t slot,
-                                    const uint8_t *original_sib1,
-                                    size_t sib1_len,
-                                    tf5_extension_t *ext);
-
-/**
- * Pack TESLA extension into binary format
- *
- * @param ext           TESLA extension structure
- * @param buf           Output buffer
- * @param buf_len       Size of output buffer
- * @return Number of bytes written on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
- */
-int tf5_pack_extension(const tf5_extension_t *ext,
-                             uint8_t *buf,
-                             size_t buf_len);
-
-/**
  * Pack SIB1 extension (per-interval data) into binary format
  *
  * @param ext       SIB1 extension structure
@@ -382,25 +346,6 @@ int tf5_ue_init(tf5_ue_state_t *state,
                       uint16_t slots_per_frame,
                       uint32_t d_bound_us,
                       uint64_t rp_timestamp_window_s);
-
-/**
- * Free TESLA state resources on UE
- *
- * @param state         Pointer to UE TESLA state structure
- */
-void tf5_ue_free(tf5_ue_state_t *state);
-
-/**
- * Unpack TESLA extension from binary format
- *
- * @param buf           Input buffer
- * @param buf_len       Length of input buffer
- * @param ext           Output: unpacked TESLA extension
- * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
- */
-int tf5_unpack_extension(const uint8_t *buf,
-                               size_t buf_len,
-                               tf5_extension_t *ext);
 
 /**
  * Perform safe packet test
@@ -570,24 +515,6 @@ static inline uint64_t tf5_absolute_slots(const tf5_slot_time_t *time,
 {
     // Total slots = SFN * slots_per_frame + slot
     return (uint64_t)time->sfn * slots_per_frame + time->slot;
-}
-
-/**
- * Convert absolute slot count back to timing struct
- *
- * Inverse of tf5_absolute_slots.
- *
- * @param abs_slots      Absolute slot count
- * @param slots_per_frame Number of slots per frame
- * @return Timing struct (SFN/slot)
- */
-static inline tf5_slot_time_t tf5_slots_to_slot_time(uint64_t abs_slots,
-                                                            uint16_t slots_per_frame)
-{
-    // abs_slots = sfn * slots_per_frame + slot
-    uint16_t sfn = (uint16_t)((abs_slots / slots_per_frame) % TF5_NR_SFN_MODULUS);
-    uint16_t slot = abs_slots % slots_per_frame;
-    return tf5_slot_time_make(sfn, slot);
 }
 
 /*

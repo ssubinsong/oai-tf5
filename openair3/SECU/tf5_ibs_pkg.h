@@ -57,22 +57,6 @@ int tf5_ibs_hash_identity(const uint8_t *cell_id,
                            const uint8_t mpk[TF5_IBS_MASTER_PUBLIC_LEN],
                            uint8_t scalar_out[TF5_ED25519_SCALAR_LEN]);
 
-/*
- * =============================================================================
- * Low-level Functions (for integration with OAI)
- * =============================================================================
- */
-
-/**
- * Load master secret key from file
- *
- * @param filepath   Path to master secret key file
- * @param msk_out    Output buffer (32 bytes)
- * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_FILE_OPEN, TF5_ERR_FILE_IO
- */
-int tf5_ibs_load_master_secret(const char *filepath,
-                                uint8_t msk_out[TF5_IBS_MASTER_SECRET_LEN]);
-
 /**
  * Compute GG09 Schnorr IBS gNB secret key via Ed25519 signing
  *
@@ -97,20 +81,6 @@ int tf5_ibs_compute_gnb_secret(const uint8_t msk[TF5_IBS_MASTER_SECRET_LEN],
  * Validity Period Conversion Utilities
  * =============================================================================
  */
-
-/**
- * Convert Unix timestamp to gnb_key_validity_end format
- *
- * @param unix_sec  Unix timestamp (seconds since 1970-01-01)
- * @return Minutes since 2024-01-01 00:00:00 UTC (24-bit value)
- */
-static inline uint32_t tf5_unix_to_gnb_key_validity(uint64_t unix_sec)
-{
-    if (unix_sec <= TF5_IBS_VALIDITY_EPOCH) {
-        return 0;
-    }
-    return (uint32_t)((unix_sec - TF5_IBS_VALIDITY_EPOCH) / 60);
-}
 
 /**
  * Convert gnb_key_validity_end format to Unix timestamp

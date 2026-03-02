@@ -83,17 +83,6 @@ target_compile_definitions(test_tf5_tesla_ibs PRIVATE ${TF5_TEST_COMPILE_DEFS})
 add_test(NAME test_tf5_tesla_ibs COMMAND test_tf5_tesla_ibs)
 
 # -----------------------------------------------------------------------------
-# End-to-end integration tests
-# -----------------------------------------------------------------------------
-add_executable(test_tf5_tesla_e2e test_tf5_tesla_e2e.cpp)
-add_dependencies(tests test_tf5_tesla_e2e)
-add_dependencies(tf5_tests test_tf5_tesla_e2e)
-target_include_directories(test_tf5_tesla_e2e PRIVATE ${OPENAIR3_DIR}/SECU)
-target_link_libraries(test_tf5_tesla_e2e PRIVATE ${TF5_TEST_LIBS})
-target_compile_definitions(test_tf5_tesla_e2e PRIVATE ${TF5_TEST_COMPILE_DEFS})
-add_test(NAME test_tf5_tesla_e2e COMMAND test_tf5_tesla_e2e)
-
-# -----------------------------------------------------------------------------
 # Timing and replay protection tests
 # -----------------------------------------------------------------------------
 add_executable(test_tf5_tesla_timing test_tf5_tesla_timing.cpp)

@@ -33,7 +33,7 @@
  *   - bool returns: Verification-only functions (safe packet test, key chain)
  * ========================================================================== */
 
-typedef enum {
+enum {
     TF5_OK                      =  0,
     /* Parameter validation */
     TF5_ERR_INVALID_PARAM       = -1,   // NULL pointers, zero-length, bad format
@@ -55,7 +55,7 @@ typedef enum {
     /* Timestamp validation */
     TF5_ERR_TIMESTAMP_OLD       = -13,  // Received timestamp too old
     TF5_ERR_TIMESTAMP_FUTURE    = -14,  // Received timestamp too far in future
-} tf5_error_t;
+};
 
 /* ==========================================================================
  * Ed25519 Curve Base Constants

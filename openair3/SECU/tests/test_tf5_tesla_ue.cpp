@@ -42,7 +42,7 @@ protected:
         memset(&ue_state, 0, sizeof(ue_state));
         memset(&gnb_state, 0, sizeof(gnb_state));
 
-        // Generate proper PKG keys for tests that call tf5_gnb_prepare_extension
+        // Generate proper PKG keys for gNB integration tests
         base_test_dir = "/tmp/tf5_ue_base_test_" + std::to_string(getpid());
         std::filesystem::create_directories(base_test_dir);
         std::string msk_path = base_test_dir + "/msk.bin";
@@ -78,7 +78,7 @@ protected:
     }
 
     void TearDown() override {
-        tf5_ue_free(&ue_state);
+        memset(&ue_state, 0, sizeof(ue_state));
         tf5_gnb_free(&gnb_state);
         if (!base_test_dir.empty()) {
             std::filesystem::remove_all(base_test_dir);
@@ -91,7 +91,7 @@ protected:
             &ue_state,
             test_mpk,
             tf5_test::TV_SLOTS_PER_FRAME,
-            TF5_TESLA_DEFAULT_D_BOUND_US,
+            1005,
             TF5_RP_DEFAULT_TIME_WINDOW_S
         );
     }
@@ -160,14 +160,14 @@ TEST_F(TF5UeTest, UeInit_AuthStateUnauthenticated) {
 
 TEST_F(TF5UeTest, UeInit_NullState_ReturnsError) {
     int ret = tf5_ue_init(nullptr, test_mpk, tf5_test::TV_SLOTS_PER_FRAME,
-                                 TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
+                                 1005, TF5_RP_DEFAULT_TIME_WINDOW_S);
 
     EXPECT_LT(ret, 0) << "Null state should return error";
 }
 
 TEST_F(TF5UeTest, UeInit_NullMpk_ReturnsError) {
     int ret = tf5_ue_init(&ue_state, nullptr, tf5_test::TV_SLOTS_PER_FRAME,
-                                 TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
+                                 1005, TF5_RP_DEFAULT_TIME_WINDOW_S);
 
     EXPECT_LT(ret, 0) << "Null MPK should return error";
 }
@@ -175,7 +175,7 @@ TEST_F(TF5UeTest, UeInit_NullMpk_ReturnsError) {
 TEST_F(TF5UeTest, UeInit_DefaultTimestampWindow) {
     // Pass 0 for timestamp window - should use default
     int ret = tf5_ue_init(&ue_state, test_mpk, tf5_test::TV_SLOTS_PER_FRAME,
-                                 TF5_TESLA_DEFAULT_D_BOUND_US, 0);
+                                 1005, 0);
 
     EXPECT_EQ(0, ret);
     EXPECT_EQ(TF5_RP_DEFAULT_TIME_WINDOW_S, ue_state.rp_timestamp_window_s)
@@ -201,7 +201,7 @@ TEST_F(TF5UeTest, UeInit_DOffsetSlots_Mu0) {
     // slot_duration = 10000/10 = 1000us
     // d_offset_slots = ceil(1005/1000) = (1005+999)/1000 = 2
     int ret = tf5_ue_init(&ue_state, test_mpk, 10,
-                          TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
+                          1005, TF5_RP_DEFAULT_TIME_WINDOW_S);
     ASSERT_EQ(0, ret);
     EXPECT_EQ(2u, ue_state.d_offset_slots)
         << "mu=0: ceil(1005/1000) should be 2 slots";
@@ -212,7 +212,7 @@ TEST_F(TF5UeTest, UeInit_DOffsetSlots_Mu2) {
     // slot_duration = 10000/40 = 250us
     // d_offset_slots = ceil(1005/250) = (1005+249)/250 = 5
     int ret = tf5_ue_init(&ue_state, test_mpk, 40,
-                          TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
+                          1005, TF5_RP_DEFAULT_TIME_WINDOW_S);
     ASSERT_EQ(0, ret);
     EXPECT_EQ(5u, ue_state.d_offset_slots)
         << "mu=2: ceil(1005/250) should be 5 slots";
@@ -651,7 +651,7 @@ protected:
 
     int initUeWithTestMpk() {
         return tf5_ue_init(&ue_state, ibs_mpk, tf5_test::TV_SLOTS_PER_FRAME,
-                                  TF5_TESLA_DEFAULT_D_BOUND_US, TF5_RP_DEFAULT_TIME_WINDOW_S);
+                                  1005, TF5_RP_DEFAULT_TIME_WINDOW_S);
     }
 
     void createValidSignature(const uint8_t* auth_input, size_t auth_input_len,
@@ -827,57 +827,6 @@ TEST_F(TF5UeTest, AuthState_CanBeSetToBuffered) {
 
     EXPECT_EQ(TF5_PHASE_BUFFERED, ue_state.curr_phase)
         << "Auth state should be settable to BUFFERED";
-}
-
-TEST_F(TF5UeTest, AuthState_VerifyBufferedSuccess) {
-    ASSERT_EQ(0, initUeDefault());
-    ASSERT_EQ(0, initGnbDefault(100));
-
-    // Generate valid extension
-    tf5_extension_t ext;
-    const char sib1[] = "SIB1 that triggers RRC setup";
-    tf5_gnb_prepare_extension(&gnb_state, 5, 0, (const uint8_t*)sib1, strlen(sib1), &ext);
-
-    // Set up UE with anchor at K_{i-d} (consecutive verification only)
-    ue_state.tesla_params = ext.tesla_params;
-    int32_t anchor_idx = (int32_t)ext.i - ext.tesla_params.d;
-    setupUeWithTrustAnchor(gnb_state.key_chain[tf5_key_interval_to_index(anchor_idx)], anchor_idx);
-
-    uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
-    size_t mac_auth_input_len;
-    tf5_build_mac_auth_input(mac_auth_input, &mac_auth_input_len,
-                                   (const uint8_t*)sib1, strlen(sib1),
-                                   TF5_VERSION);
-
-    tf5_ue_buffer_msg(&ue_state, mac_auth_input, mac_auth_input_len, ext.i, ext.tesla_tag);
-
-    // First verify key chain
-    bool key_valid = tf5_ue_verify_key_disclosure(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)], ext.i);
-    EXPECT_TRUE(key_valid) << "Key chain should verify";
-
-    // Then verify buffered entries
-    int ret = tf5_tesla_ue_verify_buffered_msgs(&ue_state, gnb_state.key_chain[tf5_key_interval_to_index(ext.i)],
-                                                                ext.i);
-
-    EXPECT_EQ(0, ret) << "Verification should succeed";
-}
-
-// ============================================================================
-// Free Tests (tf5_ue_free)
-// ============================================================================
-
-TEST_F(TF5UeTest, UeFree_Success) {
-    ASSERT_EQ(0, initUeDefault());
-
-    tf5_ue_free(&ue_state);
-
-    EXPECT_FALSE(ue_state.initialized) << "State should be marked as not initialized";
-}
-
-TEST_F(TF5UeTest, UeFree_NullState_NoOp) {
-    // Should not crash
-    tf5_ue_free(nullptr);
-    SUCCEED();
 }
 
 // ============================================================================

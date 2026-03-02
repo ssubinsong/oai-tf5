@@ -256,24 +256,6 @@ TEST_F(TF5TimingTest, AbsoluteSlots_Basic) {
     EXPECT_EQ(10 * SLOTS_PER_FRAME + 5, abs_slots);
 }
 
-TEST_F(TF5TimingTest, SlotsToSlotTime_RoundTrip) {
-    tf5_slot_time_t original = tf5_slot_time_make(123, 17);
-    uint64_t abs_slots = tf5_absolute_slots(&original, SLOTS_PER_FRAME);
-    tf5_slot_time_t recovered = tf5_slots_to_slot_time(abs_slots, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(original.sfn, recovered.sfn);
-    EXPECT_EQ(original.slot, recovered.slot);
-}
-
-TEST_F(TF5TimingTest, SlotsToSlotTime_SfnWrap) {
-    // Test SFN modulo 1024
-    uint64_t abs_slots = 1024 * SLOTS_PER_FRAME + 5;  // SFN would be 1024, wraps to 0
-    tf5_slot_time_t time = tf5_slots_to_slot_time(abs_slots, SLOTS_PER_FRAME);
-
-    EXPECT_EQ(0, time.sfn) << "SFN should wrap at 1024";
-    EXPECT_EQ(5, time.slot);
-}
-
 // ============================================================================
 // Main
 // ============================================================================
