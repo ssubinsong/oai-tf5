@@ -356,8 +356,9 @@ static void nr_decode_SI(NR_UE_RRC_SI_INFO *SI_info, NR_SystemInformation_t *si,
           if (sib9 && sib9->lateNonCriticalExtension && SI_info->tf5_sib1_stored) {
             bool was_bootstrapped = SI_info->tf5_state && SI_info->tf5_state->chain_bootstrapped;
             tf5_verify_from_sib9(rrc, SI_info, sib9);
-            // Chain just bootstrapped — trigger RA
+            // Chain just bootstrapped — trigger RA and stop SIB9 reception
             if (!was_bootstrapped && SI_info->tf5_state->chain_bootstrapped) {
+              SI_info->sib9_validity = true;
               nr_mac_rrc_message_t ra_msg = {0};
               ra_msg.payload_type = NR_MAC_RRC_CONFIG_OTHER_SIB;
               ra_msg.payload.config_other_sib.can_start_ra = true;
@@ -365,7 +366,6 @@ static void nr_decode_SI(NR_UE_RRC_SI_INFO *SI_info, NR_SystemInformation_t *si,
             }
           }
         }
-        // Do not set sib9_validity = true → continuous reception
 #else
         SI_info->sib9_validity = true;
         nr_timer_start(&SI_info->sib9_timer);
