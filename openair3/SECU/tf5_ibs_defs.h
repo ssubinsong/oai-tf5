@@ -50,10 +50,10 @@ enum {
     TF5_ERR_FILE_OPEN           = -8,   // fopen / open failure
     TF5_ERR_FILE_IO             = -9,   // fread size mismatch or read error
     /* Protocol state */
-    TF5_ERR_NO_DATA             = -12,  // No buffered entries for verification
+    TF5_ERR_NO_DATA             = -10,  // No buffered entries for verification
     /* Timestamp validation */
-    TF5_ERR_TIMESTAMP_OLD       = -13,  // Received timestamp too old
-    TF5_ERR_TIMESTAMP_FUTURE    = -14,  // Received timestamp too far in future
+    TF5_ERR_TIMESTAMP_OLD       = -11,  // Received timestamp too old
+    TF5_ERR_TIMESTAMP_FUTURE    = -12,  // Received timestamp too far in future
 };
 
 /* ==========================================================================

@@ -4,11 +4,11 @@
  * Implements the Galindo-Garcia (GG09) Schnorr Identity-Based Signature scheme
  * (1-level, Ed25519/libsodium) for SIB1 broadcast authentication.
  *
- * Extract: b ← Z_l, pk = b·B, cid = H(id‖pk‖mpk), y = cid·z + b
+ * Extract: b ← Z_l, pk = b·B, cid = H(pk‖mpk‖id‖validity), y = cid·z + b
  * Sign:    r ← Z_l, R = r·B, h = H(data‖R), σ = h·y + r
- * Verify:  cid = H(id‖pk‖mpk), Q = cid·mpk + pk, R' = σ·B − h·Q
+ * Verify:  cid = H(pk‖mpk‖id‖validity), Q = cid·mpk + pk, R' = σ·B − h·Q
  *
- * Optimizations (matching bench_schnorr_2ibs.c):
+ * Optimizations:
  *   - MPK precomp table (32×8 Duif, ~30KB, L1 cache) for cid·mpk
  *   - Shamir's trick (ge25519_double_scalarmult_vartime) for σ·B − h·Q
  *   - Variable-time ops for verification (inputs are public)

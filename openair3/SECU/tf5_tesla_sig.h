@@ -132,7 +132,7 @@ int tf5_ibs_sign_online(const uint8_t sk_id[TF5_IBS_GNB_SK_LEN],
  *   5. h' = SHA-512(data ‖ R')
  *   6. Accept iff h == h' (constant-time)
  *
- * Optimizations (matching bench_schnorr_2ibs.c):
+ * Optimizations:
  *   - MPK precomp table (32×8 Duif, ~30KB, L1 cache)
  *   - ge25519_double_scalarmult_vartime for Shamir's trick
  *   - Variable-time ops (verification inputs are public)

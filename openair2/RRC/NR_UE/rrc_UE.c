@@ -673,9 +673,16 @@ static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc,
     return;
   }
 
+  /* Get wall-clock time once */
+  uint64_t ue_time_ms = tf5_rp_get_wallclock_ms();
+  if (ue_time_ms == 0) {
+    LOG_E(TF5, "UE wall-clock not synced\n");
+    return;
+  }
+  uint64_t ue_time_sec = ue_time_ms / 1000;
+
   /* Check key expiration */
   uint64_t expiry_unix = tf5_gnb_key_validity_to_unix(sib9_ext.validity_end);
-  uint64_t ue_time_sec = tf5_rp_get_wallclock_ms() / 1000;
   if (ue_time_sec >= expiry_unix) {
     LOG_E(TF5, "gNB key EXPIRED (validity_end=%u, expiry=%lu, now=%lu)\n",
           sib9_ext.validity_end, (unsigned long)expiry_unix, (unsigned long)ue_time_sec);
@@ -683,13 +690,7 @@ static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc,
   }
 
   /* Validate wall-clock timestamp (fail fast before expensive crypto) */
-  uint64_t ue_time_ms = tf5_rp_get_wallclock_ms();
-  if (ue_time_ms == 0) {
-    LOG_E(TF5, "UE wall-clock not synced\n");
-    return;
-  }
-
-  int ts_rc = tf5_rp_validate_timestamp(ue_time_ms / 1000,
+  int ts_rc = tf5_rp_validate_timestamp(ue_time_sec,
                                          sib9_ext.timestamp_s,
                                          state->rp_timestamp_window_s);
   if (ts_rc != 0) {

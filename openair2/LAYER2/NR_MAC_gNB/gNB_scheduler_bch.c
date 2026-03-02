@@ -568,6 +568,14 @@ void schedule_nr_sib1(module_id_t module_idP,
                                                          type0_PDCCH_CSS_config);
 
       NR_COMMON_channels_t *cc = &gNB_mac->common_channels[0];
+
+#ifdef ENABLE_TF5
+      // Update TESLA extension before scheduling so sib1_bcch_length reflects the final TB size
+      if (cc->tf5_state && cc->tf5_state->initialized) {
+        nr_mac_update_sib1_tf5(cc, frameP, slotP);
+      }
+#endif
+
       // Configure sched_ctrlCommon for SIB1
       NR_sched_pdsch_t sched_pdsch = schedule_control_sib1(gNB_mac,
                                                            CC_id,
@@ -597,13 +605,6 @@ void schedule_nr_sib1(module_id_t module_idP,
 
       const int ntx_req = TX_req->Number_of_PDUs;
       nfapi_nr_pdu_t *tx_req = &TX_req->pdu_list[ntx_req];
-
-#ifdef ENABLE_TF5
-      // Update TESLA extension with current frame/slot before transmission
-      if (cc->tf5_state && cc->tf5_state->initialized) {
-        nr_mac_update_sib1_tf5(cc, frameP, slotP);
-      }
-#endif
 
       // Data to be transmitted
       memcpy(tx_req->TLVs[0].value.direct, cc->sib1_bcch_pdu, sched_pdsch.tb_size);

@@ -58,9 +58,9 @@ protected:
         file.close();
     }
 
-    // Helper to create a valid 96-byte public key (MPK) file
+    // Helper to create a valid 32-byte public key (MPK) file
     void CreateValidPubkeyFile(const std::string& path) {
-        // Write a dummy MPK (96 bytes); tf5_load_core_mpk only checks file size
+        // Write a dummy MPK (32 bytes); tf5_load_core_mpk only checks file size
         uint8_t pk[TF5_IBS_MPK_LEN];
         memset(pk, 0x42, TF5_IBS_MPK_LEN);
 
@@ -137,10 +137,10 @@ TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooSmall) {
     EXPECT_EQ(TF5_ERR_FILE_IO, result) << "File with wrong size should return TF5_ERR_FILE_IO";
 }
 
-TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooLarge) {
-    // Create a file that's too large (60 bytes instead of 67)
-    std::string large_file = test_dir + "/large.bin";
-    std::ofstream file(large_file, std::ios::binary);
+TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooSmall_60Bytes) {
+    // Create a file that's too small (60 bytes instead of 67)
+    std::string small_file = test_dir + "/small60.bin";
+    std::ofstream file(small_file, std::ios::binary);
     uint8_t data[60] = {0};
     file.write(reinterpret_cast<char*>(data), 60);
     file.close();
@@ -148,11 +148,26 @@ TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooLarge) {
     uint8_t privkey_out[TF5_IBS_GNB_SK_LEN];
     uint32_t validity_out;
 
+    int result = tf5_load_gnb_privkey(small_file.c_str(), privkey_out, &validity_out);
+
+    EXPECT_EQ(TF5_ERR_FILE_IO, result) << "File with 60 bytes (< 67) should return TF5_ERR_FILE_IO";
+}
+
+TEST_F(TF5FileIOTest, LoadPrivkey_WrongSize_TooLarge) {
+    // Create a file that's too large (100 bytes instead of 67)
+    std::string large_file = test_dir + "/large.bin";
+    std::ofstream file(large_file, std::ios::binary);
+    uint8_t data[100] = {0};
+    file.write(reinterpret_cast<char*>(data), 100);
+    file.close();
+
+    uint8_t privkey_out[TF5_IBS_GNB_SK_LEN];
+    uint32_t validity_out;
+
     int result = tf5_load_gnb_privkey(large_file.c_str(), privkey_out, &validity_out);
 
-    // The function reads exactly 51 bytes from the file. If the read succeeds,
-    // it validates the G1 point. With garbage bytes, the point may be invalid.
-    // Valid results: 0 (success), -2 (wrong size), or -3 (invalid key format)
+    // The function reads exactly 67 bytes from the file. If the read succeeds,
+    // it validates the key. With garbage bytes, the point may be invalid.
     EXPECT_TRUE(result == TF5_OK || result == TF5_ERR_FILE_IO || result == TF5_ERR_KEY_INVALID)
         << "Larger file may succeed, fail size check, or fail key validation";
 }

@@ -89,6 +89,9 @@ int tf5_rp_validate_timestamp(uint64_t ue_time_s,
                                  uint32_t ext_timestamp_s,
                                  uint64_t window_s)
 {
+    if (window_s >= TF5_RP_TIMESTAMP_HALF) {
+        return TF5_ERR_INVALID_PARAM;
+    }
     uint32_t ue_time_lsb = (uint32_t)ue_time_s & TF5_RP_TIMESTAMP_MASK;
     uint32_t ext_time_lsb = ext_timestamp_s & TF5_RP_TIMESTAMP_MASK;
     // Proper 24-bit modular signed difference: map into [-2^23, 2^23)
@@ -342,6 +345,7 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
         free(state->sign_precomps);
         state->sign_precomps = NULL;
         free(state->key_chain);
+        OPENSSL_cleanse(state->private_key, TF5_IBS_GNB_SK_LEN);
         return precomp_rc;
     }
 
@@ -433,7 +437,7 @@ bool tf5_ue_safe_packet_test(tf5_ue_state_t *ue_state,
                                    uint16_t rx_sfn,
                                    uint16_t rx_slot)
 {
-    if (!ue_state || !ue_state->initialized || !tf5_ext) {
+    if (!ue_state || !ue_state->initialized || !tf5_ext || ue_state->tesla_params.t_int_ms == 0) {
         return false;
     }
 
@@ -642,6 +646,8 @@ int tf5_tesla_ue_verify_buffered_msgs(tf5_ue_state_t *ue_state,
             LOG_E(TF5, "Failed to compute tag for interval %u\n", entry->rx_interval_index);
             entry->valid = false;
             mac_failed = true;
+            OPENSSL_cleanse(derived_key, TF5_TESLA_KEY_LEN);
+            OPENSSL_cleanse(expected_tag, TF5_TESLA_TAG_LEN);
             continue;
         }
 

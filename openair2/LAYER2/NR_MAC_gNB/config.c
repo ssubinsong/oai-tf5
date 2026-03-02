@@ -51,7 +51,7 @@
 #ifdef ENABLE_TF5
 #include "openair3/SECU/tf5_tesla.h"
 #include "openair3/SECU/tf5_tesla_sig.h"
-#include "tf5_ibs_pkg.h"
+#include "openair3/SECU/tf5_ibs_pkg.h"
 #endif
 #include "common/ran_context.h"
 #include "common/utils/T/T.h"
