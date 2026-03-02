@@ -4491,6 +4491,7 @@ void nr_mac_update_tf5_sib(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
                              sib9_ext.signature);
     state->sign_precomp_next++;
   } else {
+    LOG_W(TF5, "IBS precomp exhausted, using full sign\n");
     rc = tf5_ibs_sign(state->private_key, sig_auth, sig_auth_len, sib9_ext.signature);
   }
   AssertFatal(rc == 0, "TF5: Failed to compute IBS signature (rc=%d)\n", rc);

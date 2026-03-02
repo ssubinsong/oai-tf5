@@ -30,6 +30,7 @@ extern uint16_t ue_id_g;
 #ifdef ENABLE_TF5
 #define  CONFIG_HLP_TF5_CORE_MPK         "Core's Master Public Key (MPK) file for IBS verification. REQUIRED.\n"
 #define  CONFIG_HLP_TF5_RP_TS_WINDOW        "Signature timestamp replay window in seconds. Default: 10800 s (3 hours).\n"
+#define  CONFIG_HLP_TF5_D_BOUND             "TESLA D bound (max network delay) in microseconds. Default: 1005 us.\n"
 #define  CONFIG_HLP_TF5_RETURNING_UE        "Enable returning UE simulation: after first RRC connection, release and reconnect via TESLA MAC path.\n"
 #endif
 
@@ -54,6 +55,7 @@ extern uint16_t ue_id_g;
 #define CMDLINE_TF5_PARAMS_UE \
   {"tf5-core-mpk",               CONFIG_HLP_TF5_CORE_MPK,   0,              .strptr=&nrUE_params.tf5_core_mpk_file,         .defstrval=NULL,  TYPE_STRING, 0}, \
   {"tf5-sig-rp-window-s",  CONFIG_HLP_TF5_RP_TS_WINDOW, 0,              .uptr=&nrUE_params.tf5_rp_timestamp_window_s,  .defuintval=TF5_RP_DEFAULT_TIME_WINDOW_S,  TYPE_UINT, 0}, \
+  {"tf5-d-bound-us",       CONFIG_HLP_TF5_D_BOUND,      0,              .uptr=&nrUE_params.tf5_d_bound_us,             .defuintval=1005,                          TYPE_UINT, 0}, \
   {"tf5-returning-ue",     CONFIG_HLP_TF5_RETURNING_UE, PARAMFLAG_BOOL, .iptr=&nrUE_params.tf5_returning_ue,           .defintval=0,                              TYPE_INT,  0},
 #else
 #define CMDLINE_TF5_PARAMS_UE

@@ -613,8 +613,8 @@ static tf5_verify_result_t tf5_verify_returning(NR_UE_RRC_INST_t *rrc,
                                         SI_info->tf5_sib1_buf, SI_info->tf5_sib1_len,
                                         sib1_ext->te_version);
   if (mac_rc != 0) {
-    LOG_E(TF5, "Failed to build MAC auth input (rc=%d, sib1_len=%u)\n", mac_rc, SI_info->tf5_sib1_len);
-    return TF5_VERIFY_FAIL;
+    LOG_E(TF5, "Failed to build MAC auth input (rc=%d, sib1_len=%zu)\n", mac_rc, SI_info->tf5_sib1_len);
+    return TF5_VERIFY_FAIL_ENCODE;
   }
 
   if (ue_state->curr_phase == TF5_PHASE_AUTHENTICATED) {

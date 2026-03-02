@@ -37,7 +37,7 @@ static void scalar_reduce_32(uint8_t out[32], const uint8_t in[32])
     crypto_core_ed25519_scalar_reduce(out, tmp);
 }
 
-static int s_initialized = 0;
+static volatile int s_initialized = 0;
 
 /* ==========================================================================
  * Thread-local MPK cache (avoids repeated precomp table construction on UE side)

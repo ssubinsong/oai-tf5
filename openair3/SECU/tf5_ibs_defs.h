@@ -50,7 +50,6 @@ enum {
     TF5_ERR_FILE_OPEN           = -8,   // fopen / open failure
     TF5_ERR_FILE_IO             = -9,   // fread size mismatch or read error
     /* Protocol state */
-    TF5_ERR_CHAIN_EXHAUSTED     = -11,  // TESLA key chain interval exceeded
     TF5_ERR_NO_DATA             = -12,  // No buffered entries for verification
     /* Timestamp validation */
     TF5_ERR_TIMESTAMP_OLD       = -13,  // Received timestamp too old
