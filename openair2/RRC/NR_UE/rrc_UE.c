@@ -354,7 +354,15 @@ static void nr_decode_SI(NR_UE_RRC_SI_INFO *SI_info, NR_SystemInformation_t *si,
         {
           NR_SIB9_t *sib9 = typeandinfo->choice.sib9;
           if (sib9 && sib9->lateNonCriticalExtension && SI_info->tf5_sib1_stored) {
+            bool was_bootstrapped = SI_info->tf5_state && SI_info->tf5_state->chain_bootstrapped;
             tf5_verify_from_sib9(rrc, SI_info, sib9);
+            // Chain just bootstrapped — trigger RA
+            if (!was_bootstrapped && SI_info->tf5_state->chain_bootstrapped) {
+              nr_mac_rrc_message_t ra_msg = {0};
+              ra_msg.payload_type = NR_MAC_RRC_CONFIG_OTHER_SIB;
+              ra_msg.payload.config_other_sib.can_start_ra = true;
+              nr_rrc_send_msg_to_mac(rrc, &ra_msg);
+            }
           }
         }
         // Do not set sib9_validity = true → continuous reception
@@ -810,8 +818,8 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
     }
   } else {
     // First-time UE: wait for SIB9 to bootstrap TESLA chain via IBS
+    // Fall through to finish SIB1 processing — needed to configure SI scheduling for SIB9
     LOG_I(TF5, "First-time UE: SIB1 stored, waiting for SIB9 for IBS verification\n");
-    return;
   }
 tf5_done:
 #endif
@@ -850,6 +858,10 @@ tf5_done:
   nr_mac_rrc_config_sib1_t *config_sib1 = &rrc_msg.payload.config_sib1;
   config_sib1->sib1 = sib1;
   config_sib1->can_start_ra = !rrc->is_NTN_UE;
+#ifdef ENABLE_TF5
+  if (SI_info->tf5_state && !SI_info->tf5_state->chain_bootstrapped)
+    config_sib1->can_start_ra = false;
+#endif
   nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
 }
 
