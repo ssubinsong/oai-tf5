@@ -1161,11 +1161,6 @@ static void tf5_compute_t0_reference(gNB_MAC_INST *nrmac, uint16_t *out_sfn, uin
                                         ssb_frame_periodicity,
                                         prb_offset);
 
-  // TF5 simplification: only support CORESET mux pattern 1
-  AssertFatal(type0_PDCCH_CSS_config.type0_pdcch_ss_mux_pattern == 1,
-              "TF5 TESLA only supports CORESET mux pattern 1 (got pattern %d)\n",
-              type0_PDCCH_CSS_config.type0_pdcch_ss_mux_pattern);
-
   // T_0 reference point: sfn_c sets frame parity alignment, n_0 sets slot
   // T_0 = start of first broadcast period; interval boundaries align with broadcast period starts
   *out_sfn = type0_PDCCH_CSS_config.sfn_c;  // 0 or 1 (even or odd frame parity)

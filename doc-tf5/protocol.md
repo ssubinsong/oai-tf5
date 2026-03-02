@@ -42,7 +42,7 @@ Where `T_0` is the start time of interval 0, aligned with the first SIB1 transmi
 
 Per **3GPP TS 38.331 Section 5.2.1.2**, the TESLA interval duration (T_int) is aligned with the SIB1 broadcast period.
 
-**Current implementation**: T_int is fixed at **160 ms**, matching the SIB1 broadcast period (8 repetitions at 20ms SSB periodicity, CORESET mux pattern 1). The gNB will abort if a different pattern is detected.
+**Current implementation**: T_int is fixed at **160 ms**, matching the SIB1 broadcast period.
 
 ### T_0 Alignment with First SIB1 Transmission
 
