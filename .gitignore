@@ -189,3 +189,4 @@ http-client.private.env.json
 .idea/**/copilot.data.migration.*.xml
 
 .claude
+compile_commands.json

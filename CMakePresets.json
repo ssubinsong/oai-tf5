@@ -9,6 +9,7 @@
             "binaryDir": "${sourceDir}/cmake_targets/ran_build/build",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "ENABLE_TF5": "ON"
             }
         },
