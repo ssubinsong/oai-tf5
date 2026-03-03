@@ -298,6 +298,7 @@ static void update_rb_mcs_tbs(NR_sched_pdsch_t *pdsch, uint32_t num_total_bytes,
         max_rbSize++;
 
       bool res = false;
+      pdsch->mcs = 0;
       while (res == false && pdsch->mcs < 10) {
         pdsch->Qm = nr_get_Qm_dl(pdsch->mcs, mcsTableIdx);
         pdsch->R = nr_get_code_rate_dl(pdsch->mcs, mcsTableIdx);
@@ -315,7 +316,12 @@ static void update_rb_mcs_tbs(NR_sched_pdsch_t *pdsch, uint32_t num_total_bytes,
         if (!res)
           pdsch->mcs++;
       }
-      break;
+      if (res)
+        break;
+      // Current free block too small — skip past it and try the next one
+      pdsch->rbStart += max_rbSize;
+      pdsch->rbSize = 0;
+      pdsch->tb_size = 0;
     }
   }
   AssertFatal(pdsch->tb_size >= num_total_bytes,

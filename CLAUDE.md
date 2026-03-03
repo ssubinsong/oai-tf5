@@ -63,3 +63,8 @@ TF5 uses **GG09 Schnorr IBS** (Ed25519/libsodium) for SIB1 broadcast authenticat
 - SIB9 `lateNonCriticalExtension`: static + IBS sig (version + params + validity + timestamp + sig = 114B)
 - First-time UE: SIB1 저장 → SIB9 IBS 검증 → chain bootstrap
 - Returning UE: SIB1 MAC만 검증 (SIB9 불필요)
+
+## SIB PDSCH Scheduling (VRB Allocation)
+- SIB1과 SIB9는 같은 슬롯(slot 0)에 스케줄됨 (CORESET0 BWP = 48 RBs)
+- `update_rb_mcs_tbs()` in `gNB_scheduler_bch.c`: OAI 기존 함수를 수정하여 첫 번째 빈 VRB 블록이 부족할 때 다음 블록을 탐색하도록 변경함
+- Config의 PLMN/SNSSAI가 SIB1 ASN.1 인코딩 크기에 영향 → TBS/rbSize 변경 → VRB map 패턴 변경 → SIB9 할당 가능 여부가 달라질 수 있음
