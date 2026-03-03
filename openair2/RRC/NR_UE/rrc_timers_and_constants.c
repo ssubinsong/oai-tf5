@@ -225,8 +225,14 @@ void nr_rrc_handle_timers(NR_UE_RRC_INST_t *rrc)
     if (SI_info->tf5_state) {
       SI_info->tf5_state->returning_idle_phase = true;
       SI_info->tf5_state->returning_auth_pending = true;
-      /* Invalidate SIB1 so MAC re-schedules SI-RNTI reception.
-       * Stay CONNECTED — only the TF5 verification path changes. */
+
+      /* Reset TESLA verification state so returning path starts clean */
+      SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
+      SI_info->tf5_state->buffer_queue_count = 0;
+      memset(SI_info->tf5_state->buffer_queue, 0, sizeof(SI_info->tf5_state->buffer_queue));
+      SI_info->tf5_state->trust_anchor_idx = -1;
+      memset(SI_info->tf5_state->trust_anchor_key, 0, TF5_TESLA_KEY_LEN);
+
       SI_info->sib1_validity = false;
     }
   }
