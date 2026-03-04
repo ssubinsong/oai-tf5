@@ -39,6 +39,9 @@ cmake --build --preset tf5_tests
 - Default: `cmake_targets/ran_build/build/`
 - Tests: `cmake_targets/ran_build/build_test/`
 
+### Build gotcha
+- `cmake --build` commands require `dangerouslyDisableSandbox: true` in Bash tool because ccache writes to `~/.cache` which is outside the sandbox allowlist.
+
 ## Testing
 
 ### Run all TF5 tests

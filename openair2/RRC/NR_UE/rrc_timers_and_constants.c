@@ -230,8 +230,6 @@ void nr_rrc_handle_timers(NR_UE_RRC_INST_t *rrc)
       SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
       SI_info->tf5_state->buffer_queue_count = 0;
       memset(SI_info->tf5_state->buffer_queue, 0, sizeof(SI_info->tf5_state->buffer_queue));
-      SI_info->tf5_state->trust_anchor_idx = -1;
-      memset(SI_info->tf5_state->trust_anchor_key, 0, TF5_TESLA_KEY_LEN);
 
       SI_info->sib1_validity = false;
     }

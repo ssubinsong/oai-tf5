@@ -190,3 +190,5 @@ http-client.private.env.json
 
 .claude
 compile_commands.json
+
+.cache
