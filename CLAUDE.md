@@ -9,12 +9,6 @@ The primary goal is **measuring latency overhead** of the TESLA-based SIB1 authe
 - **Prefer the simplest working solution.** 3 direct lines > 1 elegant abstraction.
 - **When proposing changes**, always ask: "Is this the minimum change needed?" If not, simplify.
 
-## (MANDATORY) Serena MCP Usage
-
-VERY IMPORTANT: ALWAYS use Serena MCP to analyze the codebase and understand the code.
-
-Use **all** of Serena's capabilities fully: onboarding, project memories, symbolic exploration, symbol-level editing, refactoring, thinking/reflection checkpoints, and pattern search. Read Serena's instruction manual (`initial_instructions`) if unsure which tool to use.
-
 ## IMPORTANT: Base Branch
 
 - The base branch of the repository is `v2.4.0-branch`, and I'm currently working on `tf5` branch. To understand what changes have been made, you can compare the `tf5` branch with the `v2.4.0-branch` to see the differences in code and commits.
