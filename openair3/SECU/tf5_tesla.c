@@ -454,6 +454,7 @@ int tf5_ue_init(tf5_ue_state_t *state,
     }
 
     state->initialized = true;
+    state->initial_tesla_verified = false;
 
     LOG_I(TF5, "UE initialized (D=%u slots, first-time UE)\n", state->d_offset_slots);
 
