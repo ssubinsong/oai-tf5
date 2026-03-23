@@ -544,6 +544,7 @@ typedef enum {
     TF5_VERIFY_FAIL_SIGNATURE = -6,     // IBS signature verification failed
     TF5_VERIFY_FAIL_MAC = -7,           // All TESLA MAC verifications failed
     TF5_VERIFY_FAIL_KEYCHAIN = -8,      // Key chain verification failed (RFC 4082 3.5 step 3)
+    TF5_VERIFY_FAIL_CELLID = -9,        // Cell ID mismatch (Alg 2 step 2)
 } tf5_verify_result_t;
 
 /**
