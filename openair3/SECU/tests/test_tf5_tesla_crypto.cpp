@@ -22,8 +22,15 @@ extern "C" {
 
 class TF5CryptoTest : public ::testing::Test {
 protected:
+    tf5_tesla_params_t params_;
+
     void SetUp() override {
-        // No setup needed for crypto primitive tests
+        params_ = {
+            .t_int_ms = 160,
+            .d = 1,
+            .t0 = {.sfn = 100, .slot = 0},
+            .chain_len = 65536
+        };
     }
 };
 
@@ -352,11 +359,13 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_Success) {
     uint8_t out[TF5_MAX_AUTH_INPUT];
     size_t out_len;
     const uint8_t sib1[] = {0x01, 0x02, 0x03, 0x04, 0x05};
+    uint8_t k0_next[TF5_TESLA_KEY_LEN];
+    memset(k0_next, 0xAA, TF5_TESLA_KEY_LEN);
 
-    int ret = tf5_build_mac_auth_input(out, &out_len, sib1, sizeof(sib1), TF5_VERSION);
+    int ret = tf5_build_mac_auth_input(out, &out_len, sib1, sizeof(sib1), TF5_VERSION, k0_next);
 
     EXPECT_EQ(0, ret) << "Building MAC auth input should succeed";
-    EXPECT_EQ(sizeof(sib1) + 1, out_len) << "Output length should be sib1_len + 1 (version)";
+    EXPECT_EQ(sizeof(sib1) + 1 + TF5_TESLA_KEY_LEN, out_len) << "Output length should be sib1_len + 1 + TF5_TESLA_KEY_LEN";
 }
 
 TEST_F(TF5CryptoTest, BuildMacAuthInput_Layout) {
@@ -364,23 +373,29 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_Layout) {
     size_t out_len;
     const uint8_t sib1[] = {0xAA, 0xBB, 0xCC};
     uint8_t te_version = 0x42;
+    uint8_t k0_next[TF5_TESLA_KEY_LEN];
+    memset(k0_next, 0x55, TF5_TESLA_KEY_LEN);
 
-    tf5_build_mac_auth_input(out, &out_len, sib1, sizeof(sib1), te_version);
+    tf5_build_mac_auth_input(out, &out_len, sib1, sizeof(sib1), te_version, k0_next);
 
     // Verify SIB1 is at the beginning
     EXPECT_EQ(0xAA, out[0]);
     EXPECT_EQ(0xBB, out[1]);
     EXPECT_EQ(0xCC, out[2]);
 
-    // Verify version at offset 3 (1 byte)
-    EXPECT_EQ(0x42, out[3]) << "Version byte";
+    // Verify version_sp_byte at sib1_len (1 byte)
+    EXPECT_EQ(0x42, out[sizeof(sib1)]) << "Version byte";
+
+    // Verify k0_next at sib1_len + 1
+    EXPECT_EQ(0, memcmp(&out[sizeof(sib1) + 1], k0_next, TF5_TESLA_KEY_LEN)) << "k0_next bytes";
 }
 
 TEST_F(TF5CryptoTest, BuildMacAuthInput_NullOut) {
     size_t out_len;
     const uint8_t sib1[] = {0x01, 0x02};
+    uint8_t k0_next[TF5_TESLA_KEY_LEN] = {};
 
-    int ret = tf5_build_mac_auth_input(nullptr, &out_len, sib1, sizeof(sib1), TF5_VERSION);
+    int ret = tf5_build_mac_auth_input(nullptr, &out_len, sib1, sizeof(sib1), TF5_VERSION, k0_next);
 
     EXPECT_LT(ret, 0) << "Null output buffer should return error";
 }
@@ -388,8 +403,9 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_NullOut) {
 TEST_F(TF5CryptoTest, BuildMacAuthInput_NullOutLen) {
     uint8_t out[TF5_MAX_AUTH_INPUT];
     const uint8_t sib1[] = {0x01, 0x02};
+    uint8_t k0_next[TF5_TESLA_KEY_LEN] = {};
 
-    int ret = tf5_build_mac_auth_input(out, nullptr, sib1, sizeof(sib1), TF5_VERSION);
+    int ret = tf5_build_mac_auth_input(out, nullptr, sib1, sizeof(sib1), TF5_VERSION, k0_next);
 
     EXPECT_LT(ret, 0) << "Null out_len should return error";
 }
@@ -397,8 +413,9 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_NullOutLen) {
 TEST_F(TF5CryptoTest, BuildMacAuthInput_NullSib1) {
     uint8_t out[TF5_MAX_AUTH_INPUT];
     size_t out_len;
+    uint8_t k0_next[TF5_TESLA_KEY_LEN] = {};
 
-    int ret = tf5_build_mac_auth_input(out, &out_len, nullptr, 5, TF5_VERSION);
+    int ret = tf5_build_mac_auth_input(out, &out_len, nullptr, 5, TF5_VERSION, k0_next);
 
     EXPECT_LT(ret, 0) << "Null SIB1 should return error";
 }
@@ -408,13 +425,23 @@ TEST_F(TF5CryptoTest, BuildMacAuthInput_Deterministic) {
     uint8_t out2[TF5_MAX_AUTH_INPUT];
     size_t out_len1, out_len2;
     const uint8_t sib1[] = {0x01, 0x02, 0x03, 0x04};
+    uint8_t k0_next[TF5_TESLA_KEY_LEN];
+    memset(k0_next, 0xBB, TF5_TESLA_KEY_LEN);
 
-    tf5_build_mac_auth_input(out1, &out_len1, sib1, sizeof(sib1), TF5_VERSION);
-    tf5_build_mac_auth_input(out2, &out_len2, sib1, sizeof(sib1), TF5_VERSION);
+    tf5_build_mac_auth_input(out1, &out_len1, sib1, sizeof(sib1), TF5_VERSION, k0_next);
+    tf5_build_mac_auth_input(out2, &out_len2, sib1, sizeof(sib1), TF5_VERSION, k0_next);
 
     EXPECT_EQ(out_len1, out_len2);
     EXPECT_EQ(0, memcmp(out1, out2, out_len1))
         << "Same inputs should produce identical output";
+}
+
+TEST_F(TF5CryptoTest, BuildMacAuthInput_NullK0Next) {
+    uint8_t out[TF5_MAX_AUTH_INPUT];
+    size_t out_len;
+    uint8_t sib1[] = {0x01, 0x02};
+    EXPECT_LT(tf5_build_mac_auth_input(out, &out_len, sib1, sizeof(sib1),
+                                        TF5_VERSION, nullptr), 0);
 }
 
 // ============================================================================
@@ -430,13 +457,16 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_Success) {
         .t0 = {.sfn = 100, .slot = 0},
         .chain_len = 65536
     };
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x00, 0x00, 0x00, 0x01, 0xC0};
+    uint8_t k0[TF5_TESLA_KEY_LEN];
+    memset(k0, 0xAA, TF5_TESLA_KEY_LEN);
 
     int ret = tf5_build_sig_auth_input(out, &out_len,
-                                              0x01, &params, 525600, 1000);
+                                              0x01, cell_id, &params, k0, 1000, 525600);
 
     EXPECT_EQ(0, ret) << "Building signature auth input should succeed";
-    // Expected: version(1) + params(11) + validity(3) + timestamp(3) = 18 bytes
-    EXPECT_EQ(18u, out_len) << "Output length should be 18 bytes";
+    // Expected: version(1) + cell_id(5) + params(11) + K_0(16) + timestamp(3) + validity(3) = 39 bytes
+    EXPECT_EQ(39u, out_len) << "Output length should be 39 bytes";
 }
 
 TEST_F(TF5CryptoTest, BuildSigAuthInput_Layout) {
@@ -448,34 +478,45 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_Layout) {
         .t0 = {.sfn = 100, .slot = 5},
         .chain_len = 1000
     };
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x00, 0x00, 0x00, 0x01, 0xC0};
+    uint8_t k0[TF5_TESLA_KEY_LEN];
+    memset(k0, 0xAA, TF5_TESLA_KEY_LEN);
 
     tf5_build_sig_auth_input(out, &out_len,
-                                    0x01, &params, 0x112233, 0x778899);
+                                    0x01, cell_id, &params, k0, 0x778899, 0x112233);
 
-    // Layout: version(1) + params(11) + validity(3) + timestamp(3) = 18B
+    // Layout: version(1) + cell_id(5) + params(11) + K_0(16) + timestamp(3) + validity(3) = 39B
 
     // Verify version at offset 0
     EXPECT_EQ(0x01, out[0]);
 
-    // Skip params (11 bytes) at offset 1-11
+    // Verify cell_id at offset 1-5
+    EXPECT_EQ(0, memcmp(&out[1], cell_id, TF5_IBS_CELL_ID_LEN)) << "cell_id bytes";
 
-    // Verify validity_end at offset 12 (3 bytes, big-endian)
-    EXPECT_EQ(0x11, out[12]);
-    EXPECT_EQ(0x22, out[13]);
-    EXPECT_EQ(0x33, out[14]);
+    // Skip params (11 bytes) at offset 6-16
 
-    // Verify timestamp at offset 15 (3 bytes, big-endian)
-    EXPECT_EQ(0x77, out[15]);
-    EXPECT_EQ(0x88, out[16]);
-    EXPECT_EQ(0x99, out[17]);
+    // Verify K_0 at offset 17-32
+    EXPECT_EQ(0, memcmp(&out[17], k0, TF5_TESLA_KEY_LEN)) << "K_0 bytes";
+
+    // Verify timestamp at offset 33 (3 bytes, big-endian)
+    EXPECT_EQ(0x77, out[33]);
+    EXPECT_EQ(0x88, out[34]);
+    EXPECT_EQ(0x99, out[35]);
+
+    // Verify validity_end at offset 36 (3 bytes, big-endian)
+    EXPECT_EQ(0x11, out[36]);
+    EXPECT_EQ(0x22, out[37]);
+    EXPECT_EQ(0x33, out[38]);
 }
 
 TEST_F(TF5CryptoTest, BuildSigAuthInput_NullOut) {
     size_t out_len;
     tf5_tesla_params_t params = {};
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x00, 0x00, 0x00, 0x01, 0xC0};
+    uint8_t k0[TF5_TESLA_KEY_LEN] = {};
 
     int ret = tf5_build_sig_auth_input(nullptr, &out_len,
-                                              0x01, &params, 0, 0);
+                                              0x01, cell_id, &params, k0, 0, 0);
 
     EXPECT_LT(ret, 0) << "Null output should return error";
 }
@@ -483,15 +524,17 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_NullOut) {
 TEST_F(TF5CryptoTest, BuildSigAuthInput_NullParams) {
     uint8_t out[TF5_MAX_AUTH_INPUT];
     size_t out_len;
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x00, 0x00, 0x00, 0x01, 0xC0};
+    uint8_t k0[TF5_TESLA_KEY_LEN] = {};
 
     int ret = tf5_build_sig_auth_input(out, &out_len,
-                                              0x01, nullptr, 0, 0);
+                                              0x01, cell_id, nullptr, k0, 0, 0);
 
     EXPECT_LT(ret, 0) << "Null params should return error";
 }
 
 TEST_F(TF5CryptoTest, BuildSigAuthInput_FixedSize) {
-    // sig_auth_input is always 18 bytes (no variable-length SIB1)
+    // sig_auth_input is always 39 bytes (no variable-length SIB1)
     uint8_t out[TF5_MAX_AUTH_INPUT];
     size_t out_len;
     tf5_tesla_params_t params = {
@@ -500,9 +543,28 @@ TEST_F(TF5CryptoTest, BuildSigAuthInput_FixedSize) {
         .t0 = {.sfn = 0, .slot = 0},
         .chain_len = 1000
     };
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {0x00, 0x00, 0x00, 0x01, 0xC0};
+    uint8_t k0[TF5_TESLA_KEY_LEN];
+    memset(k0, 0xAA, TF5_TESLA_KEY_LEN);
 
-    tf5_build_sig_auth_input(out, &out_len, 0x01, &params, 123456, 789);
-    EXPECT_EQ(18u, out_len) << "Sig auth input should always be 18 bytes";
+    tf5_build_sig_auth_input(out, &out_len, 0x01, cell_id, &params, k0, 789, 123456);
+    EXPECT_EQ(39u, out_len) << "Sig auth input should always be 39 bytes";
+}
+
+TEST_F(TF5CryptoTest, BuildSigAuthInput_NullCellId) {
+    uint8_t out[TF5_SIG_AUTH_OVERHEAD];
+    size_t out_len;
+    uint8_t k0[TF5_TESLA_KEY_LEN] = {};
+    EXPECT_LT(tf5_build_sig_auth_input(out, &out_len, TF5_VERSION,
+                                        nullptr, &params_, k0, 0, 0), 0);
+}
+
+TEST_F(TF5CryptoTest, BuildSigAuthInput_NullK0) {
+    uint8_t out[TF5_SIG_AUTH_OVERHEAD];
+    size_t out_len;
+    uint8_t cell_id[TF5_IBS_CELL_ID_LEN] = {};
+    EXPECT_LT(tf5_build_sig_auth_input(out, &out_len, TF5_VERSION,
+                                        cell_id, &params_, nullptr, 0, 0), 0);
 }
 
 // ============================================================================
