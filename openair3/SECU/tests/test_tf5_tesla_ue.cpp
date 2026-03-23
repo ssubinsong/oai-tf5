@@ -919,6 +919,13 @@ TEST_F(TF5UeTest, AuthState_CanBeSetToBuffered) {
 }
 
 // ============================================================================
+// Note: tf5_verify_returning() cell ID mismatch check (Alg 2 step 2) is
+// tested via integration/manual testing since it's a static function in
+// rrc_UE.c with OAI RRC struct dependencies. The check is a simple memcmp
+// of SI_info->tf5_cell_id vs ue_state->cid_boot.
+// ============================================================================
+
+// ============================================================================
 // Main
 // ============================================================================
 
