@@ -18,6 +18,8 @@ extern "C" {
 
 bool TF5IbsTestFixture::ibs_initialized = false;
 
+static const uint8_t TV_CELL_ID[TF5_IBS_CELL_ID_LEN] = {0x00, 0x00, 0x00, 0x01, 0xC0};
+
 class TF5GnbTest : public TF5IbsTestFixture {
 protected:
     tf5_gnb_state_t gnb_state;
@@ -50,6 +52,7 @@ protected:
             tf5_test::TV_EXT_D,          // d = 1
             chain_len,
             ibs_sk,                      // 64B sk_id: y[32] + pk[32] from PKG
+            TV_CELL_ID,
             &t0,
             tf5_test::TV_SLOTS_PER_FRAME // slots_per_frame = 20
         );
@@ -117,6 +120,7 @@ TEST_F(TF5GnbTest, GnbInit_NullState_ReturnsError) {
         tf5_test::TV_EXT_D,
         100,
         ibs_sk,
+        TV_CELL_ID,
         &t0,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -131,6 +135,7 @@ TEST_F(TF5GnbTest, GnbInit_NullPrivateKey_ReturnsError) {
         tf5_test::TV_EXT_D,
         100,
         nullptr,
+        TV_CELL_ID,
         &t0,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -145,6 +150,7 @@ TEST_F(TF5GnbTest, GnbInit_NullT0_ReturnsError) {
         tf5_test::TV_EXT_D,
         100,
         ibs_sk,
+        TV_CELL_ID,
         nullptr,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -159,6 +165,7 @@ TEST_F(TF5GnbTest, GnbInit_ZeroChainLen_ReturnsError) {
         tf5_test::TV_EXT_D,
         0,
         ibs_sk,
+        TV_CELL_ID,
         &t0,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -173,6 +180,7 @@ TEST_F(TF5GnbTest, GnbInit_ZeroInterval_ReturnsError) {
         tf5_test::TV_EXT_D,
         100,
         ibs_sk,
+        TV_CELL_ID,
         &t0,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -189,6 +197,7 @@ TEST_F(TF5GnbTest, GnbInit_DoubleInit_Succeeds) {
         &gnb_state,
         40, 2, 200,
         ibs_sk,
+        TV_CELL_ID,
         &t0,
         tf5_test::TV_SLOTS_PER_FRAME
     );
@@ -205,6 +214,16 @@ TEST_F(TF5GnbTest, GnbInit_MinimalChain) {
     EXPECT_EQ(0, ret) << "chain_len = 1 should succeed";
     EXPECT_EQ(1u, gnb_state.key_chain_len);
     EXPECT_NE(nullptr, gnb_state.key_chain);
+}
+
+TEST_F(TF5GnbTest, GnbInit_NullCellId_ReturnsError) {
+    EXPECT_LT(tf5_gnb_init(&gnb_state, 160, 1, 100, ibs_sk, nullptr, &t0, 20), 0);
+}
+
+TEST_F(TF5GnbTest, GnbInit_CellIdStored) {
+    int rc = tf5_gnb_init(&gnb_state, 160, 1, 100, ibs_sk, TV_CELL_ID, &t0, 20);
+    ASSERT_EQ(rc, TF5_OK);
+    EXPECT_EQ(memcmp(gnb_state.cell_id, TV_CELL_ID, TF5_IBS_CELL_ID_LEN), 0);
 }
 
 // ============================================================================
