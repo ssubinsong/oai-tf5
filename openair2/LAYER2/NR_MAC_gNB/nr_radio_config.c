@@ -4399,18 +4399,20 @@ void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot
   AssertFatal(interval < state->key_chain_len, "TF5: Interval %u exceeds chain length %u\n",
               interval, state->key_chain_len);
 
-  // Build MAC auth input: SIB1 content + version
+  // Build MAC auth input: SIB1 content + version_sp_byte + k0_next
+  tf5_sib1_ext_t sib1_ext;
+  sib1_ext.te_version = TF5_VERSION;
+  sib1_ext.sp_next = 0;
+  memset(sib1_ext.k0_next, 0, TF5_TESLA_KEY_LEN);
+  sib1_ext.i = interval;
+  uint8_t version_sp = (TF5_VERSION << 1) | 0;
+
   uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
   size_t mac_auth_len;
   int rc = tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
                                     cc->sib1_original, cc->sib1_original_length,
-                                    TF5_VERSION);
+                                    version_sp, sib1_ext.k0_next);
   AssertFatal(rc == 0, "TF5: Failed to build MAC auth input (rc=%d)\n", rc);
-
-  // Compute TESLA tag using K_i
-  tf5_sib1_ext_t sib1_ext;
-  sib1_ext.te_version = TF5_VERSION;
-  sib1_ext.i = interval;
 
   rc = tf5_compute_tag(state->key_chain[tf5_key_interval_to_index(interval)],
                        mac_auth, mac_auth_len, sib1_ext.tesla_tag);
@@ -4423,7 +4425,7 @@ void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot
          TF5_TESLA_KEY_LEN);
 
   // Pack SIB1 extension (~37B)
-  uint8_t ext_buf[64];
+  uint8_t ext_buf[TF5_SIB1_EXT_PACKED_SIZE];
   int ext_len = tf5_pack_sib1_ext(&sib1_ext, ext_buf, sizeof(ext_buf));
   AssertFatal(ext_len >= 0, "TF5: Failed to pack SIB1 extension\n");
 
@@ -4471,6 +4473,8 @@ void nr_mac_update_tf5_sib(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
   sib9_ext.te_version = TF5_VERSION;
   memcpy(&sib9_ext.tesla_params, &state->tesla_params, sizeof(tf5_tesla_params_t));
   sib9_ext.validity_end = state->key_validity_end;
+  memcpy(sib9_ext.cell_id, state->cell_id, TF5_IBS_CELL_ID_LEN);
+  memcpy(sib9_ext.k0, state->key_chain[tf5_key_interval_to_index(0)], TF5_TESLA_KEY_LEN);
 
   // Wall-clock timestamp (seconds) for replay protection
   uint64_t wallclock_ms = tf5_rp_get_wallclock_ms();
@@ -4481,8 +4485,12 @@ void nr_mac_update_tf5_sib(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
   uint8_t sig_auth[TF5_MAX_AUTH_INPUT];
   size_t sig_auth_len;
   int rc = tf5_build_sig_auth_input(sig_auth, &sig_auth_len,
-                                    sib9_ext.te_version, &sib9_ext.tesla_params,
-                                    sib9_ext.validity_end, sib9_ext.timestamp_s);
+                                    TF5_VERSION,
+                                    state->cell_id,
+                                    &state->tesla_params,
+                                    sib9_ext.k0,
+                                    sib9_ext.timestamp_s,
+                                    sib9_ext.validity_end);
   AssertFatal(rc == 0, "TF5: Failed to build sig auth input (rc=%d)\n", rc);
 
   if (state->sign_precomps && state->sign_precomp_next < state->sign_precomp_count) {
@@ -4496,8 +4504,8 @@ void nr_mac_update_tf5_sib(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
   }
   AssertFatal(rc == 0, "TF5: Failed to compute IBS signature (rc=%d)\n", rc);
 
-  // Pack SIB9 extension (~114B)
-  uint8_t ext_buf[128];
+  // Pack SIB9 extension (~135B)
+  uint8_t ext_buf[TF5_SIB9_EXT_PACKED_SIZE];
   int ext_len = tf5_pack_sib9_ext(&sib9_ext, ext_buf, sizeof(ext_buf));
   AssertFatal(ext_len >= 0, "TF5: Failed to pack SIB9 extension\n");
 
