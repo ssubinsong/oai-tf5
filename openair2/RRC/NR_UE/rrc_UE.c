@@ -772,6 +772,14 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
     AssertFatal(false, "TF5: No TESLA state configured - unexpected in this setup\n");
   }
 
+  // First-time UE: skip TESLA processing, proceed to SI scheduling for SIB9
+  if (!SI_info->tf5_state->chain_bootstrapped) {
+    LOG_I(TF5, "First-time UE: skipping SIB1 TESLA, waiting for SIB9\n");
+    goto tf5_done;
+  }
+
+  // --- Below only runs after bootstrap (returning UE) ---
+
   // Unpack SIB1 extension
   AssertFatal(sib1->lateNonCriticalExtension,
               "TF5: SIB1 missing lateNonCriticalExtension\n");
@@ -792,16 +800,14 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
     LOG_W(TF5, "Failed to re-encode SIB1 for auth (rc=%d)\n", enc_rc);
     return;
   }
-  SI_info->tf5_sib1_stored = true;
-
-  // Extract and store Cell ID for IBS verification in SIB9
+  // Extract and store Cell ID for returning UE cell ID check
   tf5_extract_cell_id_from_sib1(sib1, SI_info->tf5_cell_id);
 
   LOG_D(TF5, "Stored SIB1 for auth (interval=%u, len=%zu)\n",
         SI_info->tf5_sib1_ext.i, SI_info->tf5_sib1_len);
 
   // Returning UE: MAC verification using SIB1 data only (no SIB9 needed)
-  if (SI_info->tf5_state->chain_bootstrapped) {
+  {
     tf5_verify_result_t ret = tf5_verify_returning(rrc, SI_info, rx_frame, rx_slot);
 
     /* Detect first returning SIB1 after simulated re-acquisition */
@@ -828,10 +834,6 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
           return;
         }
     }
-  } else {
-    // First-time UE: wait for SIB9 to bootstrap TESLA chain via IBS
-    // Fall through to finish SIB1 processing — needed to configure SI scheduling for SIB9
-    LOG_I(TF5, "First-time UE: SIB1 stored, waiting for SIB9 for IBS verification\n");
   }
 tf5_done:
 #endif
