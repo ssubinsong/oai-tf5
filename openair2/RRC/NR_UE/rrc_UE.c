@@ -353,7 +353,7 @@ static void nr_decode_SI(NR_UE_RRC_SI_INFO *SI_info, NR_SystemInformation_t *si,
 #ifdef ENABLE_TF5
         {
           NR_SIB9_t *sib9 = typeandinfo->choice.sib9;
-          if (sib9 && sib9->lateNonCriticalExtension && SI_info->tf5_sib1_stored) {
+          if (sib9 && sib9->lateNonCriticalExtension && SI_info->tf5_state) {
             bool was_bootstrapped = SI_info->tf5_state && SI_info->tf5_state->chain_bootstrapped;
             tf5_verify_from_sib9(rrc, SI_info, sib9);
             // Chain just bootstrapped — trigger RA and stop SIB9 reception
