@@ -359,10 +359,7 @@ static void nr_decode_SI(NR_UE_RRC_SI_INFO *SI_info, NR_SystemInformation_t *si,
             // Chain just bootstrapped — trigger RA and stop SIB9 reception
             if (!was_bootstrapped && SI_info->tf5_state->chain_bootstrapped) {
               SI_info->sib9_validity = true;
-              nr_mac_rrc_message_t ra_msg = {0};
-              ra_msg.payload_type = NR_MAC_RRC_CONFIG_OTHER_SIB;
-              ra_msg.payload.config_other_sib.can_start_ra = true;
-              nr_rrc_send_msg_to_mac(rrc, &ra_msg);
+              // can_start_ra deferred until first TESLA MAC verification
             }
           }
         }
