@@ -818,6 +818,14 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
     switch (ret) {
       case TF5_VERIFY_OK:
         LOG_I(TF5, "Returning UE: SIB1 MAC verified; Proceeding to RACH\n");
+        if (!SI_info->tf5_state->initial_tesla_verified) {
+            SI_info->tf5_state->initial_tesla_verified = true;
+            LOG_A(TF5, "First-time UE: SIB1 TESLA-authenticated, camp complete\n");
+            nr_mac_rrc_message_t ra_msg = {0};
+            ra_msg.payload_type = NR_MAC_RRC_CONFIG_OTHER_SIB;
+            ra_msg.payload.config_other_sib.can_start_ra = true;
+            nr_rrc_send_msg_to_mac(rrc, &ra_msg);
+        }
         break;
       case TF5_VERIFY_BUFFERED:
         LOG_I(TF5, "Returning UE: SIB1 buffered - waiting for key disclosure\n");
