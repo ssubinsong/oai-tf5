@@ -1242,14 +1242,26 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   LOG_I(TF5, "T_0=(SFN=%u, slot=%u) (reference point, aligns with SIB1 pattern)\n", t0_sfn, t0_slot);
   LOG_I(TF5, "chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
 
+  // Convert cellID (36-bit, right-justified uint64_t) to 5-byte ASN.1 BIT STRING format
+  // ASN.1 BIT STRING(36): 36 bits left-aligned in 5 bytes, last 4 bits are padding zeros
+  // This matches what the UE extracts via memcpy from the BIT STRING buffer in SIB1
+  uint8_t cell_id_bytes[TF5_IBS_CELL_ID_LEN];
+  uint64_t shifted = cellID << 4;
+  cell_id_bytes[0] = (shifted >> 32) & 0xFF;
+  cell_id_bytes[1] = (shifted >> 24) & 0xFF;
+  cell_id_bytes[2] = (shifted >> 16) & 0xFF;
+  cell_id_bytes[3] = (shifted >> 8)  & 0xFF;
+  cell_id_bytes[4] = shifted & 0xFF;
+
   // Initialize TESLA with computed parameters
   tf5_slot_time_t t0 = tf5_slot_time_make(t0_sfn, t0_slot);
   rc = tf5_gnb_init(cc->tf5_state,
-                          t_int_ms,    // T_int (aligned with SIB1 broadcast period)
-                          1,           // d = 1 (disclosure delay)
-                          chain_len,   // Chain length
+                          t_int_ms,       // T_int (aligned with SIB1 broadcast period)
+                          1,              // d = 1 (disclosure delay)
+                          chain_len,      // Chain length
                           private_key,
-                          &t0,         // T_0 timing (SFN/slot)
+                          cell_id_bytes,  // NR Cell Identity (5 bytes, left-aligned)
+                          &t0,            // T_0 timing (SFN/slot)
                           slots_per_frame);
   AssertFatal(rc == 0, "TF5: Failed to initialize (rc=%d)\n", rc);
 
