@@ -29,9 +29,9 @@
 #define TF5_DS_PREFIX_MAC_KEY       0x01    // F'(K_i) domain separation
 
 /* ── Buffer & Wire Format Sizes ────────────────────────── */
-#define TF5_MAX_AUTH_INPUT          373     // Max auth input buffer size (max SIB1 + 1B version)
-#define TF5_SIB1_EXT_PACKED_SIZE    37      // Wire format: version(1) + interval(4) + key(16) + tag(16)
-#define TF5_SIB9_EXT_PACKED_SIZE    114     // Wire format: version(1) + params(11) + validity(3) + timestamp(3) + sig(96)
+#define TF5_MAX_AUTH_INPUT          390     // Max auth input buffer size (max SIB1 372B + 1B version_sp + 16B K_0^next + 1B margin)
+#define TF5_SIB1_EXT_PACKED_SIZE    53      // Wire format: version_sp(1) + interval(4) + key(16) + k0_next(16) + tag(16)
+#define TF5_SIB9_EXT_PACKED_SIZE    135     // Wire format: version(1) + cell_id(5) + params(11) + k0(16) + sig(96) + timestamp(3) + validity(3)
 
 /* ── Default Configuration ─────────────────────────────── */
 #define TF5_TESLA_BUFFER_QUEUE_SIZE        16      // Max SIB1s buffered per UE
@@ -48,7 +48,7 @@
 
 /* ── Wire Format Sizes ────────────────────────────────── */
 #define TF5_TESLA_PARAMS_PACKED_SIZE  11    // t_int(2) + d(1) + t0(4) + chain_len(4)
-#define TF5_SIG_AUTH_OVERHEAD         (1 + TF5_TESLA_PARAMS_PACKED_SIZE + TF5_IBS_VALIDITY_PERIOD_LEN + 3)  // 18 bytes: version(1) + params(11) + validity(3) + timestamp(3)
+#define TF5_SIG_AUTH_OVERHEAD         (1 + TF5_IBS_CELL_ID_LEN + TF5_TESLA_PARAMS_PACKED_SIZE + TF5_TESLA_KEY_LEN + 3 + TF5_IBS_VALIDITY_PERIOD_LEN)  // 39 bytes: version(1) + cell_id(5) + params(11) + K_0(16) + timestamp(3) + validity(3)
 
 /**
  * Generic PHY Timing (SFN/slot)
@@ -107,14 +107,18 @@ typedef struct {
  * Complete TESLA Extension Payload
  */
 typedef struct {
-    uint8_t                    te_version;                    // 1B - TESLA-for-5G Protocol version
-    tf5_tesla_params_t         tesla_params;                  // TESLA parameters
-    uint32_t                   i;                // 4B - Current interval i
-    uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN]; // 16B - K_{i-d}
-    uint32_t                   validity_end;          // 3B (wire) - Key expiration (minutes since 2024-01-01)
-    uint32_t                   timestamp_s;                   // 3B (wire) - Unix epoch timestamp LSB (seconds) for replay protection
-    uint8_t                    signature[TF5_IBS_SIG_LEN]; // 96B - GG09 Schnorr IBS signature (R[32] || sigma[32] || pk[32])
-    uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];  // 16B - HMAC tag
+    uint8_t                    te_version;
+    uint8_t                    sp_next;                              // 1 bit
+    uint8_t                    cell_id[TF5_IBS_CELL_ID_LEN];        // 5B
+    tf5_tesla_params_t         tesla_params;
+    uint32_t                   i;
+    uint8_t                    key_disclosure[TF5_TESLA_KEY_LEN];   // 16B
+    uint8_t                    k0[TF5_TESLA_KEY_LEN];               // 16B
+    uint8_t                    k0_next[TF5_TESLA_KEY_LEN];          // 16B
+    uint32_t                   validity_end;
+    uint32_t                   timestamp_s;
+    uint8_t                    signature[TF5_IBS_SIG_LEN];          // 96B
+    uint8_t                    tesla_tag[TF5_TESLA_TAG_LEN];        // 16B
 } tf5_extension_t;
 
 /*
@@ -122,9 +126,11 @@ typedef struct {
  */
 typedef struct {
     uint8_t  te_version;
-    uint32_t i;                                    // interval index
-    uint8_t  key_disclosure[TF5_TESLA_KEY_LEN];    // 16B
-    uint8_t  tesla_tag[TF5_TESLA_TAG_LEN];         // 16B
+    uint8_t  sp_next;                               // 1 bit - Same-params flag (packed into version byte on wire)
+    uint32_t i;                                     // interval index
+    uint8_t  key_disclosure[TF5_TESLA_KEY_LEN];     // 16B
+    uint8_t  k0_next[TF5_TESLA_KEY_LEN];            // 16B - Next-chain commitment (zeros when unused)
+    uint8_t  tesla_tag[TF5_TESLA_TAG_LEN];          // 16B
 } tf5_sib1_ext_t;
 
 /*
@@ -132,10 +138,12 @@ typedef struct {
  */
 typedef struct {
     uint8_t            te_version;
+    uint8_t            cell_id[TF5_IBS_CELL_ID_LEN]; // 5B - NR Cell Identity
     tf5_tesla_params_t tesla_params;                  // 11B
-    uint32_t           validity_end;                  // 3B wire
-    uint32_t           timestamp_s;                   // 3B wire
+    uint8_t            k0[TF5_TESLA_KEY_LEN];         // 16B - Chain commitment K_0
     uint8_t            signature[TF5_IBS_SIG_LEN];    // 96B
+    uint32_t           timestamp_s;                   // 3B wire
+    uint32_t           validity_end;                  // 3B wire
 } tf5_sib9_ext_t;
 
 /*
@@ -152,6 +160,7 @@ typedef struct {
     // IBS keys
     uint8_t  private_key[TF5_IBS_GNB_SK_LEN];   // 64B - sk_id: y[32] + pk[32] (issued by Core PKG)
     uint32_t key_validity_end;                      // Key expiration (minutes since 2024-01-01)
+    uint8_t  cell_id[TF5_IBS_CELL_ID_LEN];         // 5B - NR Cell Identity (for SIB9 construction)
 
     // IBS signature precomputation table (offline/online signing split)
     // Pre-generates (r, R=r·B) nonce pairs at init time, removing the expensive
@@ -221,17 +230,19 @@ typedef struct {
  * @param d             Key disclosure delay (e.g., 1)
  * @param chain_len     Number of intervals in key chain
  * @param private_key   GG09 Schnorr IBS secret key (64 bytes: y[32] + pk[32])
+ * @param cell_id       NR Cell Identity (5 bytes)
  * @param t0            T_0 timing (HFN/SFN/slot at interval 0 start)
  * @param slots_per_frame Number of slots per frame
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_ALLOC, TF5_ERR_CRYPTO
  */
 int tf5_gnb_init(tf5_gnb_state_t *state,
-                       uint16_t t_int_ms,
-                       uint8_t d,
-                       uint32_t chain_len,
-                       const uint8_t private_key[TF5_IBS_GNB_SK_LEN],
-                       const tf5_slot_time_t *t0,
-                       uint16_t slots_per_frame);
+                 uint16_t t_int_ms,
+                 uint8_t d,
+                 uint32_t chain_len,
+                 const uint8_t private_key[TF5_IBS_GNB_SK_LEN],
+                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                 const tf5_slot_time_t *t0,
+                 uint16_t slots_per_frame);
 
 /**
  * Free TESLA state resources on gNB
@@ -244,7 +255,7 @@ void tf5_gnb_free(tf5_gnb_state_t *state);
  * Build MAC authentication input buffer
  *
  * Constructs the data to be MAC'd:
- * original_SIB1 || te_version
+ * original_SIB1 || version_sp_byte || K_0^next
  *
  * SIB1 content is the sole TESLA MAC authentication target.
  * TESLA params are authenticated separately by IBS signature in SIB9.
@@ -253,37 +264,43 @@ void tf5_gnb_free(tf5_gnb_state_t *state);
  * @param out_len       Output: length of data written
  * @param original_sib1 Original SIB1 encoded data (without TESLA extension)
  * @param sib1_len      Length of original SIB1 data
- * @param te_version    TESLA protocol version
+ * @param version_sp_byte Version byte with sp_next flag packed in MSB
+ * @param k0_next       Next-chain commitment K_0^next (16 bytes)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_build_mac_auth_input(uint8_t *out,
-                                   size_t *out_len,
-                                   const uint8_t *original_sib1,
-                                   size_t sib1_len,
-                                   uint8_t te_version);
+                             size_t *out_len,
+                             const uint8_t *original_sib1,
+                             size_t sib1_len,
+                             uint8_t version_sp_byte,
+                             const uint8_t k0_next[TF5_TESLA_KEY_LEN]);
 
 /**
  * Build signature authentication input buffer
  *
  * Constructs the data to be signed (SIB9 data only, no SIB1 content):
- * te_version || tesla_params || validity_end || timestamp_s
+ * te_version || cell_id || tesla_params || K_0 || timestamp_s || validity_end
  *
  * IBS authenticates TESLA params only. SIB1 content is authenticated by TESLA MAC.
  *
  * @param out           Output buffer
  * @param out_len       Output: length of data written
  * @param te_version    TESLA protocol version
+ * @param cell_id       NR Cell Identity (5 bytes)
  * @param tesla_params  TESLA parameters (includes T_0)
- * @param validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
+ * @param k0            Chain commitment K_0 (16 bytes)
  * @param timestamp_s   Wall-clock timestamp LSB (seconds since Unix epoch) for replay protection (24-bit)
+ * @param validity_end  Key expiration (minutes since 2024-01-01 00:00 UTC)
  * @return TF5_OK on success, or TF5_ERR_INVALID_PARAM, TF5_ERR_BUFFER_OVERFLOW
  */
 int tf5_build_sig_auth_input(uint8_t *out,
-                                   size_t *out_len,
-                                   uint8_t te_version,
-                                   const tf5_tesla_params_t *tesla_params,
-                                   uint32_t validity_end,
-                                   uint32_t timestamp_s);
+                             size_t *out_len,
+                             uint8_t te_version,
+                             const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                             const tf5_tesla_params_t *tesla_params,
+                             const uint8_t k0[TF5_TESLA_KEY_LEN],
+                             uint32_t timestamp_s,
+                             uint32_t validity_end);
 
 /**
  * Pack SIB1 extension (per-interval data) into binary format
