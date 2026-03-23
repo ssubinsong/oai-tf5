@@ -206,6 +206,7 @@ typedef struct {
     bool     chain_bootstrapped;      // TESLA chain established via IBS signature (persistent across SIB1s)
     tf5_ue_phase_t curr_phase; // Current authentication state
     uint64_t rp_timestamp_window_s;      // Timestamp window for signature replay protection (default 10800s)
+    uint8_t cid_boot[TF5_IBS_CELL_ID_LEN];  // Cell ID from SIB9 bootstrap (Alg 2 step 2)
 
     // Returning UE simulation fields (--tf5-returning-ue mode)
     bool returning_ue_sim;          // --tf5-returning-ue mode enabled
