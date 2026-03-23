@@ -585,6 +585,12 @@ static tf5_verify_result_t tf5_verify_returning(NR_UE_RRC_INST_t *rrc,
   tf5_ue_state_t *ue_state = SI_info->tf5_state;
   const tf5_sib1_ext_t *sib1_ext = &SI_info->tf5_sib1_ext;
 
+  /* Alg 2 step 2: reject if cell ID changed since bootstrap */
+  if (memcmp(SI_info->tf5_cell_id, ue_state->cid_boot, TF5_IBS_CELL_ID_LEN) != 0) {
+    LOG_W(TF5, "Cell ID mismatch - discarding\n");
+    return TF5_VERIFY_FAIL_CELLID;
+  }
+
   LOG_D(TF5, "Returning UE - using TESLA for SIB1 authentication\n");
 
   /* Safe packet test — construct a minimal tf5_extension_t for the test */
