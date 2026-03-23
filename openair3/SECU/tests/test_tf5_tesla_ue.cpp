@@ -22,6 +22,8 @@ extern "C" {
 
 #include "tf5_test_vectors.h"
 
+static const uint8_t TV_CELL_ID[TF5_IBS_CELL_ID_LEN] = {0x00, 0x00, 0x00, 0x01, 0xC0};
+
 class TF5UeTest : public ::testing::Test {
 protected:
     tf5_ue_state_t ue_state;
@@ -105,6 +107,7 @@ protected:
             tf5_test::TV_EXT_D,
             chain_len,
             test_private_key,
+            TV_CELL_ID,
             &t0,
             tf5_test::TV_SLOTS_PER_FRAME
         );
@@ -646,12 +649,6 @@ TEST_F(TF5UeTest, VerifyBuffered_WrongKey_FailsMAC) {
 // ============================================================================
 // IBS Signature Verification Tests (tf5_ibs_verify)
 // ============================================================================
-
-/**
- * Test fixture for IBS signature verification (tf5_ibs_verify) that uses
- * Core PKG library to generate properly issued IBS keys.
- */
-bool TF5IbsTestFixture::ibs_initialized = false;
 
 /**
  * Test fixture for IBS signature verification (tf5_ibs_verify) that uses
