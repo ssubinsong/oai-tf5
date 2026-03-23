@@ -56,8 +56,8 @@ TF5 uses **GG09 Schnorr IBS** (Ed25519/libsodium) for SIB1 broadcast authenticat
 - `openair3/SECU/ed25519_precomp.h` contains local reimplementations of libsodium internal `ge25519_*` functions (they are `static` in libsodium source and not exported)
 
 ## Data Split: SIB1 / SIB9
-- SIB1 `lateNonCriticalExtension`: per-interval (version + interval + key + tag = 37B)
-- SIB9 `lateNonCriticalExtension`: static + IBS sig (version + params + validity + timestamp + sig = 114B)
+- SIB1 `lateNonCriticalExtension`: per-interval (version_sp + interval + key + k0_next + tag = 53B)
+- SIB9 `lateNonCriticalExtension`: static + IBS sig (version + cell_id + params + k0 + sig + timestamp + validity = 135B)
 - First-time UE: SIB1 저장 → SIB9 IBS 검증 → chain bootstrap
 - Returning UE: SIB1 MAC만 검증 (SIB9 불필요)
 

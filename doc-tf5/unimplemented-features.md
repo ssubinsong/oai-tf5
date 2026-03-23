@@ -105,7 +105,7 @@ TESLA uses a finite key chain of length N. When the chain is exhausted, the gNB 
 3. If verification succeeds, apply new params and continue with TESLA (no IBS needed)
 4. If verification fails or no cached params, fall back to IBS signature verification
 
-**Current Status**: Not implemented. When the chain expires, the current implementation requires full IBS re-verification.
+**Current Status**: Not implemented. When the chain expires, the current implementation requires full IBS re-verification. The `K_0^next` (16B) and `sp^next` (1 bit, packed into version byte) fields are now present in the SIB1 wire format but always set to zero. These fields are placeholders for future chain renewal implementation.
 
 **Rationale for Deferral**:
 - Requires neighbor broadcast infrastructure for optimal benefit

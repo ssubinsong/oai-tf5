@@ -117,8 +117,8 @@ TESLA authentication data is split across two system information messages to min
 
 | Message | Content | Size | Update Frequency |
 |---------|---------|------|------------------|
-| SIB1 `lateNonCriticalExtension` | Per-interval data (version, interval index, disclosed key, TESLA tag) | 37 B | Every TESLA interval |
-| SIB9 `lateNonCriticalExtension` | Static data + IBS signature (version, TESLA params, validity, timestamp, signature) | 114 B | Per key chain epoch |
+| SIB1 `lateNonCriticalExtension` | Per-interval data (version_sp, interval index, disclosed key, K_0^next, TESLA tag) | 53 B | Every TESLA interval |
+| SIB9 `lateNonCriticalExtension` | Static data + IBS signature (version, cell_id, TESLA params, K_0, timestamp, validity, signature) | 135 B | Per key chain epoch |
 
 SIB9 is registered in SIB1's `si-SchedulingInfo` and broadcast as a separate SI message on its own schedule.
 
@@ -126,23 +126,36 @@ SIB9 is registered in SIB1's `si-SchedulingInfo` and broadcast as a separate SI 
 
 ## SIB1/SIB9 Extension Wire Format
 
-### SIB1 Extension (37 bytes)
+### SIB1 Extension (53 bytes)
 
 ```
-te_version       (1 B)   Protocol version
-interval_index   (4 B)   Current TESLA interval index
-key_disclosure  (16 B)   Disclosed key K_{i-d}
-tesla_tag       (16 B)   HMAC tag over original SIB1
+Offset  Size  Field               Notes
+------  ----  ------------------  -----
+0       1     version + sp^next   bit 0 = sp^next, bits 1-7 = version
+1       4     interval_index      uint32 big-endian
+5       16    key_disclosure      K_{i-d}
+21      16    k0_next             K_0^next (all zeros when chain renewal unused)
+37      16    tesla_tag           HMAC tag
+                                  Total: 53B
 ```
 
-### SIB9 Extension (114 bytes)
+### SIB9 Extension (135 bytes)
 
 ```
-te_version       (1 B)   Protocol version
-tesla_params    (11 B)   t_int(2) + d(1) + t0(4) + chain_len(4)
-validity_end     (3 B)   gNB key expiration (minutes since epoch)
-timestamp_s      (3 B)   Signature timestamp for replay protection (seconds)
-signature       (96 B)   GG09 Schnorr IBS signature (R[32] + σ[32] + pk[32])
+Offset  Size  Field               Notes
+------  ----  ------------------  -----
+0       1     te_version          uint8
+1       5     cell_id             NR Cell Identity (36 bits, 5 bytes)
+6       2     t_int_ms            uint16 big-endian
+8       1     d                   uint8
+9       2     t0.sfn              uint16 big-endian
+11      2     t0.slot             uint16 big-endian
+13      4     chain_len           uint32 big-endian
+17      16    k0                  Chain commitment K_0
+33      96    signature           R[32] || sigma[32] || pk[32]
+129     3     timestamp_s         uint24 big-endian
+132     3     validity_end        uint24 big-endian
+                                  Total: 135B
 ```
 
 ---
@@ -153,18 +166,21 @@ signature       (96 B)   GG09 Schnorr IBS signature (R[32] + σ[32] + pk[32])
 
 ```
 original_SIB1    (variable)   SIB1 encoding excluding the lateNonCriticalExtension
-te_version       (1 B)        Protocol version
+version_sp_byte  (1 B)        Packed byte: bit 0 = sp^next, bits 1-7 = version
+k0_next         (16 B)        K_0^next commitment (all zeros when chain renewal unused)
 ```
 
 ### Signature Auth Input (for IBS signing/verification)
 
 ```
 te_version       (1 B)    Protocol version
-tesla_params    (11 B)    Packed TESLA parameters
-validity_end     (3 B)    gNB key validity period
+cell_id          (5 B)    NR Cell Identity (36 bits, 5 bytes)
+tesla_params    (11 B)    Packed TESLA parameters (t_int_ms + d + t0 + chain_len)
+k0              (16 B)    Chain commitment K_0
 timestamp_s      (3 B)    Signature timestamp (seconds)
+validity_end     (3 B)    gNB key validity period
                 ------
-Total:           18 B
+Total:           39 B
 ```
 
 ---
