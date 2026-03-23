@@ -727,7 +727,7 @@ static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc,
 
   /* IBS signature verification */
   int sig_rc = tf5_ibs_verify(state->mpk,
-                               SI_info->tf5_cell_id,
+                               sib9_ext.cell_id,
                                sib9_ext.validity_end,
                                sig_auth_input, sig_auth_len,
                                sib9_ext.signature);
@@ -741,13 +741,15 @@ static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc,
   state->chain_bootstrapped = true;
   state->curr_phase = TF5_PHASE_AUTHENTICATED;
 
-  /* Use the key disclosed in the most recent SIB1 as trust anchor */
-  memcpy(state->trust_anchor_key, SI_info->tf5_sib1_ext.key_disclosure, TF5_TESLA_KEY_LEN);
-  state->trust_anchor_idx = (int32_t)SI_info->tf5_sib1_ext.i - sib9_ext.tesla_params.d;
+  /* Alg 1 step 7: K_anchor <- K_0, i_anchor <- 0 */
+  memcpy(state->trust_anchor_key, sib9_ext.k0, TF5_TESLA_KEY_LEN);
+  state->trust_anchor_idx = 0;
+
+  /* Store cell ID from bootstrap for returning UE check (Alg 2 step 2) */
+  memcpy(state->cid_boot, sib9_ext.cell_id, TF5_IBS_CELL_ID_LEN);
 
   LOG_A(TF5, "First-time UE: IBS verified via SIB9, chain bootstrapped "
-        "(K_%d as anchor, interval %u)\n",
-        state->trust_anchor_idx, SI_info->tf5_sib1_ext.i);
+        "(K_0 as anchor)\n");
 }
 
 #endif
