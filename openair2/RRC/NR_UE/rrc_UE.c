@@ -878,7 +878,7 @@ tf5_done:
   config_sib1->sib1 = sib1;
   config_sib1->can_start_ra = !rrc->is_NTN_UE;
 #ifdef ENABLE_TF5
-  if (SI_info->tf5_state && !SI_info->tf5_state->chain_bootstrapped)
+  if (SI_info->tf5_state && !SI_info->tf5_state->initial_tesla_verified)
     config_sib1->can_start_ra = false;
 #endif
   nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
