@@ -306,14 +306,15 @@ int tf5_unpack_sib9_ext(const uint8_t *buf, size_t buf_len, tf5_sib9_ext_t *ext)
  */
 
 int tf5_gnb_init(tf5_gnb_state_t *state,
-                       uint16_t t_int_ms,
-                       uint8_t d,
-                       uint32_t chain_len,
-                       const uint8_t private_key[TF5_IBS_GNB_SK_LEN],
-                       const tf5_slot_time_t *t0,
-                       uint16_t slots_per_frame)
+                 uint16_t t_int_ms,
+                 uint8_t d,
+                 uint32_t chain_len,
+                 const uint8_t private_key[TF5_IBS_GNB_SK_LEN],
+                 const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                 const tf5_slot_time_t *t0,
+                 uint16_t slots_per_frame)
 {
-    if (!state || !private_key || !t0 || chain_len == 0 || t_int_ms == 0) {
+    if (!state || !private_key || !cell_id || !t0 || chain_len == 0 || t_int_ms == 0) {
         return TF5_ERR_INVALID_PARAM;
     }
 
@@ -324,6 +325,9 @@ int tf5_gnb_init(tf5_gnb_state_t *state,
 
     // Store IBS secret key (sk_ID issued by Core PKG)
     memcpy(state->private_key, private_key, TF5_IBS_GNB_SK_LEN);
+
+    // Store Cell ID
+    memcpy(state->cell_id, cell_id, TF5_IBS_CELL_ID_LEN);
 
     // Allocate key chain: chain_len + 1 entries to include K_{-1} at index 0
     // key_chain[0] = K_{-1}, key_chain[1] = K_0, ..., key_chain[chain_len] = K_{N-1}
