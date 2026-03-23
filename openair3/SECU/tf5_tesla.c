@@ -142,16 +142,17 @@ static size_t tf5_decode_tesla_params(const uint8_t *buf,
 }
 
 int tf5_build_mac_auth_input(uint8_t *out,
-                                   size_t *out_len,
-                                   const uint8_t *original_sib1,
-                                   size_t sib1_len,
-                                   uint8_t te_version)
+                             size_t *out_len,
+                             const uint8_t *original_sib1,
+                             size_t sib1_len,
+                             uint8_t version_sp_byte,
+                             const uint8_t k0_next[TF5_TESLA_KEY_LEN])
 {
-    if (!out || !out_len || !original_sib1) {
+    if (!out || !out_len || !original_sib1 || !k0_next) {
         return TF5_ERR_INVALID_PARAM;
     }
 
-    if (sib1_len + 1 > TF5_MAX_AUTH_INPUT) {
+    if (sib1_len + 1 + TF5_TESLA_KEY_LEN > TF5_MAX_AUTH_INPUT) {
         return TF5_ERR_BUFFER_OVERFLOW;
     }
 
@@ -161,21 +162,27 @@ int tf5_build_mac_auth_input(uint8_t *out,
     memcpy(out + offset, original_sib1, sib1_len);
     offset += sib1_len;
 
-    // 2. TF5 version (1 byte)
-    out[offset++] = te_version;
+    // 2. version_sp_byte (1 byte) — packed: (version << 1) | sp_next
+    out[offset++] = version_sp_byte;
+
+    // 3. K_0^next (16 bytes)
+    memcpy(out + offset, k0_next, TF5_TESLA_KEY_LEN);
+    offset += TF5_TESLA_KEY_LEN;
 
     *out_len = offset;
     return TF5_OK;
 }
 
 int tf5_build_sig_auth_input(uint8_t *out,
-                                   size_t *out_len,
-                                   uint8_t te_version,
-                                   const tf5_tesla_params_t *tesla_params,
-                                   uint32_t validity_end,
-                                   uint32_t timestamp_s)
+                             size_t *out_len,
+                             uint8_t te_version,
+                             const uint8_t cell_id[TF5_IBS_CELL_ID_LEN],
+                             const tf5_tesla_params_t *tesla_params,
+                             const uint8_t k0[TF5_TESLA_KEY_LEN],
+                             uint32_t timestamp_s,
+                             uint32_t validity_end)
 {
-    if (!out || !out_len || !tesla_params) {
+    if (!out || !out_len || !cell_id || !tesla_params || !k0) {
         return TF5_ERR_INVALID_PARAM;
     }
 
@@ -188,16 +195,24 @@ int tf5_build_sig_auth_input(uint8_t *out,
     // 1. te_version (1 byte)
     out[offset++] = te_version;
 
-    // 2. tesla_params (11 bytes)
+    // 2. cell_id (5 bytes)
+    memcpy(out + offset, cell_id, TF5_IBS_CELL_ID_LEN);
+    offset += TF5_IBS_CELL_ID_LEN;
+
+    // 3. tesla_params (11 bytes)
     offset += tf5_encode_tesla_params(out + offset, tesla_params);
 
-    // 3. validity_end (3 bytes)
-    tf5_encode_gnb_key_validity_end(out + offset, validity_end);
-    offset += TF5_IBS_VALIDITY_PERIOD_LEN;
+    // 4. K_0 (16 bytes)
+    memcpy(out + offset, k0, TF5_TESLA_KEY_LEN);
+    offset += TF5_TESLA_KEY_LEN;
 
-    // 4. timestamp_s (3 bytes) - for signature replay protection
+    // 5. timestamp_s (3 bytes)
     tf5_encode_u24_be(out + offset, timestamp_s);
     offset += 3;
+
+    // 6. validity_end (3 bytes)
+    tf5_encode_gnb_key_validity_end(out + offset, validity_end);
+    offset += TF5_IBS_VALIDITY_PERIOD_LEN;
 
     *out_len = offset;
     return TF5_OK;
