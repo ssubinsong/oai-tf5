@@ -614,12 +614,13 @@ static tf5_verify_result_t tf5_verify_returning(NR_UE_RRC_INST_t *rrc,
     }
   }
 
-  /* Build MAC auth input: SIB1 content + version */
+  /* Build MAC auth input: SIB1 content + version_sp + k0_next */
   uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
   size_t mac_auth_len = 0;
+  uint8_t version_sp = (sib1_ext->te_version << 1) | (sib1_ext->sp_next & 1);
   int mac_rc = tf5_build_mac_auth_input(mac_auth_input, &mac_auth_len,
                                         SI_info->tf5_sib1_buf, SI_info->tf5_sib1_len,
-                                        sib1_ext->te_version);
+                                        version_sp, sib1_ext->k0_next);
   if (mac_rc != 0) {
     LOG_E(TF5, "Failed to build MAC auth input (rc=%d, sib1_len=%zu)\n", mac_rc, SI_info->tf5_sib1_len);
     return TF5_VERIFY_FAIL_ENCODE;
@@ -706,14 +707,16 @@ static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc,
     return;
   }
 
-  /* Build signature auth input: version + params + validity + timestamp (18B) */
+  /* Build signature auth input: version + cell_id + params + k0 + timestamp + validity */
   uint8_t sig_auth_input[TF5_MAX_AUTH_INPUT];
   size_t sig_auth_len = 0;
-  tf5_build_sig_auth_input(sig_auth_input, &sig_auth_len,
-                            sib9_ext.te_version,
-                            &sib9_ext.tesla_params,
-                            sib9_ext.validity_end,
-                            sib9_ext.timestamp_s);
+  rc = tf5_build_sig_auth_input(sig_auth_input, &sig_auth_len,
+                                 sib9_ext.te_version,
+                                 sib9_ext.cell_id,
+                                 &sib9_ext.tesla_params,
+                                 sib9_ext.k0,
+                                 sib9_ext.timestamp_s,
+                                 sib9_ext.validity_end);
 
   /* IBS signature verification */
   int sig_rc = tf5_ibs_verify(state->mpk,
