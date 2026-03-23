@@ -217,9 +217,11 @@ int tf5_pack_sib1_ext(const tf5_sib1_ext_t *ext, uint8_t *buf, size_t buf_len)
         return TF5_ERR_BUFFER_OVERFLOW;
 
     size_t offset = 0;
-    buf[offset++] = ext->te_version;
+    // Byte 0: version_sp_byte = (version << 1) | (sp_next & 1)
+    buf[offset++] = (ext->te_version << 1) | (ext->sp_next & 1);
     tf5_encode_u32_be(buf + offset, ext->i); offset += 4;
     memcpy(buf + offset, ext->key_disclosure, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
+    memcpy(buf + offset, ext->k0_next, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
     memcpy(buf + offset, ext->tesla_tag, TF5_TESLA_TAG_LEN); offset += TF5_TESLA_TAG_LEN;
 
     return (int)offset;
@@ -233,9 +235,12 @@ int tf5_unpack_sib1_ext(const uint8_t *buf, size_t buf_len, tf5_sib1_ext_t *ext)
         return TF5_ERR_BUFFER_OVERFLOW;
 
     size_t offset = 0;
-    ext->te_version = buf[offset++];
+    uint8_t version_sp_byte = buf[offset++];
+    ext->te_version = version_sp_byte >> 1;
+    ext->sp_next = version_sp_byte & 1;
     ext->i = tf5_decode_u32_be(buf + offset); offset += 4;
     memcpy(ext->key_disclosure, buf + offset, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
+    memcpy(ext->k0_next, buf + offset, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
     memcpy(ext->tesla_tag, buf + offset, TF5_TESLA_TAG_LEN); offset += TF5_TESLA_TAG_LEN;
 
     return TF5_OK;
@@ -250,10 +255,12 @@ int tf5_pack_sib9_ext(const tf5_sib9_ext_t *ext, uint8_t *buf, size_t buf_len)
 
     size_t offset = 0;
     buf[offset++] = ext->te_version;
+    memcpy(buf + offset, ext->cell_id, TF5_IBS_CELL_ID_LEN); offset += TF5_IBS_CELL_ID_LEN;
     offset += tf5_encode_tesla_params(buf + offset, &ext->tesla_params);
-    tf5_encode_gnb_key_validity_end(buf + offset, ext->validity_end); offset += TF5_IBS_VALIDITY_PERIOD_LEN;
-    tf5_encode_u24_be(buf + offset, ext->timestamp_s); offset += 3;
+    memcpy(buf + offset, ext->k0, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
     memcpy(buf + offset, ext->signature, TF5_IBS_SIG_LEN); offset += TF5_IBS_SIG_LEN;
+    tf5_encode_u24_be(buf + offset, ext->timestamp_s); offset += 3;
+    tf5_encode_gnb_key_validity_end(buf + offset, ext->validity_end); offset += TF5_IBS_VALIDITY_PERIOD_LEN;
 
     return (int)offset;
 }
@@ -267,10 +274,12 @@ int tf5_unpack_sib9_ext(const uint8_t *buf, size_t buf_len, tf5_sib9_ext_t *ext)
 
     size_t offset = 0;
     ext->te_version = buf[offset++];
+    memcpy(ext->cell_id, buf + offset, TF5_IBS_CELL_ID_LEN); offset += TF5_IBS_CELL_ID_LEN;
     offset += tf5_decode_tesla_params(buf + offset, &ext->tesla_params);
-    ext->validity_end = tf5_decode_gnb_key_validity_end(buf + offset); offset += TF5_IBS_VALIDITY_PERIOD_LEN;
-    ext->timestamp_s = tf5_decode_u24_be(buf + offset); offset += 3;
+    memcpy(ext->k0, buf + offset, TF5_TESLA_KEY_LEN); offset += TF5_TESLA_KEY_LEN;
     memcpy(ext->signature, buf + offset, TF5_IBS_SIG_LEN); offset += TF5_IBS_SIG_LEN;
+    ext->timestamp_s = tf5_decode_u24_be(buf + offset); offset += 3;
+    ext->validity_end = tf5_decode_gnb_key_validity_end(buf + offset); offset += TF5_IBS_VALIDITY_PERIOD_LEN;
 
     return TF5_OK;
 }
