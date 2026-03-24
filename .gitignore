@@ -192,3 +192,6 @@ http-client.private.env.json
 compile_commands.json
 
 .cache
+
+*.bin
+docs/superpowers/
