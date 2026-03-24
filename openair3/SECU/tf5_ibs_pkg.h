@@ -7,7 +7,7 @@
  * The PKG generates master keys and issues gNB-specific secret keys
  * based on the gNB's NR Cell ID and key validity period.
  *
- * GG09 Schnorr-2IBS Scheme (Ed25519/libsodium):
+ * GG09 GG09 Scheme (Ed25519/libsodium):
  *   - Master secret: Ed25519 seed (32 bytes)
  *   - Master public key: MPK = crypto_sign_seed_keypair(seed)
  *   - gNB identity message: cell_id[5] ‖ validity_be[3] = 8 bytes

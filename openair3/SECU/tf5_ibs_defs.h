@@ -6,7 +6,7 @@
  * and file format sizes shared between the TESLA/RAN hierarchy
  * (tf5_tesla_sig.h / tf5_tesla.h) and the Core PKG hierarchy (tf5_ibs_pkg.h).
  *
- * IBS scheme: GG09 Schnorr-2IBS (Galindo-Garcia, 2009; 1-level Schnorr IBS)
+ * IBS scheme: GG09 GG09 (Galindo-Garcia, 2009; 1-level Schnorr IBS)
  *   Setup:   msk = Ed25519 seed,  mpk = crypto_sign_seed_keypair(seed)
  *   Extract: (R‖S) = Ed25519_sign(msk, id_msg), sk_id = (y=S, pk=R)
  *            identity hash: cid = SHA-512(pk ‖ mpk ‖ cell_id ‖ validity) mod l
@@ -68,7 +68,7 @@ enum {
  * ========================================================================== */
 
 /*
- * GG09 Schnorr-2IBS sizes derive from Ed25519 curve parameters above.
+ * GG09 GG09 sizes derive from Ed25519 curve parameters above.
  * sk_id is (y[32] scalar, pk[32] point) = 64B.
  * Signature is R[32] || sigma[32] || pk[32] = 96B.
  */
