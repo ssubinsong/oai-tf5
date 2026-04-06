@@ -844,11 +844,14 @@ tf5_done:
 #endif
 
   nr_timer_start(&SI_info->sib1_timer);
-#ifdef ENABLE_TF5
-  if (!SI_info->tf5_state || SI_info->tf5_state->chain_bootstrapped)
-#endif
   SI_info->sib1_validity = true;
   if (rrc->nrRrcState == RRC_STATE_IDLE_NR) {
+#ifdef ENABLE_TF5
+    // Don't trigger RA until first TESLA MAC verification succeeds.
+    // sib1_validity must be true regardless so check_si_status() can
+    // progress to scheduling SIB9 acquisition.
+    if (!SI_info->tf5_state || SI_info->tf5_state->initial_tesla_verified)
+#endif
     rrc->ra_trigger = RRC_CONNECTION_SETUP;
   }
 
