@@ -747,6 +747,12 @@ static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc,
 
   LOG_A(TF5, "First-time UE: IBS verified via SIB9, chain bootstrapped "
         "(K_0 as anchor)\n");
+
+  /* Force SIB1 re-acquisition so the UE can receive a TESLA-authenticated
+   * SIB1 and set initial_tesla_verified.  Without this, sib1_validity
+   * (set true for the pre-bootstrap SIB1) makes check_si_status() think
+   * SIB1 is already current, and the MAC never requests another one. */
+  SI_info->sib1_validity = false;
 }
 
 #endif
