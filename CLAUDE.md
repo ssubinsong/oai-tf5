@@ -44,6 +44,34 @@ cd cmake_targets/ran_build/build_test
 ctest -R tf5 -V
 ```
 
+### Run a single test
+```bash
+cd cmake_targets/ran_build/build_test
+ctest -R test_tf5_tesla_crypto -V
+```
+
+Available tests: `test_tf5_tesla_crypto`, `test_tf5_tesla_gnb`, `test_tf5_tesla_ue`, `test_tf5_tesla_serial`, `test_tf5_tesla_ibs`, `test_tf5_tesla_timing`, `test_tf5_tesla_fileio`, `test_tf5_tesla_e2e`, `test_tf5_ibs_pkg`
+
+## Key TF5 Files
+
+TF5 code lives in two layers within the OAI tree:
+
+| Path | Purpose |
+|------|---------|
+| `openair3/SECU/tf5_tesla.{c,h}` | TESLA chain generation, MAC tag, key disclosure |
+| `openair3/SECU/tf5_tesla_sig.{c,h}` | TESLA + IBS combined signing/verification |
+| `openair3/SECU/tf5_crypto.{c,h}` | Low-level crypto helpers (SHA-256, HMAC) |
+| `openair3/SECU/tf5_ibs_common.c` | GG09 IBS sign/verify (Ed25519 curve ops) |
+| `openair3/SECU/tf5_ibs_defs.h` | IBS type definitions and wire formats |
+| `openair3/SECU/tf5_ibs_pkg.h` | IBS key extraction (PKG role) |
+| `openair3/SECU/ed25519_precomp.h` | Reimplemented libsodium internal `ge25519_*` functions |
+| `openair3/SECU/core-pkg/` | Standalone PKG key issuance scripts |
+| `openair3/SECU/tests/` | GTest test suite (9 test binaries) |
+| `openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_bch.c` | SIB1/SIB9 PDSCH scheduling (VRB allocation) |
+| `openair2/LAYER2/NR_MAC_gNB/config.c` | gNB MAC config (SIB9 setup) |
+| `openair2/RRC/NR_UE/rrc_UE.c` | UE RRC — SIB1/SIB9 reception and TESLA verification |
+| `executables/nr-softmodem.c` | gNB main — TF5 initialization |
+
 ## Unimplemented Features
 
 `doc-tf5/unimplemented-features.md` documents unimplemented features of the codebase. DO NOT report them as new bugs or attempt to implement them unless explicitly asked.
@@ -58,10 +86,10 @@ TF5 uses **GG09 Schnorr IBS** (Ed25519/libsodium) for SIB1 broadcast authenticat
 ## Data Split: SIB1 / SIB9
 - SIB1 `lateNonCriticalExtension`: per-interval (version_sp + interval + key + k0_next + tag = 53B)
 - SIB9 `lateNonCriticalExtension`: static + IBS sig (version + cell_id + params + k0 + sig + timestamp + validity = 135B)
-- First-time UE: SIB1 저장 → SIB9 IBS 검증 → chain bootstrap
-- Returning UE: SIB1 MAC만 검증 (SIB9 불필요)
+- First-time UE: store SIB1 → verify SIB9 IBS signature → chain bootstrap
+- Returning UE: verify SIB1 MAC only (SIB9 not needed)
 
 ## SIB PDSCH Scheduling (VRB Allocation)
-- SIB1과 SIB9는 같은 슬롯(slot 0)에 스케줄됨 (CORESET0 BWP = 48 RBs)
-- `update_rb_mcs_tbs()` in `gNB_scheduler_bch.c`: OAI 기존 함수를 수정하여 첫 번째 빈 VRB 블록이 부족할 때 다음 블록을 탐색하도록 변경함
-- Config의 PLMN/SNSSAI가 SIB1 ASN.1 인코딩 크기에 영향 → TBS/rbSize 변경 → VRB map 패턴 변경 → SIB9 할당 가능 여부가 달라질 수 있음
+- SIB1 and SIB9 are scheduled in the same slot (slot 0) within CORESET0 BWP (48 RBs)
+- `update_rb_mcs_tbs()` in `gNB_scheduler_bch.c`: modified OAI's original function to search for the next free VRB block when the first one is too small
+- PLMN/SNSSAI in config affects SIB1 ASN.1 encoding size → changes TBS/rbSize → changes VRB map pattern → may affect whether SIB9 can be allocated
