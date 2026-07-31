@@ -8,6 +8,13 @@ common/utils/LOG/log.h
 common/utils/T/T_messages.txt
 doc-tf5/provenance-files.txt
 doc-tf5/provenance.md
+executables/nr-softmodem.c
+executables/nr-softmodem.h
+openair2/LAYER2/NR_MAC_gNB/config.c
+openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_bch.c
+openair2/LAYER2/NR_MAC_gNB/mac_proto.h
+openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h
+openair2/LAYER2/NR_MAC_gNB/nr_radio_config.c
 openair3/SECU/core-pkg/README.md
 openair3/SECU/core-pkg/tf5_ibs_issue.sh
 openair3/SECU/core-pkg/tf5_ibs_keygen.sh

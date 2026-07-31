@@ -47,6 +47,9 @@
 #include "uper_encoder.h"
 #include "utils.h"
 #include "xer_encoder.h"
+#ifdef ENABLE_TF5
+#include "openair3/SECU/tf5_tesla.h"
+#endif
 
 #define NR_MAX_SUPPORTED_DL_LAYERS 4
 
@@ -4359,3 +4362,179 @@ int encode_measgap_config(const measgap_config_t *c, uint8_t *buf)
   ASN_STRUCT_FREE(asn_DEF_NR_MeasGapConfig, measGapConfig);
   return (int)((enc_rval_mgc.encoded + 7) >> 3);
 }
+
+#ifdef ENABLE_TF5
+/**
+ * Update SIB1 with per-interval TESLA data (MAC tag + key disclosure)
+ *
+ * SIB1 lateNonCriticalExtension contains only: version + interval + key + tag (~37B)
+ * TESLA params and IBS signature are in SIB9 (see nr_mac_update_tf5_sib).
+ */
+void nr_mac_update_sib1_tf5(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
+{
+  if (!cc->tf5_state || !cc->tf5_state->initialized) {
+    AssertFatal(0, "TF5: SIB1 TESLA state not initialized\n");
+  }
+
+  tf5_gnb_state_t *state = cc->tf5_state;
+  NR_SIB1_t *sib1 = cc->sib1->message.choice.c1->choice.systemInformationBlockType1;
+
+  // Encode SIB1 without extension for MAC auth input
+  OCTET_STRING_t *saved_ext = sib1->lateNonCriticalExtension;
+  sib1->lateNonCriticalExtension = NULL;
+  asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_SIB1,
+                                                   NULL, sib1,
+                                                   cc->sib1_original,
+                                                   sizeof(cc->sib1_original));
+  sib1->lateNonCriticalExtension = saved_ext;
+  AssertFatal(enc_rval.encoded > 0, "TF5: Failed to encode SIB1 for MAC (rc=%zd)\n", enc_rval.encoded);
+  cc->sib1_original_length = (enc_rval.encoded + 7) / 8;
+
+  // Get current interval
+  tf5_slot_time_t current = tf5_slot_time_make(frame, slot);
+  uint64_t slots = tf5_absolute_slots(&current, state->slots_per_frame)
+                   - tf5_absolute_slots(&state->tesla_params.t0, state->slots_per_frame);
+  uint64_t time_ms = (slots * TF5_NR_FRAME_DURATION_MS) / state->slots_per_frame;
+  uint32_t interval = (uint32_t)(time_ms / state->tesla_params.t_int_ms);
+  AssertFatal(interval < state->key_chain_len, "TF5: Interval %u exceeds chain length %u\n",
+              interval, state->key_chain_len);
+
+  // Build MAC auth input: SIB1 content + version_sp_byte + k0_next
+  tf5_sib1_ext_t sib1_ext;
+  sib1_ext.te_version = TF5_VERSION;
+  sib1_ext.sp_next = 0;
+  memset(sib1_ext.k0_next, 0, TF5_TESLA_KEY_LEN);
+  sib1_ext.i = interval;
+  uint8_t version_sp = (TF5_VERSION << 1) | 0;
+
+  uint8_t mac_auth[TF5_MAX_AUTH_INPUT];
+  size_t mac_auth_len;
+  int rc = tf5_build_mac_auth_input(mac_auth, &mac_auth_len,
+                                    cc->sib1_original, cc->sib1_original_length,
+                                    version_sp, sib1_ext.k0_next);
+  AssertFatal(rc == 0, "TF5: Failed to build MAC auth input (rc=%d)\n", rc);
+
+  rc = tf5_compute_tag(state->key_chain[tf5_key_interval_to_index(interval)],
+                       mac_auth, mac_auth_len, sib1_ext.tesla_tag);
+  AssertFatal(rc == 0, "TF5: Failed to compute tag (rc=%d)\n", rc);
+
+  // Key disclosure: K_{i-d}
+  int32_t disclosed_interval = (int32_t)interval - state->tesla_params.d;
+  memcpy(sib1_ext.key_disclosure,
+         state->key_chain[tf5_key_interval_to_index(disclosed_interval)],
+         TF5_TESLA_KEY_LEN);
+
+  // Pack SIB1 extension (~37B)
+  uint8_t ext_buf[TF5_SIB1_EXT_PACKED_SIZE];
+  int ext_len = tf5_pack_sib1_ext(&sib1_ext, ext_buf, sizeof(ext_buf));
+  AssertFatal(ext_len >= 0, "TF5: Failed to pack SIB1 extension\n");
+
+  // Set lateNonCriticalExtension
+  if (sib1->lateNonCriticalExtension == NULL) {
+    sib1->lateNonCriticalExtension = calloc(1, sizeof(OCTET_STRING_t));
+    AssertFatal(sib1->lateNonCriticalExtension != NULL, "TF5: alloc failed\n");
+  }
+  if (sib1->lateNonCriticalExtension->buf == NULL
+      || sib1->lateNonCriticalExtension->size < (size_t)ext_len) {
+    free(sib1->lateNonCriticalExtension->buf);
+    sib1->lateNonCriticalExtension->buf = malloc(ext_len);
+    AssertFatal(sib1->lateNonCriticalExtension->buf != NULL, "TF5: alloc failed\n");
+  }
+  memcpy(sib1->lateNonCriticalExtension->buf, ext_buf, ext_len);
+  sib1->lateNonCriticalExtension->size = ext_len;
+
+  // Re-encode SIB1
+  cc->sib1_bcch_length = encode_SIB_NR(cc->sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
+  AssertFatal(cc->sib1_bcch_length > 0, "TF5: Failed to re-encode SIB1\n");
+
+  LOG_D(TF5, "Updated SIB1 for frame %d slot %d (interval %u, ext_len=%d)\n",
+        frame, slot, interval, ext_len);
+}
+
+/**
+ * Update SIB9 SI message with TESLA params + IBS signature
+ *
+ * SIB9's lateNonCriticalExtension contains: version + tesla_params + validity + timestamp + signature (~114B)
+ * This is broadcast as a separate SI message via schedulingInfoList.
+ */
+void nr_mac_update_tf5_sib(NR_COMMON_channels_t *cc, frame_t frame, slot_t slot)
+{
+  if (!cc->tf5_state || !cc->tf5_state->initialized)
+    return;
+
+  tf5_gnb_state_t *state = cc->tf5_state;
+
+  // SIB9 is signed once per chain — skip if already cached
+  if (state->sib9_pdu_cached)
+    return;
+
+  // Build SIB9 extension
+  tf5_sib9_ext_t sib9_ext;
+  sib9_ext.te_version = TF5_VERSION;
+  memcpy(&sib9_ext.tesla_params, &state->tesla_params, sizeof(tf5_tesla_params_t));
+  sib9_ext.validity_end = state->key_validity_end;
+  memcpy(sib9_ext.cell_id, state->cell_id, TF5_IBS_CELL_ID_LEN);
+  memcpy(sib9_ext.k0, state->key_chain[tf5_key_interval_to_index(0)], TF5_TESLA_KEY_LEN);
+
+  // Wall-clock timestamp (seconds) for replay protection
+  uint64_t wallclock_ms = tf5_rp_get_wallclock_ms();
+  AssertFatal(wallclock_ms != 0, "TF5: Failed to get wall-clock time\n");
+  sib9_ext.timestamp_s = (uint32_t)(wallclock_ms / 1000) & TF5_RP_TIMESTAMP_MASK;
+
+  // Build sig auth input and compute IBS signature
+  uint8_t sig_auth[TF5_MAX_AUTH_INPUT];
+  size_t sig_auth_len;
+  int rc = tf5_build_sig_auth_input(sig_auth, &sig_auth_len,
+                                    TF5_VERSION,
+                                    state->cell_id,
+                                    &state->tesla_params,
+                                    sib9_ext.k0,
+                                    sib9_ext.timestamp_s,
+                                    sib9_ext.validity_end);
+  AssertFatal(rc == 0, "TF5: Failed to build sig auth input (rc=%d)\n", rc);
+
+  if (state->sign_precomps && state->sign_precomp_next < state->sign_precomp_count) {
+    rc = tf5_ibs_sign_online(state->private_key, sig_auth, sig_auth_len,
+                             &state->sign_precomps[state->sign_precomp_next],
+                             sib9_ext.signature);
+    state->sign_precomp_next++;
+  } else {
+    LOG_W(TF5, "IBS precomp exhausted, using full sign\n");
+    rc = tf5_ibs_sign(state->private_key, sig_auth, sig_auth_len, sib9_ext.signature);
+  }
+  AssertFatal(rc == 0, "TF5: Failed to compute IBS signature (rc=%d)\n", rc);
+
+  // Pack SIB9 extension (~135B)
+  uint8_t ext_buf[TF5_SIB9_EXT_PACKED_SIZE];
+  int ext_len = tf5_pack_sib9_ext(&sib9_ext, ext_buf, sizeof(ext_buf));
+  AssertFatal(ext_len >= 0, "TF5: Failed to pack SIB9 extension\n");
+
+  // Build SIB9 ASN.1 structure with lateNonCriticalExtension
+  NR_SIB9_t sib9 = {0};
+  // timeInfo is optional, leave NULL
+  OCTET_STRING_t lnce = {.buf = ext_buf, .size = ext_len};
+  sib9.lateNonCriticalExtension = &lnce;
+
+  // Wrap into SystemInformation
+  NR_SystemInformation_IEs_t sysInfo = {0};
+  struct NR_SystemInformation_IEs__sib_TypeAndInfo__Member *member = calloc(1, sizeof(*member));
+  AssertFatal(member != NULL, "TF5: alloc failed\n");
+  member->present = NR_SystemInformation_IEs__sib_TypeAndInfo__Member_PR_sib9;
+  // Copy SIB9 into the member (shallow copy is fine since we encode immediately)
+  member->choice.sib9 = &sib9;
+  asn1cSeqAdd(&sysInfo.sib_TypeAndInfo.list, member);
+
+  // Encode into other_sib_bcch_pdu[0]
+  cc->other_sib_bcch_length[0] = encode_sysinfo_ie(&sysInfo, cc->other_sib_bcch_pdu[0],
+                                                    sizeof(cc->other_sib_bcch_pdu[0]));
+  AssertFatal(cc->other_sib_bcch_length[0] > 0, "TF5: Failed to encode SIB9 SI message\n");
+
+  // Clean up: free internal allocations only (sysInfo is stack-allocated)
+  member->choice.sib9 = NULL;  // prevent freeing stack sib9
+  ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NR_SystemInformation_IEs, &sysInfo);
+
+  state->sib9_pdu_cached = true;
+  LOG_I(TF5, "SIB9 signed and cached for frame %d slot %d (ext_len=%d, si_len=%d)\n",
+        frame, slot, ext_len, cc->other_sib_bcch_length[0]);
+}
+#endif /* ENABLE_TF5 */

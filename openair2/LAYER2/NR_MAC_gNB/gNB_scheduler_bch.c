@@ -37,6 +37,9 @@
 #include "common/utils/LOG/vcd_signal_dumper.h"
 #include "UTIL/OPT/opt.h"
 #include "common/utils/nr/nr_common.h"
+#ifdef ENABLE_TF5
+#include "openair3/SECU/tf5_tesla.h"
+#endif
 
 #define ENABLE_MAC_PAYLOAD_DEBUG
 
@@ -295,6 +298,7 @@ static void update_rb_mcs_tbs(NR_sched_pdsch_t *pdsch, uint32_t num_total_bytes,
         max_rbSize++;
 
       bool res = false;
+      pdsch->mcs = 0;
       while (res == false && pdsch->mcs < 10) {
         pdsch->Qm = nr_get_Qm_dl(pdsch->mcs, mcsTableIdx);
         pdsch->R = nr_get_code_rate_dl(pdsch->mcs, mcsTableIdx);
@@ -312,7 +316,12 @@ static void update_rb_mcs_tbs(NR_sched_pdsch_t *pdsch, uint32_t num_total_bytes,
         if (!res)
           pdsch->mcs++;
       }
-      break;
+      if (res)
+        break;
+      // Current free block too small — skip past it and try the next one
+      pdsch->rbStart += max_rbSize;
+      pdsch->rbSize = 0;
+      pdsch->tb_size = 0;
     }
   }
   AssertFatal(pdsch->tb_size >= num_total_bytes,
@@ -387,7 +396,7 @@ static NR_sched_pdsch_t schedule_control_sib1(gNB_MAC_INST *gNB_mac,
                      gNB_mac->sched_ctrlCommon->aggregation_level,
                      beam);
   for (int rb = 0; rb < pdsch.rbSize; rb++) {
-    vrb_map[rb + type0_PDCCH_CSS_config->cset_start_rb] |= SL_to_bitmap(tda_info->startSymbolIndex, tda_info->nrOfSymbols);
+    vrb_map[rb + pdsch.rbStart + type0_PDCCH_CSS_config->cset_start_rb] |= SL_to_bitmap(tda_info->startSymbolIndex, tda_info->nrOfSymbols);
   }
   return pdsch;
 }
@@ -565,6 +574,14 @@ void schedule_nr_sib1(module_id_t module_idP,
                                                          type0_PDCCH_CSS_config);
 
       NR_COMMON_channels_t *cc = &gNB_mac->common_channels[0];
+
+#ifdef ENABLE_TF5
+      // Update TESLA extension before scheduling so sib1_bcch_length reflects the final TB size
+      if (cc->tf5_state && cc->tf5_state->initialized) {
+        nr_mac_update_sib1_tf5(cc, frameP, slotP);
+      }
+#endif
+
       // Configure sched_ctrlCommon for SIB1
       NR_sched_pdsch_t sched_pdsch = schedule_control_sib1(gNB_mac,
                                                            CC_id,
@@ -708,7 +725,7 @@ static void other_sib_sched_control(module_id_t module_idP,
   update_rb_mcs_tbs(&sched_pdsch_otherSI, num_total_bytes, vrb_map);
 
   for (int rb = 0; rb < sched_pdsch_otherSI.rbSize; rb++) {
-    vrb_map[rb + type0_PDCCH_CSS_config->cset_start_rb] |= SL_to_bitmap(tda_info.startSymbolIndex, tda_info.nrOfSymbols);
+    vrb_map[rb + sched_pdsch_otherSI.rbStart + type0_PDCCH_CSS_config->cset_start_rb] |= SL_to_bitmap(tda_info.startSymbolIndex, tda_info.nrOfSymbols);
   }
 
   int pdu_index = gNB_mac->pdu_index[0]++;
@@ -842,6 +859,12 @@ void schedule_nr_other_sib(module_id_t module_idP,
                                         rel_frame[ssb],
                                         rel_slot[ssb]))
         continue;
+
+#ifdef ENABLE_TF5
+      // Update SIB9 IBS signature only on SI scheduling occasion (once per 160ms)
+      if (i == 0 && ssb == 0 && cc->tf5_state && cc->tf5_state->initialized)
+        nr_mac_update_tf5_sib(cc, frame, slot);
+#endif
 
       other_sib_sched_control(module_idP, frame, slot, ssb, ss, DL_req, TX_req, 0);
     }

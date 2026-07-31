@@ -48,6 +48,11 @@
 #include "T.h"
 #include "asn_internal.h"
 #include "assertions.h"
+#ifdef ENABLE_TF5
+#include "openair3/SECU/tf5_tesla.h"
+#include "openair3/SECU/tf5_tesla_sig.h"
+#include "openair3/SECU/tf5_ibs_pkg.h"
+#endif
 #include "common/ran_context.h"
 #include "common/utils/T/T.h"
 #include "common/utils/nr/nr_common.h"
@@ -1105,6 +1110,64 @@ void prepare_du_configuration_update(gNB_MAC_INST *mac,
   mac->mac_rrc.gnb_du_configuration_update(&update);
 }
 
+#ifdef ENABLE_TF5
+/**
+ * Compute TESLA T_0 reference point from SIB1 occasion pattern
+ *
+ * T_0 is the reference point for TESLA interval 0, aligned with the start of
+ * the first SIB1 broadcast period. With T_int=160ms (= SIB1 broadcast period),
+ * each TESLA interval spans 8 SIB1 repetitions (at 20ms SSB periodicity).
+ * sfn_c determines frame parity (0=even, 1=odd), n_0 is the slot.
+ *
+ * Example: If sfn_c=0 and n_0=0, T_0=(0,0). A gNB starting at frame 67 will
+ * transmit first SIB1 at frame 68, which is interval 34 - not interval 0.
+ * This is correct behavior; intervals 0-33 are simply unused.
+ *
+ * @param nrmac     gNB MAC instance
+ * @param out_sfn   Output: SFN component of T_0 (0 or 1, frame parity)
+ * @param out_slot  Output: slot component of T_0 (n_0 from Type0 PDCCH CSS)
+ */
+static void tf5_compute_t0_reference(gNB_MAC_INST *nrmac, uint16_t *out_sfn, uint16_t *out_slot)
+{
+  NR_COMMON_channels_t *cc = &nrmac->common_channels[0];
+  const NR_MIB_t *mib = cc->mib->message.choice.mib;
+  NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
+
+  NR_SubcarrierSpacing_t scs_ssb = *scc->ssbSubcarrierSpacing;
+  const long band = *scc->downlinkConfigCommon->frequencyInfoDL->frequencyBandList.list.array[0];
+  uint16_t ssb_start_symbol = get_ssb_start_symbol(band, scs_ssb, 0);
+
+  int8_t ssb_period_enum = *scc->ssb_periodicityServingCell;
+  uint8_t ssb_frame_periodicity = 1;
+  if (ssb_period_enum > 1)
+    ssb_frame_periodicity = 1 << (ssb_period_enum - 1);
+
+  const int8_t numb_slots_frame = nrmac->frame_structure.numb_slots_frame;
+  frequency_range_t frequency_range = scc->ssb_PositionsInBurst->present == 3 ? FR2 : FR1;
+  const int prb_offset = frequency_range == FR1 ? nrmac->ssb_OffsetPointA >> scs_ssb : nrmac->ssb_OffsetPointA >> (scs_ssb - 2);
+
+  // Compute type0 PDCCH CSS config to get timing parameters
+  NR_Type0_PDCCH_CSS_config_t type0_PDCCH_CSS_config = {0};
+  get_type0_PDCCH_CSS_config_parameters(&type0_PDCCH_CSS_config,
+                                        0,
+                                        mib,
+                                        numb_slots_frame,
+                                        nrmac->ssb_SubcarrierOffset,
+                                        ssb_start_symbol,
+                                        scs_ssb,
+                                        frequency_range,
+                                        band,
+                                        0,  // ssb_index = 0
+                                        ssb_frame_periodicity,
+                                        prb_offset);
+
+  // T_0 reference point: sfn_c sets frame parity alignment, n_0 sets slot
+  // T_0 = start of first broadcast period; interval boundaries align with broadcast period starts
+  *out_sfn = type0_PDCCH_CSS_config.sfn_c;  // 0 or 1 (even or odd frame parity)
+  *out_slot = type0_PDCCH_CSS_config.n_0;
+}
+#endif // ENABLE_TF5
+
 void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t cellID, int tac)
 {
   AssertFatal(IS_SA_MODE(get_softmodem_params()), "error: SIB1 only applicable for SA\n");
@@ -1113,6 +1176,111 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const plmn_id_t *plmn, uint64_t 
   NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
   NR_BCCH_DL_SCH_Message_t *sib1 = get_SIB1_NR(scc, plmn, cellID, tac, &nrmac->radio_config);
   cc->sib1 = sib1;
+
+#ifdef ENABLE_TF5
+  // Initialize TF5 state
+  cc->tf5_state = calloc(1, sizeof(tf5_gnb_state_t));
+  AssertFatal(cc->tf5_state != NULL, "Failed to allocate TF5 state\n");
+
+  // Get slots per frame from numerology
+  int numerology = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->subcarrierSpacing;
+  uint16_t slots_per_frame = 10 * (1 << numerology);
+
+  // Load IBS secret key from file (issued by Core PKG)
+  extern char *tf5_privkey_file;
+  extern unsigned int tf5_tesla_chain_len;
+
+  uint8_t private_key[TF5_IBS_GNB_SK_LEN];
+  uint32_t key_validity_end;
+  int rc;
+
+  // Check that key path is provided (no defaults - must be explicit)
+  if (tf5_privkey_file == NULL || tf5_privkey_file[0] == '\0') {
+    AssertFatal(false,
+                "TF5: --tf5-privkey is required. Specify path to sk_ID file (issued by Core PKG).\n"
+                "TF5: Generate with: tf5_ibs_issue <msk_path> <cell_id_hex> <gnb_key_validity_end> <sk_path>\n");
+  }
+
+  // Initialize GG09 Schnorr IBS subsystem
+  rc = tf5_ibs_init();
+  AssertFatal(rc == 0, "TF5: Failed to initialize GG09 Schnorr IBS subsystem (rc=%d)\n", rc);
+
+  // Load IBS secret key and embedded validity period (67-byte file: sk + validity)
+  rc = tf5_load_gnb_privkey(tf5_privkey_file, private_key, &key_validity_end);
+  AssertFatal(rc == 0,
+              "TF5: Failed to load sk_ID from %s (rc=%d)\n"
+              "TF5: Use tf5_ibs_issue to generate key for this gNB\n",
+              tf5_privkey_file, rc);
+
+  // Validate gnb_key_validity_end is within 24-bit range
+  AssertFatal(key_validity_end <= 0xFFFFFF,
+              "TF5: gnb_key_validity_end=%u exceeds max (16777215)\n", key_validity_end);
+
+  // Check if key has expired
+  uint64_t expiry_unix = tf5_gnb_key_validity_to_unix(key_validity_end);
+  uint64_t current_unix = tf5_rp_get_wallclock_ms() / 1000;
+  AssertFatal(current_unix < expiry_unix,
+              "TF5: Key has EXPIRED (gnb_key_validity_end=%u, expiry=%lu, now=%lu)\n"
+              "TF5: Re-issue key with tf5_ibs_issue using a future gnb_key_validity_end\n",
+              key_validity_end, (unsigned long)expiry_unix, (unsigned long)current_unix);
+
+  LOG_I(TF5, "Loaded sk_ID from: %s\n", tf5_privkey_file);
+  LOG_I(TF5, "Cell ID: 0x%09llx (36 bits)\n", (unsigned long long)cellID);
+
+  // T_int = SIB1 broadcast period (8 repetitions per interval at 20ms SSB periodicity)
+  uint16_t t_int_ms = 160;
+
+  // Compute T_0 reference point (aligns with SIB1 occasion pattern)
+  uint16_t t0_sfn = 0, t0_slot = 0;
+  tf5_compute_t0_reference(nrmac, &t0_sfn, &t0_slot);
+
+  // Use configurable chain length (set via --tf5-chain-len command-line parameter)
+  // Default: 65536 keys (~174.8 min with T_int=160ms)
+  uint32_t chain_len = (uint32_t)tf5_tesla_chain_len;
+
+  LOG_I(TF5, "T_int=%u ms (aligned with SIB1 broadcast period)\n", t_int_ms);
+  LOG_I(TF5, "T_0=(SFN=%u, slot=%u) (reference point, aligns with SIB1 pattern)\n", t0_sfn, t0_slot);
+  LOG_I(TF5, "chain_len=%u (~%.1f min)\n", chain_len, (chain_len * t_int_ms) / 60000.0);
+
+  // Convert cellID (36-bit, right-justified uint64_t) to 5-byte ASN.1 BIT STRING format
+  // ASN.1 BIT STRING(36): 36 bits left-aligned in 5 bytes, last 4 bits are padding zeros
+  // This matches what the UE extracts via memcpy from the BIT STRING buffer in SIB1
+  uint8_t cell_id_bytes[TF5_IBS_CELL_ID_LEN];
+  uint64_t shifted = cellID << 4;
+  cell_id_bytes[0] = (shifted >> 32) & 0xFF;
+  cell_id_bytes[1] = (shifted >> 24) & 0xFF;
+  cell_id_bytes[2] = (shifted >> 16) & 0xFF;
+  cell_id_bytes[3] = (shifted >> 8)  & 0xFF;
+  cell_id_bytes[4] = shifted & 0xFF;
+
+  // Initialize TESLA with computed parameters
+  tf5_slot_time_t t0 = tf5_slot_time_make(t0_sfn, t0_slot);
+  rc = tf5_gnb_init(cc->tf5_state,
+                          t_int_ms,       // T_int (aligned with SIB1 broadcast period)
+                          1,              // d = 1 (disclosure delay)
+                          chain_len,      // Chain length
+                          private_key,
+                          cell_id_bytes,  // NR Cell Identity (5 bytes, left-aligned)
+                          &t0,            // T_0 timing (SFN/slot)
+                          slots_per_frame);
+  AssertFatal(rc == 0, "TF5: Failed to initialize (rc=%d)\n", rc);
+
+  // Store key validity period (minutes since 2024-01-01)
+  cc->tf5_state->key_validity_end = key_validity_end;
+
+  // Log validity info
+  time_t expiry_time = (time_t)tf5_gnb_key_validity_to_unix(key_validity_end);
+  struct tm *tm_expiry = gmtime(&expiry_time);
+  char expiry_str[64];
+  strftime(expiry_str, sizeof(expiry_str), "%Y-%m-%d %H:%M UTC", tm_expiry);
+  LOG_I(TF5, "Key valid until: %s (gnb_key_validity_end=%u)\n", expiry_str, key_validity_end);
+
+  LOG_I(TF5, "gNB initialization successful\n");
+
+  // Register SIB9 in SIB1's si-SchedulingInfo so UE knows to listen for it
+  update_SIB1_NR_SI(sib1, 1, (int[]){9});
+  LOG_I(TF5, "Registered SIB9 in schedulingInfoList for TESLA params + IBS signature\n");
+#endif
   cc->sib1_bcch_length = encode_SIB_NR(sib1, cc->sib1_bcch_pdu, sizeof(cc->sib1_bcch_pdu));
   AssertFatal(cc->sib1_bcch_length > 0, "could not encode SIB1\n");
 }

@@ -8,6 +8,15 @@
 #define DEFAULT_DLF 2680000000
 
 /***************************************************************************************************************************************/
+/* TESLA key parameters (no defaults - must be explicitly provided)                                                                     */
+/***************************************************************************************************************************************/
+#ifdef ENABLE_TF5
+#define CONFIG_HLP_TF5_PRIVKEY    "TESLA-for-5G TESLA secret key file. REQUIRED.\n"
+#define CONFIG_HLP_TF5_TESLA_CHAINLEN   "TESLA-for-5G key chain length (default: 65536, approx. 174.8 min with T_int=160ms)\n"
+#define TF5_DEFAULT_CHAIN_LEN       65536
+#endif
+
+/***************************************************************************************************************************************/
 /* command line options definitions, CMDLINE_XXXX_DESC macros are used to initialize paramdef_t arrays which are then used as argument
    when calling config_get or config_getlist functions                                                                                 */
 
@@ -16,6 +25,14 @@
 /*   optname                helpstr                 paramflags        XXXptr                              defXXXval                   type         numelt               */
 /*----------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 // clang-format off
+#ifdef ENABLE_TF5
+#define CMDLINE_TF5_PARAMS_GNB \
+  {"tf5-privkey",              CONFIG_HLP_TF5_PRIVKEY,  0,                .strptr=&tf5_privkey_file,              .defstrval=NULL, TYPE_STRING, 0},     \
+  {"tf5-chain-len",            CONFIG_HLP_TF5_TESLA_CHAINLEN, 0,                .uptr=&tf5_tesla_chain_len,                   .defuintval=TF5_DEFAULT_CHAIN_LEN,   TYPE_UINT,   0},
+#else
+#define CMDLINE_TF5_PARAMS_GNB
+#endif
+
 #define CMDLINE_PARAMS_DESC_GNB { \
   {"m" ,                    CONFIG_HLP_DLMCS_PHYTEST,  0,                .uptr=&target_dl_mcs,                .defintval=0,                     TYPE_UINT,   0},        \
   {"l" ,                    CONFIG_HLP_DLNL_PHYTEST,   0,                .uptr=&target_dl_Nl,                 .defintval=0,                     TYPE_UINT,   0},        \
@@ -27,6 +44,7 @@
   {"U" ,                    CONFIG_HLP_ULBM_PHYTEST,   0,                .u64ptr=&ulsch_slot_bitmap,          .defintval=0,                     TYPE_UINT64, 0},        \
   {"usrp-tx-thread-config", CONFIG_HLP_USRP_THREAD,    0,                .iptr=&usrp_tx_thread,               .defstrval=0,                     TYPE_INT,    0},        \
   {"uecap_file",            CONFIG_HLP_UECAP_FILE,     0,                .strptr=&uecap_file,                 .defstrval="./uecap_ports1.xml",  TYPE_STRING, 0},        \
+  CMDLINE_TF5_PARAMS_GNB \
 }
 // clang-format on
 
@@ -39,6 +57,10 @@ extern uint32_t target_ul_bw;
 extern uint64_t dlsch_slot_bitmap;
 extern uint64_t ulsch_slot_bitmap;
 extern char *uecap_file;
+#ifdef ENABLE_TF5
+extern char *tf5_privkey_file;
+extern unsigned int tf5_tesla_chain_len;
+#endif
 
 // In nr-gnb.c
 extern void init_gNB();

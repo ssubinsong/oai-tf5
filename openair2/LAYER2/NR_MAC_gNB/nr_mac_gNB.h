@@ -47,6 +47,10 @@
 #include "common/utils/ds/byte_array.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_configuration.h"
 
+#ifdef ENABLE_TF5
+#include "openair3/SECU/tf5_tesla.h"
+#endif
+
 #define NR_SCHED_LOCK(lock)                                        \
   do {                                                             \
     int rc = pthread_mutex_lock(lock);                             \
@@ -327,6 +331,13 @@ typedef struct {
   /// Max prach length in slots
   int prach_len;
   nr_prach_info_t prach_info;
+#ifdef ENABLE_TF5
+  /// TESLA broadcast authentication state
+  tf5_gnb_state_t *tf5_state;
+  /// Original SIB1 (without TESLA extension) for MAC computation
+  uint8_t sib1_original[NR_MAX_SIB_LENGTH / 8];
+  int sib1_original_length;
+#endif
 } NR_COMMON_channels_t;
 
 // SP ZP CSI-RS Resource Set Activation/Deactivation MAC CE
