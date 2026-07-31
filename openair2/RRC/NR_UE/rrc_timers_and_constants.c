@@ -216,6 +216,25 @@ void nr_rrc_handle_timers(NR_UE_RRC_INST_t *rrc)
     handle_t430_expiry(rrc);
   }
 
+#ifdef ENABLE_TF5
+  bool tf5_release_expired = nr_timer_tick(&rrc->tf5_returning_release_timer);
+  if (tf5_release_expired) {
+    LOG_A(TF5, "Returning UE sim: forcing SIB1 re-acquisition for returning path\n");
+    NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[0].SInfo;
+    if (SI_info->tf5_state) {
+      SI_info->tf5_state->returning_idle_phase = true;
+      SI_info->tf5_state->returning_auth_pending = true;
+
+      /* Reset TESLA verification state so returning path starts clean */
+      SI_info->tf5_state->curr_phase = TF5_PHASE_INITIAL;
+      SI_info->tf5_state->buffer_queue_count = 0;
+      memset(SI_info->tf5_state->buffer_queue, 0, sizeof(SI_info->tf5_state->buffer_queue));
+
+      SI_info->sib1_validity = false;
+    }
+  }
+#endif
+
   handle_meas_timers(rrc);
 }
 

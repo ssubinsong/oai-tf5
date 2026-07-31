@@ -27,6 +27,13 @@ extern uint16_t ue_id_g;
 #define  CONFIG_HLP_NUM_DL_ACTORS          "Number of DL actors to use. Set to 0 to disable DL actor framework and do processing inline\n"
 #define  CONFIG_HLP_EXTRA_PDU_ID           "ID of an additional PDU session to configure alongside default PDU session\n"
 
+#ifdef ENABLE_TF5
+#define  CONFIG_HLP_TF5_CORE_MPK         "Core's Master Public Key (MPK) file for IBS verification. REQUIRED.\n"
+#define  CONFIG_HLP_TF5_RP_TS_WINDOW        "Signature timestamp replay window in seconds. Default: 10800 s (3 hours).\n"
+#define  CONFIG_HLP_TF5_D_BOUND             "TESLA D bound (max network delay) in microseconds. Default: 1005 us.\n"
+#define  CONFIG_HLP_TF5_RETURNING_UE        "Enable returning UE simulation: after first RRC connection, release and reconnect via TESLA MAC path.\n"
+#endif
+
 /***************************************************************************************************************************************/
 /* command line options definitions, CMDLINE_XXXX_DESC macros are used to initialize paramdef_t arrays which are then used as argument
    when calling config_get or config_getlist functions                                                                                 */
@@ -44,6 +51,16 @@ extern uint16_t ue_id_g;
 /*   optname                     helpstr                paramflags                      XXXptr        defXXXval         type       numelt   */
 /*------------------------------------------------------------------------------------------------------------------------------------------*/
 // clang-format off
+#ifdef ENABLE_TF5
+#define CMDLINE_TF5_PARAMS_UE \
+  {"tf5-core-mpk",               CONFIG_HLP_TF5_CORE_MPK,   0,              .strptr=&nrUE_params.tf5_core_mpk_file,         .defstrval=NULL,  TYPE_STRING, 0}, \
+  {"tf5-sig-rp-window-s",  CONFIG_HLP_TF5_RP_TS_WINDOW, 0,              .uptr=&nrUE_params.tf5_rp_timestamp_window_s,  .defuintval=TF5_RP_DEFAULT_TIME_WINDOW_S,  TYPE_UINT, 0}, \
+  {"tf5-d-bound-us",       CONFIG_HLP_TF5_D_BOUND,      0,              .uptr=&nrUE_params.tf5_d_bound_us,             .defuintval=1005,                          TYPE_UINT, 0}, \
+  {"tf5-returning-ue",     CONFIG_HLP_TF5_RETURNING_UE, PARAMFLAG_BOOL, .iptr=&nrUE_params.tf5_returning_ue,           .defintval=0,                              TYPE_INT,  0},
+#else
+#define CMDLINE_TF5_PARAMS_UE
+#endif
+
 #define CMDLINE_NRUEPARAMS_DESC {  \
   {"usrp-args",                CONFIG_HLP_USRP_ARGS,           0,               .strptr=&nrUE_params.usrp_args,           .defstrval="type=b200",          TYPE_STRING,   0}, \
   {"tx_subdev",                CONFIG_HLP_TX_SUBDEV,           0,               .strptr=&nrUE_params.tx_subdev,           .defstrval=NULL,                 TYPE_STRING,   0}, \
@@ -84,6 +101,7 @@ extern uint16_t ue_id_g;
   {"num-ul-actors",                CONFIG_HLP_NUM_UL_ACTORS,   0,               .iptr=&nrUE_params.num_ul_actors,            .defintval=2,      TYPE_INT,      0}, \
   {"num-dl-actors",                CONFIG_HLP_NUM_DL_ACTORS,  0,                .iptr=&nrUE_params.num_dl_actors,            .defintval=4,      TYPE_INT,      0}, \
   {"extra-pdu-id",                 CONFIG_HLP_EXTRA_PDU_ID,   0,                .iptr=&nrUE_params.extra_pdu_id,             .defintval=-1,     TYPE_INT,      0}, \
+  CMDLINE_TF5_PARAMS_UE \
 }
 // clang-format on
 
@@ -126,6 +144,12 @@ typedef struct {
   int num_ul_actors;
   int num_dl_actors;
   int extra_pdu_id;
+#ifdef ENABLE_TF5
+  char *tf5_core_mpk_file;
+  unsigned int tf5_d_bound_us;
+  unsigned int tf5_rp_timestamp_window_s;
+  int tf5_returning_ue;
+#endif
 } nrUE_params_t;
 extern uint64_t get_nrUE_optmask(void);
 extern uint64_t set_nrUE_optmask(uint64_t bitmask);

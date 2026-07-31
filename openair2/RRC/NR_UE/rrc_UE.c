@@ -59,6 +59,10 @@
 #include "nr_pdcp/nr_pdcp_oai_api.h"
 #include "openair3/SECU/secu_defs.h"
 #include "openair3/SECU/key_nas_deriver.h"
+#ifdef ENABLE_TF5
+#include "openair3/SECU/tf5_tesla.h"
+#include "openair3/SECU/tf5_ibs_pkg.h"
+#endif
 
 #include "common/utils/LOG/log.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
@@ -292,6 +296,10 @@ static void nr_rrc_process_ntnconfig(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *S
     nr_timer_start(&SI_info->SInfo_r17.sib19_timer);
 }
 
+#ifdef ENABLE_TF5
+static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, const NR_SIB9_t *sib9);
+#endif
+
 static void nr_decode_SI(NR_UE_RRC_SI_INFO *SI_info, NR_SystemInformation_t *si, NR_UE_RRC_INST_t *rrc, int frame)
 {
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_RRC_UE_DECODE_SI, VCD_FUNCTION_IN);
@@ -342,8 +350,23 @@ static void nr_decode_SI(NR_UE_RRC_SI_INFO *SI_info, NR_SystemInformation_t *si,
         nr_timer_start(&SI_info->sib8_timer);
         break;
       case NR_SystemInformation_IEs__sib_TypeAndInfo__Member_PR_sib9:
+#ifdef ENABLE_TF5
+        {
+          NR_SIB9_t *sib9 = typeandinfo->choice.sib9;
+          if (sib9 && sib9->lateNonCriticalExtension && SI_info->tf5_state) {
+            bool was_bootstrapped = SI_info->tf5_state && SI_info->tf5_state->chain_bootstrapped;
+            tf5_verify_from_sib9(rrc, SI_info, sib9);
+            // Chain just bootstrapped — trigger RA and stop SIB9 reception
+            if (!was_bootstrapped && SI_info->tf5_state->chain_bootstrapped) {
+              SI_info->sib9_validity = true;
+              // can_start_ra deferred until first TESLA MAC verification
+            }
+          }
+        }
+#else
         SI_info->sib9_validity = true;
         nr_timer_start(&SI_info->sib9_timer);
+#endif
         break;
       case NR_SystemInformation_IEs__sib_TypeAndInfo__Member_PR_sib10_v1610:
         SI_info->sib10_validity = true;
@@ -483,14 +506,358 @@ static void get_sib19_schedinfo(NR_UE_RRC_SI_INFO *SI_info, NR_SI_SchedulingInfo
   }
 }
 
-static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, NR_SIB1_t *sib1)
+#ifdef ENABLE_TF5
+/*
+ * Extract NR Cell ID (36 bits) from SIB1's cellAccessRelatedInfo.
+ * Per TS 38.331, cellIdentity is a BIT STRING of 36 bits stored in 5 bytes.
+ * The first PLMN in the list is used for cell identity extraction.
+ */
+static void tf5_extract_cell_id_from_sib1(const NR_SIB1_t *sib1, uint8_t cell_id[TF5_IBS_CELL_ID_LEN])
+{
+    /* Access cellIdentity from first PLMN_IdentityInfo in the list */
+    const NR_PLMN_IdentityInfo_t *plmn_info =
+        sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[0];
+    const BIT_STRING_t *cid = &plmn_info->cellIdentity;
+
+    /* Copy 5 bytes (36 bits + 4 padding bits) directly */
+    memcpy(cell_id, cid->buf, TF5_IBS_CELL_ID_LEN);
+}
+
+/**
+ * TESLA verification result codes.
+ * Non-negative values indicate success/skip, negative values indicate failure.
+ */
+typedef enum {
+    TF5_VERIFY_OK = 0,              // Verification succeeded
+    TF5_VERIFY_SKIP_DEDICATED = 1,  // Dedicated delivery - skip TESLA
+    TF5_VERIFY_SKIP_NO_STATE = 2,   // No tesla_state configured
+    TF5_VERIFY_BUFFERED = 3,         // Buffered, waiting for key disclosure
+    TF5_VERIFY_SKIP_UNSAFE = 4,     // Safe packet test failed
+    TF5_VERIFY_FAIL_UNPACK = -1,        // Extension unpack failed
+    TF5_VERIFY_FAIL_KEY_EXPIRED = -2,   // gNB key expired
+    TF5_VERIFY_FAIL_ENCODE = -3,        // SIB1 re-encoding failed
+    TF5_VERIFY_FAIL_NO_CLOCK = -4,      // UE wall-clock not synced
+    TF5_VERIFY_FAIL_REPLAY = -5,     // Timestamp validation failed (replay attack)
+    TF5_VERIFY_FAIL_SIGNATURE = -6,     // IBS signature verification failed
+    TF5_VERIFY_FAIL_MAC = -7,           // All TESLA MAC verifications failed
+    TF5_VERIFY_FAIL_KEYCHAIN = -8,      // Key chain verification failed (RFC 4082 3.5 step 3)
+    TF5_VERIFY_FAIL_CELLID = -9,        // Cell ID mismatch (Alg 2 step 2)
+} tf5_verify_result_t;
+
+/**
+ * Re-encode SIB1 without lateNonCriticalExtension for authentication.
+ */
+static tf5_verify_result_t tf5_encode_sib1_for_auth(NR_SIB1_t *sib1,
+                                                          uint8_t *out_buf,
+                                                          size_t buf_size,
+                                                          size_t *out_len)
+{
+    /* Temporarily remove lateNonCriticalExtension for clean encoding */
+    OCTET_STRING_t *saved_ext = sib1->lateNonCriticalExtension;
+    sib1->lateNonCriticalExtension = NULL;
+
+    asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_SIB1,
+                                                     NULL,
+                                                     sib1,
+                                                     out_buf,
+                                                     buf_size);
+
+    /* Restore extension */
+    sib1->lateNonCriticalExtension = saved_ext;
+
+    if (enc_rval.encoded <= 0) {
+        LOG_E(TF5, "Failed to re-encode SIB1 for auth input\n");
+        return TF5_VERIFY_FAIL_ENCODE;
+    }
+
+    *out_len = (enc_rval.encoded + 7) / 8;
+    return TF5_VERIFY_OK;
+}
+
+static tf5_verify_result_t tf5_verify_returning(NR_UE_RRC_INST_t *rrc,
+                                                      NR_UE_RRC_SI_INFO *SI_info,
+                                                      int rx_frame,
+                                                      int rx_slot)
+{
+  tf5_ue_state_t *ue_state = SI_info->tf5_state;
+  const tf5_sib1_ext_t *sib1_ext = &SI_info->tf5_sib1_ext;
+
+  /* Alg 2 step 2: reject if cell ID changed since bootstrap */
+  if (memcmp(SI_info->tf5_cell_id, ue_state->cid_boot, TF5_IBS_CELL_ID_LEN) != 0) {
+    LOG_W(TF5, "Cell ID mismatch - discarding\n");
+    return TF5_VERIFY_FAIL_CELLID;
+  }
+
+  LOG_D(TF5, "Returning UE - using TESLA for SIB1 authentication\n");
+
+  /* Safe packet test — construct a minimal tf5_extension_t for the test */
+  tf5_extension_t ext_for_safe;
+  memset(&ext_for_safe, 0, sizeof(ext_for_safe));
+  ext_for_safe.i = sib1_ext->i;
+  ext_for_safe.tesla_params = ue_state->tesla_params;
+
+  if (!tf5_ue_safe_packet_test(ue_state, &ext_for_safe, rx_frame, rx_slot)) {
+    LOG_W(TF5, "Safe packet test FAILED; Skipping SIB1\n");
+    return TF5_VERIFY_SKIP_UNSAFE;
+  }
+
+  /* Check if we have a key disclosure (i >= d) */
+  bool has_key_disclosure = (sib1_ext->i >= ue_state->tesla_params.d);
+  uint32_t key_disclosure_interval = 0;
+
+  if (has_key_disclosure) {
+    key_disclosure_interval = sib1_ext->i - ue_state->tesla_params.d;
+
+    bool is_new_key = ((int32_t)key_disclosure_interval > ue_state->trust_anchor_idx);
+
+    if (is_new_key) {
+      if (!tf5_ue_verify_key_disclosure(ue_state, sib1_ext->key_disclosure, key_disclosure_interval)) {
+        LOG_E(TF5, "Key chain verification failed for K_%u - discarding packet\n", key_disclosure_interval);
+        return TF5_VERIFY_FAIL_KEYCHAIN;
+      }
+    }
+  }
+
+  /* Build MAC auth input: SIB1 content + version_sp + k0_next */
+  uint8_t mac_auth_input[TF5_MAX_AUTH_INPUT];
+  size_t mac_auth_len = 0;
+  uint8_t version_sp = (sib1_ext->te_version << 1) | (sib1_ext->sp_next & 1);
+  int mac_rc = tf5_build_mac_auth_input(mac_auth_input, &mac_auth_len,
+                                        SI_info->tf5_sib1_buf, SI_info->tf5_sib1_len,
+                                        version_sp, sib1_ext->k0_next);
+  if (mac_rc != 0) {
+    LOG_E(TF5, "Failed to build MAC auth input (rc=%d, sib1_len=%zu)\n", mac_rc, SI_info->tf5_sib1_len);
+    return TF5_VERIFY_FAIL_ENCODE;
+  }
+
+  if (ue_state->curr_phase == TF5_PHASE_AUTHENTICATED) {
+    ue_state->curr_phase = TF5_PHASE_INITIAL;
+  }
+  DevAssert(ue_state->curr_phase == TF5_PHASE_INITIAL || ue_state->curr_phase == TF5_PHASE_BUFFERED);
+
+  /* Buffer current SIB1 */
+  tf5_ue_buffer_msg(ue_state, mac_auth_input, mac_auth_len, sib1_ext->i, sib1_ext->tesla_tag);
+  if (ue_state->curr_phase == TF5_PHASE_INITIAL) {
+    ue_state->curr_phase = TF5_PHASE_BUFFERED;
+  }
+
+  if (has_key_disclosure && ue_state->buffer_queue_count > 0) {
+    int verify_rc = tf5_tesla_ue_verify_buffered_msgs(ue_state,
+                                                      sib1_ext->key_disclosure,
+                                                      key_disclosure_interval);
+
+    if (verify_rc == 0) {
+      LOG_I(TF5, "Verified buffered SIB1 packets using K_%u\n", key_disclosure_interval);
+      if (ue_state->curr_phase == TF5_PHASE_BUFFERED) {
+        ue_state->curr_phase = TF5_PHASE_AUTHENTICATED;
+      }
+      if (ue_state->returning_auth_pending) {
+        ue_state->returning_auth_pending = false;
+        LOG_A(TF5, "Returning UE: auth complete\n");
+      }
+      return TF5_VERIFY_OK;
+    }
+  }
+
+  return TF5_VERIFY_BUFFERED;
+}
+
+/**
+ * Verify TESLA data from SIB9 (IBS signature verification + chain bootstrap).
+ * Called when UE receives SIB9 containing TESLA params + IBS signature.
+ */
+static void tf5_verify_from_sib9(NR_UE_RRC_INST_t *rrc,
+                                  NR_UE_RRC_SI_INFO *SI_info,
+                                  const NR_SIB9_t *sib9)
+{
+  tf5_ue_state_t *state = SI_info->tf5_state;
+  if (!state) return;
+
+  /* Already bootstrapped — no need for IBS re-verification */
+  if (state->chain_bootstrapped) return;
+
+  /* Unpack SIB9 extension */
+  tf5_sib9_ext_t sib9_ext;
+  int rc = tf5_unpack_sib9_ext(sib9->lateNonCriticalExtension->buf,
+                                sib9->lateNonCriticalExtension->size,
+                                &sib9_ext);
+  if (rc != 0) {
+    LOG_W(TF5, "Failed to unpack SIB9 extension (rc=%d)\n", rc);
+    return;
+  }
+
+  /* Get wall-clock time once */
+  uint64_t ue_time_ms = tf5_rp_get_wallclock_ms();
+  if (ue_time_ms == 0) {
+    LOG_E(TF5, "UE wall-clock not synced\n");
+    return;
+  }
+  uint64_t ue_time_sec = ue_time_ms / 1000;
+
+  /* Check key expiration */
+  uint64_t expiry_unix = tf5_gnb_key_validity_to_unix(sib9_ext.validity_end);
+  if (ue_time_sec >= expiry_unix) {
+    LOG_E(TF5, "gNB key EXPIRED (validity_end=%u, expiry=%lu, now=%lu)\n",
+          sib9_ext.validity_end, (unsigned long)expiry_unix, (unsigned long)ue_time_sec);
+    return;
+  }
+
+  /* Validate wall-clock timestamp (fail fast before expensive crypto) */
+  int ts_rc = tf5_rp_validate_timestamp(ue_time_sec,
+                                         sib9_ext.timestamp_s,
+                                         state->rp_timestamp_window_s);
+  if (ts_rc != 0) {
+    LOG_E(TF5, "Timestamp validation FAILED (rc=%d)\n", ts_rc);
+    return;
+  }
+
+  /* Build signature auth input: version + cell_id + params + k0 + timestamp + validity */
+  uint8_t sig_auth_input[TF5_MAX_AUTH_INPUT];
+  size_t sig_auth_len = 0;
+  rc = tf5_build_sig_auth_input(sig_auth_input, &sig_auth_len,
+                                 sib9_ext.te_version,
+                                 sib9_ext.cell_id,
+                                 &sib9_ext.tesla_params,
+                                 sib9_ext.k0,
+                                 sib9_ext.timestamp_s,
+                                 sib9_ext.validity_end);
+
+  /* IBS signature verification */
+  int sig_rc = tf5_ibs_verify(state->mpk,
+                               sib9_ext.cell_id,
+                               sib9_ext.validity_end,
+                               sig_auth_input, sig_auth_len,
+                               sib9_ext.signature);
+  if (sig_rc != 0) {
+    LOG_E(TF5, "SIB9 IBS signature verification FAILED (rc=%d)\n", sig_rc);
+    return;
+  }
+
+  /* Bootstrap the TESLA chain */
+  memcpy(&state->tesla_params, &sib9_ext.tesla_params, sizeof(tf5_tesla_params_t));
+  state->chain_bootstrapped = true;
+  state->curr_phase = TF5_PHASE_AUTHENTICATED;
+
+  /* Alg 1 step 7: K_anchor <- K_0, i_anchor <- 0 */
+  memcpy(state->trust_anchor_key, sib9_ext.k0, TF5_TESLA_KEY_LEN);
+  state->trust_anchor_idx = 0;
+
+  /* Store cell ID from bootstrap for returning UE check (Alg 2 step 2) */
+  memcpy(state->cid_boot, sib9_ext.cell_id, TF5_IBS_CELL_ID_LEN);
+
+  LOG_A(TF5, "First-time UE: IBS verified via SIB9, chain bootstrapped "
+        "(K_0 as anchor)\n");
+
+  /* Force SIB1 re-acquisition so the UE can receive a TESLA-authenticated
+   * SIB1 and set initial_tesla_verified.  Without this, sib1_validity
+   * (set true for the pre-bootstrap SIB1) makes check_si_status() think
+   * SIB1 is already current, and the MAC never requests another one. */
+  SI_info->sib1_validity = false;
+}
+
+#endif
+
+static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, NR_SIB1_t *sib1, int gNB_index,
+                                int rx_frame, int rx_slot)
 {
   if(g_log->log_component[NR_RRC].level >= OAILOG_DEBUG)
     xer_fprint(stdout, &asn_DEF_NR_SIB1, (const void *) sib1);
   LOG_A(NR_RRC, "SIB1 decoded\n");
+
+#ifdef ENABLE_TF5
+  // Skip TESLA for dedicated SIB1 delivery (protected by RRC integrity)
+  if (rx_frame < 0) {
+    LOG_D(TF5, "Skipping verification for dedicated SIB1 delivery\n");
+    goto tf5_done;
+  }
+
+  if (!SI_info->tf5_state) {
+    AssertFatal(false, "TF5: No TESLA state configured - unexpected in this setup\n");
+  }
+
+  // First-time UE: skip TESLA processing, proceed to SI scheduling for SIB9
+  if (!SI_info->tf5_state->chain_bootstrapped) {
+    LOG_I(TF5, "First-time UE: skipping SIB1 TESLA, waiting for SIB9\n");
+    goto tf5_done;
+  }
+
+  // --- Below only runs after bootstrap (returning UE) ---
+
+  // Unpack SIB1 extension
+  AssertFatal(sib1->lateNonCriticalExtension,
+              "TF5: SIB1 missing lateNonCriticalExtension\n");
+
+  int unpack_rc = tf5_unpack_sib1_ext(sib1->lateNonCriticalExtension->buf,
+                                      sib1->lateNonCriticalExtension->size,
+                                      &SI_info->tf5_sib1_ext);
+  if (unpack_rc != 0) {
+    LOG_W(TF5, "Failed to unpack SIB1 extension (rc=%d)\n", unpack_rc);
+    return;
+  }
+
+  // Re-encode SIB1 for auth and store
+  tf5_verify_result_t enc_rc = tf5_encode_sib1_for_auth(sib1, SI_info->tf5_sib1_buf,
+                                                        sizeof(SI_info->tf5_sib1_buf),
+                                                        &SI_info->tf5_sib1_len);
+  if (enc_rc < 0) {
+    LOG_W(TF5, "Failed to re-encode SIB1 for auth (rc=%d)\n", enc_rc);
+    return;
+  }
+  // Extract and store Cell ID for returning UE cell ID check
+  tf5_extract_cell_id_from_sib1(sib1, SI_info->tf5_cell_id);
+
+  LOG_D(TF5, "Stored SIB1 for auth (interval=%u, len=%zu)\n",
+        SI_info->tf5_sib1_ext.i, SI_info->tf5_sib1_len);
+
+  // Returning UE: MAC verification using SIB1 data only (no SIB9 needed)
+  {
+    tf5_verify_result_t ret = tf5_verify_returning(rrc, SI_info, rx_frame, rx_slot);
+
+    /* Detect first returning SIB1 after simulated re-acquisition */
+    if ((ret == TF5_VERIFY_BUFFERED || ret == TF5_VERIFY_OK)
+        && SI_info->tf5_state->returning_idle_phase) {
+      SI_info->tf5_state->returning_idle_phase = false;
+      LOG_A(TF5, "Returning UE: first SIB1 %s\n",
+            ret == TF5_VERIFY_OK ? "verified" : "buffered");
+    }
+
+    switch (ret) {
+      case TF5_VERIFY_OK:
+        LOG_I(TF5, "Returning UE: SIB1 MAC verified; Proceeding to RACH\n");
+        if (!SI_info->tf5_state->initial_tesla_verified) {
+            SI_info->tf5_state->initial_tesla_verified = true;
+            LOG_A(TF5, "First-time UE: SIB1 TESLA-authenticated, camp complete\n");
+            nr_mac_rrc_message_t ra_msg = {0};
+            ra_msg.payload_type = NR_MAC_RRC_CONFIG_OTHER_SIB;
+            ra_msg.payload.config_other_sib.can_start_ra = true;
+            nr_rrc_send_msg_to_mac(rrc, &ra_msg);
+        }
+        break;
+      case TF5_VERIFY_BUFFERED:
+        LOG_I(TF5, "Returning UE: SIB1 buffered - waiting for key disclosure\n");
+        return;
+      case TF5_VERIFY_SKIP_UNSAFE:
+        LOG_W(TF5, "Returning UE: Packet unsafe - discarding\n");
+        return;
+      default:
+        if (ret < 0) {
+          LOG_W(TF5, "Returning UE: SIB1 MAC verification failed (rc=%d)\n", ret);
+          return;
+        }
+    }
+  }
+tf5_done:
+#endif
+
   nr_timer_start(&SI_info->sib1_timer);
   SI_info->sib1_validity = true;
   if (rrc->nrRrcState == RRC_STATE_IDLE_NR) {
+#ifdef ENABLE_TF5
+    // Don't trigger RA until first TESLA MAC verification succeeds.
+    // sib1_validity must be true regardless so check_si_status() can
+    // progress to scheduling SIB9 acquisition.
+    if (!SI_info->tf5_state || SI_info->tf5_state->initial_tesla_verified)
+#endif
     rrc->ra_trigger = RRC_CONNECTION_SETUP;
   }
 
@@ -522,6 +889,10 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   nr_mac_rrc_config_sib1_t *config_sib1 = &rrc_msg.payload.config_sib1;
   config_sib1->sib1 = sib1;
   config_sib1->can_start_ra = !rrc->is_NTN_UE;
+#ifdef ENABLE_TF5
+  if (SI_info->tf5_state && !SI_info->tf5_state->initial_tesla_verified)
+    config_sib1->can_start_ra = false;
+#endif
   nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
 }
 
@@ -807,7 +1178,8 @@ static void nr_rrc_process_reconfiguration_v1530(NR_UE_RRC_INST_t *rrc, NR_RRCRe
       SEQUENCE_free(&asn_DEF_NR_SIB1, sib1, 1);
     } else {
       // mac layer will free sib1
-      nr_rrc_process_sib1(rrc, SI_info, sib1);
+      // Pass -1 for rx_frame/rx_slot to indicate dedicated delivery (skip TESLA)
+      nr_rrc_process_sib1(rrc, SI_info, sib1, gNB_index, -1, -1);
     }
   }
   if (rec_1530->dedicatedSystemInformationDelivery) {
@@ -1321,6 +1693,56 @@ NR_UE_RRC_INST_t* nr_rrc_init_ue(char* uecap_file, int instance_id, int num_ant_
     ptr->l3_measurements.ssb_filter_coeff_rsrp = 1.0f;
     ptr->l3_measurements.csi_RS_filter_coeff_rsrp = 1.0f;
     init_SI_timers(&ptr->SInfo);
+#ifdef ENABLE_TF5
+    ptr->SInfo.tf5_state = calloc(1, sizeof(tf5_ue_state_t));
+    if (ptr->SInfo.tf5_state) {
+      nrUE_params_t *params = get_nrUE_params();
+
+      // Check that MPK path is provided (no default - must be explicit)
+      // Core's Master Public Key (MPK) for IBS verification
+      if (params->tf5_core_mpk_file == NULL || params->tf5_core_mpk_file[0] == '\0') {
+        LOG_E(TF5, "--tf5-core-mpk is required. Specify path to Core's MPK file.\n");
+        LOG_E(TF5, "Obtain MPK from Core PKG: tf5_ibs_keygen.sh <msk_path> <mpk_path>\n");
+        free(ptr->SInfo.tf5_state);
+        ptr->SInfo.tf5_state = NULL;
+      } else {
+        // Initialize GG09 Schnorr IBS subsystem
+        int rc = tf5_ibs_init();
+        if (rc != 0) {
+          LOG_E(TF5, "Failed to initialize GG09 Schnorr IBS subsystem (rc=%d)\n", rc);
+          free(ptr->SInfo.tf5_state);
+          ptr->SInfo.tf5_state = NULL;
+        } else {
+          uint8_t mpk[TF5_IBS_MPK_LEN];
+          rc = tf5_load_core_mpk(params->tf5_core_mpk_file, mpk);
+          if (rc == 0) {
+            // Default slots_per_frame, will be updated when SIB1 is received with numerology info
+            uint16_t slots_per_frame = 20;
+            tf5_ue_init(ptr->SInfo.tf5_state, mpk, slots_per_frame,
+                              params->tf5_d_bound_us,
+                              params->tf5_rp_timestamp_window_s);
+            ptr->SInfo.tf5_state->returning_ue_sim = (params->tf5_returning_ue != 0);
+            LOG_I(TF5, "Loaded Core MPK from %s (D=%u us, window=%u s, returning=%d)\n",
+                  params->tf5_core_mpk_file, params->tf5_d_bound_us,
+                  params->tf5_rp_timestamp_window_s, params->tf5_returning_ue);
+            // Log MPK for verification (first 32 bytes)
+            char hex_buf[65];
+            for (int j = 0; j < 32; j++) {
+              sprintf(&hex_buf[j*2], "%02x", mpk[j]);
+            }
+            LOG_I(TF5, "MPK (first 32 bytes hex): %s...\n", hex_buf);
+          } else {
+            LOG_E(TF5, "Failed to load MPK from %s (rc=%d)\n",
+                  params->tf5_core_mpk_file, rc);
+            LOG_E(TF5, "Obtain MPK from Core PKG\n");
+            // Free state and set to NULL to disable TESLA
+            free(ptr->SInfo.tf5_state);
+            ptr->SInfo.tf5_state = NULL;
+          }
+        }
+      }
+    }
+#endif
   }
 
   init_sidelink(rrc);
@@ -1643,7 +2065,8 @@ static void nr_rrc_ue_decode_NR_BCCH_DL_SCH_Message(NR_UE_RRC_INST_t *rrc,
   if (bcch_message->message.present == NR_BCCH_DL_SCH_MessageType_PR_c1) {
     switch (bcch_message->message.choice.c1->present) {
       case NR_BCCH_DL_SCH_MessageType__c1_PR_systemInformationBlockType1:
-        nr_rrc_process_sib1(rrc, SI_info, bcch_message->message.choice.c1->choice.systemInformationBlockType1);
+        nr_rrc_process_sib1(rrc, SI_info, bcch_message->message.choice.c1->choice.systemInformationBlockType1, gNB_index,
+                            frame, slot);
         // mac layer will free after usage the sib1
         bcch_message->message.choice.c1->choice.systemInformationBlockType1 = NULL;
         break;
@@ -1937,7 +2360,21 @@ static void nr_rrc_process_rrcsetup(NR_UE_RRC_INST_t *rrc, const NR_RRCSetup_t *
   // resetting the RA trigger state after receiving MSG4 with RRCSetup
   rrc->ra_trigger = RA_NOT_RUNNING;
 
-  // set the content of RRCSetupComplete message
+#ifdef ENABLE_TF5
+  /* Returning UE simulation: schedule RRC Release after first connection */
+  {
+    NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[0].SInfo;
+    if (SI_info->tf5_state && SI_info->tf5_state->returning_ue_sim
+        && !SI_info->tf5_state->returning_release_done) {
+      LOG_A(TF5, "Returning UE sim: scheduling release in 2s\n");
+      SI_info->tf5_state->returning_release_done = true;
+      nr_timer_setup(&rrc->tf5_returning_release_timer, 2000, 10); // 2000ms target, 10ms step
+      nr_timer_start(&rrc->tf5_returning_release_timer);
+    }
+  }
+#endif
+
+  // set the content of RRCSetupComplete message (TESLA disabled or no tesla_state)
   // TODO procedues described in 5.3.3.4 seems more complex than what we actualy do
   rrc_ue_generate_RRCSetupComplete(rrc, rrcSetup->rrc_TransactionIdentifier);
 }

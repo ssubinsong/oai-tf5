@@ -65,6 +65,10 @@
 #include "common/utils/nr/nr_common.h"
 #include "notified_fifo.h"
 
+#ifdef ENABLE_TF5
+#include "openair3/SECU/tf5_tesla.h"
+#endif
+
 #define NB_CNX_UE 2//MAX_MANAGED_RG_PER_MOBILE
 #define MAX_MEAS_OBJ 64
 #define MAX_MEAS_CONFIG 64
@@ -158,6 +162,13 @@ typedef struct UE_RRC_SI_INFO_NR_s {
   int sib19_periodicity;
   int sib19_windowposition;
   int si_windowlength;
+#ifdef ENABLE_TF5
+  tf5_ue_state_t *tf5_state;
+  uint8_t tf5_sib1_buf[512];       // SIB1 re-encoded for auth
+  size_t  tf5_sib1_len;
+  tf5_sib1_ext_t tf5_sib1_ext;     // Unpacked SIB1 TESLA data
+  uint8_t tf5_cell_id[5];           // NR Cell ID extracted from SIB1 (36 bits)
+#endif
 } NR_UE_RRC_SI_INFO;
 
 typedef struct NR_UE_Timers_Constants_s {
@@ -271,6 +282,9 @@ typedef struct NR_UE_RRC_INST_s {
   NR_NTN_Config_r17_t *target_ntncfg;
   bool process_target_ntncfg;
   notifiedFIFO_t *mac_input_nf;
+#ifdef ENABLE_TF5
+  NR_timer_t tf5_returning_release_timer;
+#endif
 } NR_UE_RRC_INST_t;
 
 #endif
