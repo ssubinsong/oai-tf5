@@ -1231,6 +1231,27 @@ ID = LEGACY_UTIL_TRACE
     DESC = UTIL legacy logs - trace level
     GROUP = ALL:LEGACY_UTIL:LEGACY_GROUP_TRACE:LEGACY
     FORMAT = string,log
+
+ID = LEGACY_TF5_INFO
+    DESC = TF5 legacy logs - info level
+    GROUP = ALL:LEGACY_TF5:LEGACY_GROUP_INFO:LEGACY
+    FORMAT = string,log
+ID = LEGACY_TF5_ERROR
+    DESC = TF5 legacy logs - error level
+    GROUP = ALL:LEGACY_TF5:LEGACY_GROUP_ERROR:LEGACY
+    FORMAT = string,log
+ID = LEGACY_TF5_WARNING
+    DESC = TF5 legacy logs - warning level
+    GROUP = ALL:LEGACY_TF5:LEGACY_GROUP_WARNING:LEGACY
+    FORMAT = string,log
+ID = LEGACY_TF5_DEBUG
+    DESC = TF5 legacy logs - debug level
+    GROUP = ALL:LEGACY_TF5:LEGACY_GROUP_DEBUG:LEGACY
+    FORMAT = string,log
+ID = LEGACY_TF5_TRACE
+    DESC = TF5 legacy logs - trace level
+    GROUP = ALL:LEGACY_TF5:LEGACY_GROUP_TRACE:LEGACY
+    FORMAT = string,log
 # this is a bad hack but I won't fix (function util_print_hex_octets
 # in openairinterface5g/openair2/LAYER2/PDCP_v10.1.0/pdcp_util.c
 # does funky things with the LOG_x macros but we work on the C pre-processor

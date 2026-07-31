@@ -44,6 +44,15 @@
             "cacheVariables": {
                 "ENABLE_TF5": "ON"
             }
+        },
+        {
+            "name": "tf5-tests",
+            "displayName": "TF5 unit test config",
+            "inherits": "tests",
+            "binaryDir": "${sourceDir}/cmake_targets/ran_build/build_tf5_tests",
+            "cacheVariables": {
+                "ENABLE_TF5": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -91,6 +100,13 @@
                 "nr-uesoftmodem",
                 "nr-softmodem",
                 "libsodium_ext"
+            ]
+        },
+        {
+            "name": "tf5-tests",
+            "configurePreset": "tf5-tests",
+            "targets": [
+                "tf5_tests"
             ]
         }
     ]
