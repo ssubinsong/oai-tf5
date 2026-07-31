@@ -220,6 +220,15 @@ if(SANITIZE_MEMORY)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer -fsanitize-recover=memory")
 endif()
 
+# Code coverage support (for gcov/lcov)
+add_boolean_option(ENABLE_COVERAGE OFF "Enable code coverage instrumentation (--coverage)" ON)
+if (ENABLE_COVERAGE)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -fprofile-arcs -ftest-coverage")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
+endif()
+
 add_definitions("-DASN_DISABLE_OER_SUPPORT -DHAVE_CONFIG_H -DHAVE_CONFIG_H_")
 
 #########################
@@ -535,6 +544,14 @@ add_boolean_option(NAS_BUILT_IN_UE         ON  "UE NAS layer present in this exe
 ##########################
 add_boolean_option(RRC_DEFAULT_RAB_IS_AM       ON   "set the LTE RLC mode to AM for the default bearer, otherwise it is UM." ON)
 
+##########################
+# TESLA-FOR-5G OPTIONS
+##########################
+add_boolean_option(ENABLE_TF5 OFF "Enable TF5 system-information authentication" ON)
+if(ENABLE_TF5)
+  add_definitions(-DENABLE_TF5)
+endif()
+
 # add the binary tree to the search path for include files
 # We will find common/oai_version.h after generation in target directory
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
@@ -621,6 +638,56 @@ if (cap_FOUND)
 endif()
 target_link_libraries(UTIL PUBLIC ${T_LIB} pthread LOG thread-pool utils barrier actor)
 target_link_libraries(UTIL PUBLIC instrumentation)
+
+if(ENABLE_TF5)
+  include(ExternalProject)
+
+  set(SODIUM_REPOSITORY_DIR ${CMAKE_SOURCE_DIR}/cmake_targets/third_party/libsodium)
+  if(NOT EXISTS ${SODIUM_REPOSITORY_DIR}/autogen.sh)
+    message(FATAL_ERROR
+      "libsodium is not initialized; run: git submodule update --init --recursive cmake_targets/third_party/libsodium")
+  endif()
+
+  # libsodium's generated autotools files belong in the build tree. Keeping a
+  # private source copy prevents configure and autogen from dirtying the pinned
+  # submodule checkout.
+  set(SODIUM_COPY_DIR ${CMAKE_BINARY_DIR}/libsodium-src)
+  set(SODIUM_BUILD_DIR ${CMAKE_BINARY_DIR}/libsodium-build)
+  set(SODIUM_LIB ${SODIUM_BUILD_DIR}/src/libsodium/.libs/libsodium.a)
+  file(MAKE_DIRECTORY
+    ${SODIUM_COPY_DIR}/src/libsodium/include
+    ${SODIUM_BUILD_DIR}/src/libsodium/include
+  )
+
+  ExternalProject_Add(libsodium_ext
+    PREFIX ${CMAKE_BINARY_DIR}/libsodium-prefix
+    SOURCE_DIR ${SODIUM_COPY_DIR}
+    BINARY_DIR ${SODIUM_BUILD_DIR}
+    DOWNLOAD_COMMAND
+      ${CMAKE_COMMAND} -E rm -rf ${SODIUM_COPY_DIR}
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${SODIUM_REPOSITORY_DIR} ${SODIUM_COPY_DIR}
+    UPDATE_COMMAND ""
+    PATCH_COMMAND ""
+    CONFIGURE_COMMAND
+      ${CMAKE_COMMAND} -E chdir ${SODIUM_COPY_DIR} ${SODIUM_COPY_DIR}/autogen.sh -s
+      COMMAND ${SODIUM_COPY_DIR}/configure
+        --disable-shared
+        --enable-static
+        --with-pic
+        "CFLAGS=-O2"
+    BUILD_COMMAND make -j4
+    INSTALL_COMMAND ""
+    BUILD_BYPRODUCTS ${SODIUM_LIB}
+  )
+
+  add_library(sodium STATIC IMPORTED GLOBAL)
+  set_target_properties(sodium PROPERTIES IMPORTED_LOCATION ${SODIUM_LIB})
+  add_dependencies(sodium libsodium_ext)
+  target_include_directories(sodium INTERFACE
+    ${SODIUM_COPY_DIR}/src/libsodium/include
+    ${SODIUM_BUILD_DIR}/src/libsodium/include
+  )
+endif()
 
 set(SECURITY_SRC
   ${OPENAIR3_DIR}/SECU/secu_defs.c

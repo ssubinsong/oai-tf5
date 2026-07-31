@@ -8,7 +8,9 @@
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/cmake_targets/ran_build/build",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "ENABLE_TF5": "OFF"
             }
         },
         {
@@ -21,6 +23,27 @@
                 "SANITIZE_ADDRESS": "ON",
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo"
             }
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug build",
+            "inherits": "default",
+            "binaryDir": "${sourceDir}/cmake_targets/ran_build/build_debug",
+            "cacheVariables": {
+                "ENABLE_TESTS": "ON",
+                "ENABLE_TF5": "ON",
+                "SANITIZE_ADDRESS": "ON",
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "tf5",
+            "displayName": "TF5 Config",
+            "inherits": "default",
+            "binaryDir": "${sourceDir}/cmake_targets/ran_build/build_tf5",
+            "cacheVariables": {
+                "ENABLE_TF5": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -31,6 +54,7 @@
                 "nr-uesoftmodem",
                 "nr-softmodem",
                 "rfsimulator",
+                "vrtsim",
                 "dfts",
                 "ldpc",
                 "params_libconfig",
@@ -58,6 +82,15 @@
             "configurePreset": "tests",
             "targets": [
                 "tests"
+            ]
+        },
+        {
+            "name": "tf5",
+            "configurePreset": "tf5",
+            "targets": [
+                "nr-uesoftmodem",
+                "nr-softmodem",
+                "libsodium_ext"
             ]
         }
     ]

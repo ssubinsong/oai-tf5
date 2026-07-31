@@ -25,3 +25,8 @@ nfapi_nr_interface_scf
 *.log
 *.out
 CMakeUserPresets.json
+
+# TF5 key material
+tesla_keys/
+pkg_keys/
+gnb_keys/

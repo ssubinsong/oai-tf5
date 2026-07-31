@@ -2,3 +2,6 @@
 	path = openair2/E2AP/flexric
 	url = https://gitlab.eurecom.fr/mosaic5g/flexric.git
 	branch = remotes/origin/service-models-integration
+[submodule "cmake_targets/third_party/libsodium"]
+	path = cmake_targets/third_party/libsodium
+	url = https://github.com/jedisct1/libsodium.git
