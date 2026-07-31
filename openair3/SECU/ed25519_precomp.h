@@ -6,28 +6,9 @@
  *
  * Requires linking against the LOCAL libsodium build (private headers).
  *
- * OAI-TF5 portfolio contribution
- * Copyright (c) 2026 Subin Song.
- * Licensed under the OAI Public License V1.1.
- * Source research commit 3d72e6a138b4154b46b1a0ad718f76ba8a7205f0.
- * See doc-tf5/provenance.md.
+ * Portions derived from libsodium under the ISC license.
  *
- * Portions of this file are copied or adapted from libsodium commit
- * 3d9d8f500162d8488a6d83c08dcc13bc12a10e30:
- * src/libsodium/crypto_core/ed25519/ref10/ed25519_ref10.c,
- * src/libsodium/crypto_core/ed25519/ref10/fe_51/constants.h, and
- * src/libsodium/crypto_core/ed25519/ref10/fe_25_5/constants.h.
- *
- * The local adaptations rename private helpers, use local copies of the d2
- * constants, adapt fixed-base and double-scalar sliding-window code to the
- * TF5 precomputation interfaces, and add build_precomp_table(). Subin Song
- * authored the TF5-specific portions, including build_precomp_table(), and
- * licenses them under the OAI Public License V1.1.
- *
- * ISC License
- *
- * Copyright (c) 2013-2026
- * Frank Denis <j at pureftpd dot org>
+ * Copyright (c) 2013-2026 Frank Denis <j at pureftpd dot org>
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -315,9 +296,8 @@ scalarmult_precomp_vartime(ge25519_p3 *h, const unsigned char scalar[32],
 
 /* ══════════════════════════════════════════════════════════════════════
  * Variable-time variable-base scalar multiplication (sliding window).
- * Adapts the A-side precomputation and sliding-window loop from
- * ge25519_double_scalarmult_vartime() to a single arbitrary scalar.
- * Safe for verification where all inputs are public.
+ * Generalizes ge25519_mul_l (ed25519_ref10.c:964-1016) to accept an
+ * arbitrary scalar. Safe for verification where all inputs are public.
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* slide_vartime_: signed sliding-window decomposition of a 256-bit scalar.
@@ -369,7 +349,7 @@ slide_vartime_(signed char *r, const unsigned char *a)
  * Variable-time scalar multiplication: h = scalar * A
  *
  * Uses sliding-window algorithm with 8-entry precomp table (A, 3A, 5A, ..., 15A).
- * Adapted from the A-side of ge25519_double_scalarmult_vartime().
+ * Identical structure to ge25519_mul_l but with dynamic scalar.
  * Output is ge25519_p3 for compatibility with subsequent point additions.
  */
 /* r = p - q  (extended subtraction with cached form) */

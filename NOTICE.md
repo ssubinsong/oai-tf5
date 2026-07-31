@@ -16,21 +16,9 @@ Niels Provos <provos@citi.umich.edu>: BSD 2-Clause Licence.
 
 Intel Corporation SPDX-License-Identifier: BSD-3-Clause Licence
 
-## OAI-TF5 portfolio
+## Credits for source code openair3/SECU/ed25519_precomp.h: ##
 
-Subin Song authored the original TF5/Core-PKG contribution and the
-TF5-specific additions or modifications in existing OAI files. This public
-portfolio copy places that original work under OAI Public License V1.1;
-pre-existing OAI code retains its existing OAI notices.
-
-### libsodium-derived source
-
-`openair3/SECU/ed25519_precomp.h` contains portions copied or adapted from
-libsodium commit `3d9d8f500162d8488a6d83c08dcc13bc12a10e30`, principally
-`src/libsodium/crypto_core/ed25519/ref10/ed25519_ref10.c` and the associated
-`fe_51/constants.h` and `fe_25_5/constants.h` files.
-
-Those libsodium-derived portions are distributed under the ISC License:
+Portions derived from libsodium under the ISC License.
 
 Copyright (c) 2013-2026 Frank Denis <j at pureftpd dot org>
 
@@ -45,7 +33,3 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-The complete libsodium distribution is pinned as the
-`cmake_targets/third_party/libsodium` submodule at the same commit. Its
-license is also retained in the submodule's `LICENSE` file.

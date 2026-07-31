@@ -1,98 +1,94 @@
-<h1 align="center">
-    <a href="https://openairinterface.org/"><img src="https://openairinterface.org/wp-content/uploads/2015/06/cropped-oai_final_logo.png" alt="OAI" width="550"></a>
-</h1>
+# TESLA-for-5G PoC Implementation
 
-<p align="center">
-    <a href="https://gitlab.eurecom.fr/oai/openairinterface5g/-/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-OAI--Public--V1.1-blue" alt="License"></a>
-    <a href="https://releases.ubuntu.com/22.04/"><img src="https://img.shields.io/badge/OS-Ubuntu22-Green" alt="Supported OS Ubuntu 22"></a>
-    <a href="https://releases.ubuntu.com/24.04/"><img src="https://img.shields.io/badge/OS-Ubuntu24-Green" alt="Supported OS Ubuntu 24"></a>
-    <a href="https://www.redhat.com/en/technologies/linux-platforms/enterprise-linux"><img src="https://img.shields.io/badge/OS-RHEL9-Green" alt="Supported OS RHEL9"></a>
-    <a href="https://getfedora.org/en/workstation/"><img src="https://img.shields.io/badge/OS-Fedore41-Green" alt="Supported OS Fedora 41"></a>
-</p>
+This repository is the source code artifact for [TESLA-for-5G: Broadcast Authentication for 5G Networks Using TESLA](https://arxiv.org/abs/2606.26528). It contains the proof-of-concept implementation built on OpenAirInterface (OAI). The evaluation code used in the paper is not included.
 
-<p align="center">
-    <a href="https://gitlab.eurecom.fr/oai/openairinterface5g/-/releases"><img alt="GitLab Release (custom instance)" src="https://img.shields.io/gitlab/v/release/oai/openairinterface5g?gitlab_url=https%3A%2F%2Fgitlab.eurecom.fr&include_prereleases&sort=semver"></a>
-</p>
+## Repository scope
 
-<p align="center">
-    <a href="https://jenkins-oai.eurecom.fr/job/RAN-Ubuntu18-Image-Builder/"><img src="https://img.shields.io/jenkins/build?jobUrl=https%3A%2F%2Fjenkins-oai.eurecom.fr%2Fjob%2FRAN-Ubuntu18-Image-Builder%2F&label=build-Ubuntu-x86%20Images"></a>
-    <a href="https://jenkins-oai.eurecom.fr/job/RAN-RHEL8-Cluster-Image-Builder/"><img src="https://img.shields.io/jenkins/build?jobUrl=https%3A%2F%2Fjenkins-oai.eurecom.fr%2Fjob%2FRAN-RHEL8-Cluster-Image-Builder%2F&label=build-UBI-x86%20Images"></a>
-    <a href="https://jenkins-oai.eurecom.fr/job/RAN-Ubuntu-ARM-Image-Builder/"><img src="https://img.shields.io/jenkins/build?jobUrl=https%3A%2F%2Fjenkins-oai.eurecom.fr%2Fjob%2FRAN-Ubuntu-ARM-Image-Builder%2F&label=build-Ubuntu-ARM%20Images"></a>
-</p>
+The implementation is based on OAI commit `91e7030cf8adefce502f0701fb7aaa1d512379df`. OAI does not endorse this work. [README-OAI.md](README-OAI.md) contains the upstream front page and OAI documentation.
 
-<p align="center">
-  <a href="https://hub.docker.com/r/oaisoftwarealliance/oai-gnb"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/oaisoftwarealliance/oai-gnb?label=gNB%20docker%20pulls"></a>
-  <a href="https://hub.docker.com/r/oaisoftwarealliance/oai-nr-ue"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/oaisoftwarealliance/oai-nr-ue?label=NR-UE%20docker%20pulls"></a>
-  <a href="https://hub.docker.com/r/oaisoftwarealliance/oai-enb"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/oaisoftwarealliance/oai-enb?label=eNB%20docker%20pulls"></a>
-  <a href="https://hub.docker.com/r/oaisoftwarealliance/oai-lte-ue"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/oaisoftwarealliance/oai-lte-ue?label=LTE-UE%20docker%20pulls"></a>
-  <a href="https://hub.docker.com/r/oaisoftwarealliance/oai-nr-cuup"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/oaisoftwarealliance/oai-nr-cuup?label=NR-CUUP%20docker%20pulls"></a>
-</p>
+## Build
 
-# OpenAirInterface License #
+Initialize the pinned TF5 dependency before configuring a build:
 
- *  [OAI License Model](http://www.openairinterface.org/?page_id=101)
- *  [OAI License v1.1 on our website](http://www.openairinterface.org/?page_id=698)
-
-It is distributed under **OAI Public License V1.1**.
-
-The license information is distributed under [LICENSE](LICENSE) file in the same directory.
-
-Please see [NOTICE](NOTICE.md) file for third party software that is included in the sources.
-
-# Where to Start #
-
- *  [General overview of documentation](./doc/README.md)
- *  [The implemented features](./doc/FEATURE_SET.md)
- *  [System Requirements for Using OAI Stack](./doc/system_requirements.md)
- *  [How to build](./doc/BUILD.md)
- *  [How to run the modems](./doc/RUNMODEM.md)
-
-Not all information is available in a central place, and information for
-specific sub-systems might be available in the corresponding sub-directories.
-To find all READMEs, this command might be handy:
-
-```
-find . -iname "readme*"
+```bash
+git submodule update --init cmake_targets/third_party/libsodium
+cmake --list-presets=all
 ```
 
-# RAN repository structure #
+Presets are `default`, `tests`, `tf5`, and `tf5-tests`. `default` disables TF5; `tf5` and `tf5-tests` enable it. `tf5-tests` is a preset, while `tf5_tests` is the aggregate CMake target. Configure and build TF5 as follows:
 
-The OpenAirInterface (OAI) software is composed of the following parts: 
-
-```
-openairinterface5g
-├── charts
-├── ci-scripts        : Meta-scripts used by the OSA CI process. Contains also configuration files used day-to-day by CI.
-├── CMakeLists.txt    : Top-level CMakeLists.txt for building
-├── cmake_targets     : Build utilities to compile (simulation, emulation and real-time platforms), and generated build files.
-├── common            : Some common OAI utilities, some other tools can be found at openair2/UTILS.
-├── doc               : Documentation
-├── docker            : Dockerfiles to build for Ubuntu and RHEL
-├── executables       : Top-level executable source files (gNB, eNB, ...)
-├── maketags          : Script to generate emacs tags.
-├── nfapi             : (n)FAPI code for MAC-PHY interface
-├── openair1          : Layer 1 (3GPP LTE Rel-10/12 PHY, NR Rel-15 PHY)
-├── openair2          : Layer 2 (3GPP LTE Rel-10 MAC/RLC/PDCP/RRC/X2AP, LTE Rel-14 M2AP, NR Rel-15+ MAC/RLC/PDCP/SDAP/RRC/X2AP/F1AP/E1AP), E2AP
-├── openair3          : Layer 3 (3GPP LTE Rel-10 S1AP/GTP, NR Rel-15 NGAP/GTP)
-├── openshift         : OpenShift helm charts for some deployment options of OAI
-├── radio             : Drivers for various radios such as USRP, AW2S, RFsim, 7.2 FHI, ...
-├── targets           : Some configuration files; only historical relevance, and might be deleted in the future
-└── tools             : Tools for use by the developers/ci machines: code analysis and formatting
+```bash
+cmake --preset tf5
+cmake --build --preset tf5
+cmake --preset tf5-tests
+cmake --build --preset tf5-tests
+ctest --test-dir cmake_targets/ran_build/build_tf5_tests \
+  -R '^test_tf5_' --output-on-failure
 ```
 
-# How to get support from the OAI Community # 
+## Key generation
 
-You can ask your question on the [mailing lists](https://gitlab.eurecom.fr/oai/openairinterface5g/-/wikis/MailingList).
+The Core-PKG scripts require `openssl` with Ed25519 support and `python3`. Run this sequence from the repository root:
 
-Your email should contain below information:
+```bash
+mkdir -p pkg_keys gnb_keys
+openair3/SECU/core-pkg/tf5_ibs_keygen.sh pkg_keys/msk.bin pkg_keys/mpk.bin
+openair3/SECU/core-pkg/tf5_ibs_issue.sh pkg_keys/msk.bin 123456789 \
+  FUTURE_VALIDITY_MINUTES gnb_keys/sk_gnb1.bin
+wc -c pkg_keys/msk.bin pkg_keys/mpk.bin gnb_keys/sk_gnb1.bin
+```
 
-- A clear subject in your email.
-- For all the queries there should be [Query\] in the subject of the email and for problems there should be [Problem\].
-- In case of a problem, add a small description.
-- Do not share any photos unless you want to share a diagram.
-- OAI gNB/DU/CU/CU-CP/CU-UP configuration file in `.conf` format only.
-- Logs of OAI gNB/DU/CU/CU-CP/CU-UP in `.log` or `.txt` format only.
-- In case your question is related to performance, include a small description of the machine (Operating System, Kernel version, CPU, RAM and networking card) and diagram of your testing environment.
-- Known/open issues are present on [GitLab](https://gitlab.eurecom.fr/oai/openairinterface5g/-/issues), so keep checking.
+`FUTURE_VALIDITY_MINUTES` is a 24-bit count of minutes since 2024-01-01 UTC (0 to 16,777,215). Set it to a value that remains valid through the experiment. The final command prints only the generated file sizes.
 
-Always remember a structured email will help us understand your issues quickly.
+Core-PKG hashes `pk || mpk || cell_id || validity` with SHA-512 and reduces the result modulo `l`. It obtains `(R || S) = Ed25519_sign(msk, id_msg)` and stores `sk_id = y=S || pk=R`. To sign, the gNB samples `r`, computes `R=r*B` and `h=H(data || R)`, then returns `sigma=h*y+r`. The verifier derives `Q=cid*MPK+pk` and accepts the signature when `sigma*B-h*Q=R`.
+
+| File | Size | Format | Mode |
+| --- | ---: | --- | ---: |
+| `msk.bin` | 32 bytes | Ed25519 seed | `0600` |
+| `mpk.bin` | 32 bytes | compressed Ed25519 public key | `0644` |
+| `sk_gnb1.bin` | 67 bytes | `y[32] || pk[32] || validity[3]` | `0600` |
+
+Each UE needs a copy of the public MPK. Transfer `sk_gnb1.bin` to the gNB over a secure channel. Anyone with `msk.bin` can issue keys for any Cell ID, so changing a gNB Cell ID requires a new gNB key.
+
+## Runtime options
+
+| Component | Option | Default | Meaning |
+| --- | --- | --- | --- |
+| gNB | `--tf5-privkey` | none; required | Path to the gNB key file issued by Core-PKG. |
+| gNB | `--tf5-chain-len` | 65,536 | TESLA chain length in intervals. |
+| UE | `--tf5-core-mpk` | none; required | Path to the Core master public key. |
+| UE | `--tf5-sig-rp-window-s` | 10,800 seconds | Signature timestamp replay window. |
+| UE | `--tf5-d-bound-us` | 1,005 microseconds | Delay bound used by the UE implementation. |
+| UE | `--tf5-returning-ue` | off | Simulates forced release and reacquisition for two seconds. |
+
+## Source map
+
+| Area | Review entry point |
+| --- | --- |
+| TF5 core and public formats | [`openair3/SECU/tf5_tesla.h`](openair3/SECU/tf5_tesla.h) |
+| Core-PKG scripts and file formats | [`tf5_ibs_keygen.sh`](openair3/SECU/core-pkg/tf5_ibs_keygen.sh), [`tf5_ibs_issue.sh`](openair3/SECU/core-pkg/tf5_ibs_issue.sh) |
+| gNB initialization and SIB payload updates | [`openair2/LAYER2/NR_MAC_gNB/config.c`](openair2/LAYER2/NR_MAC_gNB/config.c) |
+| UE SIB handling | [`openair2/RRC/NR_UE/rrc_UE.c`](openair2/RRC/NR_UE/rrc_UE.c) |
+| Seven included test executables | [`openair3/SECU/tests/CMakeLists.txt`](openair3/SECU/tests/CMakeLists.txt) |
+
+## Limitations
+
+Current implementation lacks SFN wrapping, HFN tracking and chain renewal feature.
+
+## Citation
+
+```bibtex
+@misc{song2026teslafor5gbroadcastauthentication5g,
+      title={TESLA-for-5G: Broadcast Authentication for 5G Networks Using TESLA}, 
+      author={Subin Song and Michael K. Reiter and Taekyoung Kwon},
+      year={2026},
+      eprint={2606.26528},
+      archivePrefix={arXiv},
+      primaryClass={cs.CR},
+      url={https://arxiv.org/abs/2606.26528}, 
+}
+```
+
+## License
+
+This repository is distributed under the [OAI Public License V1.1](LICENSE). See [NOTICE.md](NOTICE.md) for third-party notices.
